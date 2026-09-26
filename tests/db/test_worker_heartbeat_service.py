@@ -14,17 +14,17 @@ from app.services.system import (
     record_worker_heartbeat,
 )
 
-REAPER = WorkerName.REAPER.value
+HOUSEKEEPING = WorkerName.HOUSEKEEPING
 FRESH_FOR = timedelta(seconds=90)
 
 
 @pytest.mark.db
 async def test_record_then_read_returns_current_beat(session):
     await record_worker_heartbeat(
-        session, worker_name=REAPER, status=WorkerCycleStatus.OK, fresh_for=FRESH_FOR, detail={"jobs": 3}
+        session, worker_name=HOUSEKEEPING, status=WorkerCycleStatus.OK, fresh_for=FRESH_FOR, detail={"jobs": 3}
     )
 
-    heartbeat = await read_worker_heartbeat(session, REAPER)
+    heartbeat = await read_worker_heartbeat(session, HOUSEKEEPING)
 
     assert heartbeat is not None
     assert heartbeat.last_status is WorkerCycleStatus.OK
@@ -34,10 +34,12 @@ async def test_record_then_read_returns_current_beat(session):
 
 @pytest.mark.db
 async def test_record_upserts_in_place(session):
-    await record_worker_heartbeat(session, worker_name=REAPER, status=WorkerCycleStatus.OK, fresh_for=FRESH_FOR)
-    await record_worker_heartbeat(session, worker_name=REAPER, status=WorkerCycleStatus.DEGRADED, fresh_for=FRESH_FOR)
+    await record_worker_heartbeat(session, worker_name=HOUSEKEEPING, status=WorkerCycleStatus.OK, fresh_for=FRESH_FOR)
+    await record_worker_heartbeat(
+        session, worker_name=HOUSEKEEPING, status=WorkerCycleStatus.DEGRADED, fresh_for=FRESH_FOR
+    )
 
-    heartbeat = await read_worker_heartbeat(session, REAPER)
+    heartbeat = await read_worker_heartbeat(session, HOUSEKEEPING)
 
     assert heartbeat is not None
     assert heartbeat.last_status is WorkerCycleStatus.DEGRADED
@@ -45,25 +47,27 @@ async def test_record_upserts_in_place(session):
 
 @pytest.mark.db
 async def test_check_worker_health_healthy_for_fresh_ok_beat(session):
-    await record_worker_heartbeat(session, worker_name=REAPER, status=WorkerCycleStatus.OK, fresh_for=FRESH_FOR)
+    await record_worker_heartbeat(session, worker_name=HOUSEKEEPING, status=WorkerCycleStatus.OK, fresh_for=FRESH_FOR)
 
-    result = await check_worker_health(WorkerName.REAPER, _database(session))
+    result = await check_worker_health(WorkerName.HOUSEKEEPING, _database(session))
 
     assert result.status is HealthStatus.HEALTHY
 
 
 @pytest.mark.db
 async def test_check_worker_health_unhealthy_for_degraded_beat(session):
-    await record_worker_heartbeat(session, worker_name=REAPER, status=WorkerCycleStatus.DEGRADED, fresh_for=FRESH_FOR)
+    await record_worker_heartbeat(
+        session, worker_name=HOUSEKEEPING, status=WorkerCycleStatus.DEGRADED, fresh_for=FRESH_FOR
+    )
 
-    result = await check_worker_health(WorkerName.REAPER, _database(session))
+    result = await check_worker_health(WorkerName.HOUSEKEEPING, _database(session))
 
     assert result.status is HealthStatus.UNHEALTHY
 
 
 @pytest.mark.db
 async def test_check_worker_health_unhealthy_without_beat(session):
-    result = await check_worker_health(WorkerName.REAPER, _database(session))
+    result = await check_worker_health(WorkerName.HOUSEKEEPING, _database(session))
 
     assert result.status is HealthStatus.UNHEALTHY
 
@@ -74,7 +78,7 @@ async def test_check_worker_health_unhealthy_for_stale_beat(session):
     past = datetime(2020, 1, 1, tzinfo=UTC)
     session.add(
         WorkerHeartbeat(
-            worker_name=REAPER,
+            worker_name=HOUSEKEEPING,
             last_beat_at=past,
             expires_at=past + FRESH_FOR,
             last_status=WorkerCycleStatus.OK,
@@ -82,7 +86,7 @@ async def test_check_worker_health_unhealthy_for_stale_beat(session):
     )
     await session.flush()
 
-    result = await check_worker_health(WorkerName.REAPER, _database(session))
+    result = await check_worker_health(WorkerName.HOUSEKEEPING, _database(session))
 
     assert result.status is HealthStatus.UNHEALTHY
 

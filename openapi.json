@@ -3694,7 +3694,7 @@
       },
       "WorkerName": {
         "enum": [
-          "bot-ops-reaper"
+          "housekeeping"
         ],
         "title": "WorkerName",
         "type": "string"

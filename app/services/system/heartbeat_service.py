@@ -7,11 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.models import WorkerCycleStatus, WorkerHeartbeat
 
+from .schemas import WorkerName
+
 
 async def record_worker_heartbeat(
     session: AsyncSession,
     *,
-    worker_name: str,
+    worker_name: WorkerName,
     status: WorkerCycleStatus,
     fresh_for: timedelta,
     detail: dict[str, Any] | None = None,
@@ -43,5 +45,5 @@ async def record_worker_heartbeat(
     )
 
 
-async def read_worker_heartbeat(session: AsyncSession, worker_name: str) -> WorkerHeartbeat | None:
+async def read_worker_heartbeat(session: AsyncSession, worker_name: WorkerName) -> WorkerHeartbeat | None:
     return await session.get(WorkerHeartbeat, worker_name)

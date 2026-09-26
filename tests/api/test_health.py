@@ -82,10 +82,10 @@ async def test_worker_endpoint_reports_known_worker(monkeypatch):
     monkeypatch.setattr("app.api.system.health.check_worker_health", _healthy)
 
     async with _client(_FakeDatabase()) as client:
-        response = await client.get("/health/workers/bot-ops-reaper")
+        response = await client.get("/health/workers/housekeeping")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "worker_name": "bot-ops-reaper"}
+    assert response.json() == {"status": "ok", "worker_name": "housekeeping"}
 
 
 # --- system -----------------------------------------------------------------
@@ -102,7 +102,7 @@ async def test_system_health_ok_when_all_checks_pass(monkeypatch):
     assert body["status"] == "ok"
     assert body["version"] == app.version
     assert body["dependencies"]["checks"]["database"] == "ok"
-    assert body["workers"]["checks"]["bot-ops-reaper"] == "ok"
+    assert body["workers"]["checks"]["housekeeping"] == "ok"
 
 
 async def test_system_health_503_when_dependency_down(monkeypatch):
@@ -170,7 +170,7 @@ def _force_workers_healthy(monkeypatch) -> None:
 
 
 def _heartbeat(expires_at: datetime, last_status: WorkerCycleStatus) -> WorkerHeartbeat:
-    return WorkerHeartbeat(worker_name="bot-ops-reaper", expires_at=expires_at, last_status=last_status)
+    return WorkerHeartbeat(worker_name="housekeeping", expires_at=expires_at, last_status=last_status)
 
 
 @asynccontextmanager

@@ -59,7 +59,7 @@ async def check_worker_health(worker_name: WorkerName, database: Database) -> Wo
     status = HealthStatus.ERROR
     try:
         async with database.session(write=False) as session:
-            heartbeat = await read_worker_heartbeat(session, worker_name.value)
+            heartbeat = await read_worker_heartbeat(session, worker_name)
             now = (await session.execute(select(func.now()))).scalar_one()
         status = _worker_status_from_heartbeat(heartbeat, now)
     except Exception:
