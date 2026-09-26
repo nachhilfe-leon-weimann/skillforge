@@ -83,6 +83,9 @@ async def test_auth_user_model_metadata():
     for model in (UserAccount, UserAccountRole, UserSession, UserActionToken):
         assert {key.ondelete for key in model.__table__.foreign_keys} == {"CASCADE"}
 
+    assert "ix_user_session_expires_at" in {index.name for index in cast(Table, UserSession.__table__).indexes}
+    assert "ix_user_action_token_expires_at" in {index.name for index in cast(Table, UserActionToken.__table__).indexes}
+
 
 async def test_uppercase_email_violates_the_lowercase_check_constraint(session: AsyncSession):
     party = await _person_party(session)

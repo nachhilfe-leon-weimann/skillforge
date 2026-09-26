@@ -24,6 +24,7 @@ class UserSession(CreatedAtMixin, AuthBase):
     __table_args__ = AuthBase.extend_table_args(
         Index("ix_user_session_user_account_id", "user_account_id"),
         Index("ix_user_session_application_client_id", "application_client_id"),
+        Index("ix_user_session_expires_at", "expires_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
