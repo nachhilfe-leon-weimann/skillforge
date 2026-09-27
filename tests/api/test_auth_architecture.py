@@ -2,7 +2,7 @@
 
 The auth core (``app/core/auth``: what validates a request) depends on no service and no API module - a
 standing criterion of the user-authentication spec. The auth services (``app/services/auth``) depend on no
-API module and on no other domain's services, as the CRM does (ADR 0007).
+API module and on no other domain's services, as the CRM does (ADR 0009).
 """
 
 from tests.api.test_crm_architecture import REPO_ROOT, _imported_modules
@@ -10,7 +10,7 @@ from tests.api.test_crm_architecture import REPO_ROOT, _imported_modules
 AUTH_CORE = "app/core/auth"
 AUTH_SERVICES = "app/services/auth"
 FORBIDDEN_FOR_THE_CORE = ("app.services", "app.api")
-FORBIDDEN_FOR_THE_SERVICES = ("app.api", "app.services.bot", "app.services.crm", "app.services.system")
+FORBIDDEN_FOR_THE_SERVICES = ("app.api", "app.services.crm", "app.services.system")
 
 
 def _violations(source: str, *, package: str, forbidden: tuple[str, ...]) -> set[str]:
@@ -48,6 +48,6 @@ def test_the_check_catches_absolute_and_relative_imports():
     assert _violations("from .scopes import Scope\nfrom app.core.db.models import UserAccount", **core) == set()
 
     assert _violations("from app.services.crm import parties", **services)
-    assert _violations("from ..bot import authz", **services)
+    assert _violations("from ..system import heartbeat_service", **services)
     assert _violations("from ...api.v1 import common", **services)
     assert _violations("from .tokens import issue_client_token\nfrom app.core.auth import Scope", **services) == set()
