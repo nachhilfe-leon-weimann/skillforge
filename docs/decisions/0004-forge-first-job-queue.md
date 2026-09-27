@@ -1,6 +1,6 @@
 # ADR 0004 - Forge-first job queue with at-least-once delivery
 
-Status: Accepted, 2026-05
+Status: Superseded by [0009](0009-bot-owns-its-discord-workflows.md) (2026-09); accepted 2026-05
 
 ## Context
 

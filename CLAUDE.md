@@ -66,7 +66,7 @@ DB schemas: `core`, `geo`, `ext`, `bot`, `auth`, `system` - see
 
 - **Write everything in English** - docs, comments, specs, configs. The codebase is not German.
 - **Reference code by symbol, not line number** - in Markdown docs, link to the file and name the
-  function, class, or constant (e.g. `OPERATION_TTL` in `transitions.py`), never a bare
+  function, class, or constant (e.g. `MAX_PAGE_LIMIT` in `pagination.py`), never a bare
   `file.py:<line>` anchor. Line anchors rot on the next edit.
 - **`openapi.json` is generated** - never edit it by hand. After API changes, run `just openapi`
   and commit ([ADR 0001](docs/decisions/0001-openapi-as-contract.md)).
@@ -86,13 +86,13 @@ DB schemas: `core`, `geo`, `ext`, `bot`, `auth`, `system` - see
   `app/api/v1/crm` imports the bot domain, and no CRM write looks at Discord state. Every write
   service ends with `saved(...)` and `load_party(...)`; a `from_model` mapper touches only what
   `PARTY_GRAPH` loads - extend the graph, never add an ad-hoc load. The error catalog is closed.
-- **Discord state changes** run in two phases (`prepare`/`commit`) - Forge never touches the
-  Discord API itself ([ADR 0003](docs/decisions/0003-two-phase-transitions.md)).
-- **Jobs** are at-least-once; handlers must be idempotent
-  ([ADR 0004](docs/decisions/0004-forge-first-job-queue.md)).
+- **Frontends pull; SkillForge pushes nothing** ([ADR 0009](docs/decisions/0009-bot-owns-its-discord-workflows.md)):
+  a feed item carries `updated_at`, consumers ask with `updated_since` minus an overlap and compare in full now and
+  then. SkillForge keeps no frontend's state - the bot runs its Discord workflows in its own database. Never add a
+  route, table or job that exists for one frontend's workflow.
 - **Spec-first** for larger arcs: first a document in [`docs/specs/`](docs/specs/)
   (problem/goals/non-goals/decision table), then implement. Reference:
-  [`lifecycle-guardian.md`](docs/specs/lifecycle-guardian.md).
+  [`user-authentication.md`](docs/specs/user-authentication.md).
 - **Decisions** with lasting impact go into [`docs/decisions/`](docs/decisions/) as an ADR.
 - **History on `main`: one PR per slice** ([spec](docs/specs/release-flow.md), decision D). A slice is one
   requirement of a spec (`P0-3`) - not the whole spec, not a single fixup: an arc lands as ~6-8 commits, not

@@ -1,6 +1,6 @@
 # Spec: Principals & Provisioning (identity, account linking, delegated actors)
 
-> Status: Implemented (P0-P2 shipped on #4)
+> Status: Superseded by [bot-decoupling.md](bot-decoupling.md) (2026-09); was Implemented (P0-P2 shipped on #4)
 > Tracking: [#4](https://github.com/Nachhilfe-Leon-Weimann/skillforge/issues/4)
 > Foundational capability: the transition flows already require an **active** principal that the API
 > cannot create today. Adjacent to the off-boarding arc ([#47](https://github.com/Nachhilfe-Leon-Weimann/skillforge/issues/47)),

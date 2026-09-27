@@ -1,6 +1,6 @@
 # Spec: Lifecycle Guardian (self-healing for jobs & operations)
 
-> Status: Implemented | Arc 1 of the platform capability roadmap
+> Status: Superseded by [bot-decoupling.md](bot-decoupling.md) (2026-09); was Implemented | Arc 1 of the platform capability roadmap
 > Prerequisite for Arc 3 (outbox/eventing) and Arc 4 (integration sync), which build on the same job/operation substrate.
 
 ## Capability arcs (roadmap context)

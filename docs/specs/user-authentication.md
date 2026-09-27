@@ -4,6 +4,8 @@
 > Code moved on 2026-09-25: the auth services went from `app/core/auth/services/` to `app/services/auth/` and the
 > operator commands from `app/core/auth/bootstrap.py` to `app/cli/bootstrap.py`; the paths below name the new home.
 > Tracking: [#85](https://github.com/Nachhilfe-Leon-Weimann/skillforge/issues/85)
+> The bot parts are superseded by [`bot-decoupling.md`](bot-decoupling.md) (2026-09): the bot schema, the grant
+> engine and `bot:*` leave SkillForge; the token exchange and Discord links are built there, tutor reach in its own arc.
 > Builds on the [project sketch](../PROJECT.md), [`api-conventions.md`](api-conventions.md), goal 4 of
 > [`crm-api.md`](crm-api.md) ("exactly one target party per route") and
 > [ADR 0008](../decisions/0008-user-authentication-and-reach.md).
@@ -57,7 +59,7 @@ skillsite; the bot's use of person tokens follows in the bot arc (see
 - **Reach-aware writes** (`crm:write:own`). Restricted people are read-only until P1-4.
 - **Federated login beyond Discord, MFA, asymmetric signing, JWKS, token introspection.**
 - **Instant revocation of access tokens.** They stay stateless (decision L).
-- **Any change to the `bot` schema or the grant engine.**
+- **Any change to the `bot` schema or the grant engine.** _(Superseded by [bot-decoupling.md](bot-decoupling.md).)_
 
 ## Decisions
 
@@ -81,7 +83,7 @@ skillsite; the bot's use of person tokens follows in the bot arc (see
 | **P - First client and first admin**     | `just bootstrap-client` seeds a client with grants in both modes. `just bootstrap-admin --party-id <uuid> --email <address>` ensures an enabled admin account and prints an invitation, or a reset token once a password exists: the break-glass command. | Creating clients needs `auth:clients:manage` and creating accounts an admin: neither first one can be created through the API, and the only admin cannot reset, re-enable or re-promote themselves.                   |
 | **Q - How a token was obtained**         | A person's token carries `amr` (RFC 8176): `["pwd"]` in this arc, `["discord"]` from the bot arc.                                                                                                                                                         | The two ways differ in strength; password-only actions (P1-2) can demand `pwd`.                                                                                                                                       |
 
-**Open:** whether `admin` also carries `bot:write`. It starts without it; adding it is one line in `ROLE_SCOPES`.
+**Open:** whether `admin` also carries `bot:write`. It starts without it; adding it is one line in `ROLE_SCOPES`. _(Superseded by [bot-decoupling.md](bot-decoupling.md).)_
 
 ## Client grants
 
@@ -170,6 +172,9 @@ only widens (a client granted `crm:read` may now request `crm:read:own`).
 | `tutor`        | the party's person has a `Tutor` row                         | -                                                                               |
 | `guardian`     | the party has an outgoing `PARENT_OF` or `PAYS_FOR` relation | -                                                                               |
 | `admin`        | row in `auth.user_account_role`                              | `crm:read`, `crm:write`, `auth:users:manage`, `auth:clients:manage`, `bot:read` |
+
+`bot:read` leaves the `admin` row with P0-5 of [`bot-decoupling.md`](bot-decoupling.md); bot-decoupling's P0-2 adds
+`auth:discord-links:read`.
 
 The derived roles carry no scopes of their own yet; they tell `/auth/me` and the token's `roles` claim which views
 to offer. **SkillForge authorizes by scope only; it never branches on a role.**
@@ -528,7 +533,10 @@ every initial password.
 
 ## Designed for the bot arc
 
-Not built here; recorded so that this arc's shapes take it with no change but the widening goal 7 names.
+Not built here; recorded so that this arc's shapes take it with no change but the widening goal 7 names. The token
+exchange, Discord links, the retirement of the grant engine and the change signals are specified in
+[`bot-decoupling.md`](bot-decoupling.md); tutor reach and accounts by tutors wait for the
+[reach arc](../PROJECT.md#roadmap).
 
 - **Token exchange.** An extension grant (RFC 6749, section 4.5) on `POST /auth/token`: the bot authenticates as a
   client holding `auth:users:exchange` (an `application`, client-only scope) and names the Discord user who sent a
@@ -564,7 +572,7 @@ Not built here; recorded so that this arc's shapes take it with no change but th
       its four keys, the bot-domain tests pass **unmodified**, and `issue_client_token` keeps its signature and its
       `CreatedAccessToken` result. The only contract changes SkillBot can see are additive - two optional
       properties of `AccessTokenResponse`, the new fields of `MeResponse` - plus the one-time scheme rename of P0-5.
-      SkillBot does not call the client routes, so their new grant shape does not reach it.
+      SkillBot does not call the client routes, so their new grant shape does not reach it. _(Superseded by [bot-decoupling.md](bot-decoupling.md).)_
 
 **P0-1 - Spec and ADR.** _Docs only._
 
@@ -591,7 +599,7 @@ Not built here; recorded so that this arc's shapes take it with no change but th
         of `tests/auth/test_dependencies.py`; `require_scopes(Scope.CRM_READ_OWN)` raises.
   - [x] `test_no_role_carries_client_only_scopes`; every scope appears with its description in
         `components.securitySchemes`.
-  - [x] The bot's delegation check answers exactly as before (its tests unmodified).
+  - [x] The bot's delegation check answers exactly as before (its tests unmodified). _(Superseded by [bot-decoupling.md](bot-decoupling.md).)_
 
 **P0-3 - Data model.**
 
@@ -647,7 +655,7 @@ Not built here; recorded so that this arc's shapes take it with no change but th
   - [x] `just bootstrap-client` is idempotent like `bootstrap-skillbot`, grants in both modes, refuses a client-only
         scope in `--delegated` with `invalid_scope`, and prints the secret only when it created one;
         `just bootstrap-skillbot` prints exactly what it prints today, and every existing caller of the grant
-        services behaves as before.
+        services behaves as before. _(The `bootstrap-skillbot` part is superseded by [bot-decoupling.md](bot-decoupling.md).)_
 
 **P0-5 - Person tokens.**
 
@@ -863,4 +871,4 @@ squash commit, and GitHub rebases the PRs above a merged one.
 - **`bootstrap-admin` never creates a party.** The party comes through the CRM API; the auth CLI seeds clients and
   accounts only.
 - The error catalog is closed. If a requirement seems to need a new class or `code`, stop and report.
-- Do not touch the `bot` schema, the grant engine or `delete_party`.
+- Do not touch the `bot` schema, the grant engine or `delete_party`. _(Superseded by [bot-decoupling.md](bot-decoupling.md).)_

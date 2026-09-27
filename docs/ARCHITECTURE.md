@@ -271,16 +271,11 @@ a stale container is a red workflow. Dokploy runs the repo's
 what prod runs. There is no automatic rollback - an app rollback would not roll back an Alembic migration;
 the manual procedure is in the [README](../README.md#rolling-back).
 
-## Roadmap: capability arcs
+## Roadmap
 
-The platform grows along four arcs that build on each other (details in the
-[lifecycle guardian spec](specs/lifecycle-guardian.md)):
-
-1. **Guardian** - self-healing for jobs & operations *(shipped)*.
-2. **Ops plane** - read/observability layer (queue depth, funnel views, audit search)
-   *(first slice shipped: jobs & operations read plane; audit search next)*.
-3. **Eventing** - outbox + webhooks, idempotency keys on the service API.
-4. **Integration sync** - generic job/worker pattern for Clockodo/sevDesk/Microsoft.
+The roadmap lives in the [project sketch](PROJECT.md#roadmap). The capability arcs this section used to list -
+guardian, ops plane, eventing, integration sync - rested on the bot's job and operation substrate, which
+[ADR 0009](decisions/0009-bot-owns-its-discord-workflows.md) retires: frontends pull, SkillForge pushes nothing.
 
 ## Where do I find...?
 

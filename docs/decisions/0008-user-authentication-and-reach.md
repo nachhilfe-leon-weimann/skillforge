@@ -1,6 +1,6 @@
 # ADR 0008 - SkillForge authenticates people itself; client grants have a mode; scopes carry a reach qualifier
 
-Status: Accepted, 2026-09
+Status: Accepted, 2026-09; amended by [0009](0009-bot-owns-its-discord-workflows.md) (2026-09)
 
 This record replaces a draft of the same number that was withdrawn before any release (its code and
 text are kept on the branch `archive/user-auth-v1`). The draft let one list of client grants count

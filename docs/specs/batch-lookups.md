@@ -1,6 +1,6 @@
 # Spec: Batch principal & context lookups
 
-> Status: Implemented
+> Status: Superseded by [bot-decoupling.md](bot-decoupling.md) (2026-09); was Implemented
 > Tracking: [#52](https://github.com/Nachhilfe-Leon-Weimann/skillforge/issues/52)
 > Performance slice — collapses N single-id round-trips into one batched call.
 

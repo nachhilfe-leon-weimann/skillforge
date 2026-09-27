@@ -1,6 +1,6 @@
 # ADR 0003 - Two-phase `prepare`/`commit` operations for Discord state
 
-Status: Accepted, 2026-05
+Status: Superseded by [0009](0009-bot-owns-its-discord-workflows.md) (2026-09); accepted 2026-05
 
 ## Context
 

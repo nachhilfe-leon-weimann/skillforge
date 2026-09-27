@@ -1,6 +1,6 @@
 # Spec: Cancel a prepared operation
 
-> Status: Implemented
+> Status: Superseded by [bot-decoupling.md](bot-decoupling.md) (2026-09); was Implemented
 > Tracking: [#50](https://github.com/Nachhilfe-Leon-Weimann/skillforge/issues/50)
 > Write counterpart to [`ops-read-plane.md`](ops-read-plane.md); continues **Arc 2 (ops plane)**
 > from [`lifecycle-guardian.md`](lifecycle-guardian.md).

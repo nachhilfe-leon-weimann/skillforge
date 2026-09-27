@@ -1,6 +1,6 @@
 # Spec: Off-boarding transitions (tear down student & tutor workspaces)
 
-> Status: Implemented
+> Status: Superseded by [bot-decoupling.md](bot-decoupling.md) (2026-09); was Implemented
 > Tracking: [#47](https://github.com/Nachhilfe-Leon-Weimann/skillforge/issues/47)
 > Counterpart of [principals & provisioning](principals-and-provisioning.md), whose
 > "(de)activation ownership" decision explicitly hands *flipping `active` off + teardown* to this arc.

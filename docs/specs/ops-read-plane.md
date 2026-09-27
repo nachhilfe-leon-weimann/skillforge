@@ -1,6 +1,6 @@
 # Spec: Ops read plane (jobs & operations)
 
-> Status: Implemented
+> Status: Superseded by [bot-decoupling.md](bot-decoupling.md) (2026-09); was Implemented
 > Tracking: [#49](https://github.com/Nachhilfe-Leon-Weimann/skillforge/issues/49)
 > First delivered slice of **Arc 2 (ops plane)** in [`lifecycle-guardian.md`](lifecycle-guardian.md).
 

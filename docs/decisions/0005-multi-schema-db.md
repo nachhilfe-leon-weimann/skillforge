@@ -1,6 +1,6 @@
 # ADR 0005 - Multi-schema DB + explicit-DDL Alembic baseline
 
-Status: Accepted, 2026-05
+Status: Accepted, 2026-05; amended by [0009](0009-bot-owns-its-discord-workflows.md) (2026-09)
 
 ## Context
 

@@ -1,6 +1,6 @@
 # ADR 0007 - CRM is the system of record; the bot is a consumer
 
-Status: Accepted, 2026-09
+Status: Accepted, 2026-09; amended by [0009](0009-bot-owns-its-discord-workflows.md) (2026-09)
 
 ## Context
 
