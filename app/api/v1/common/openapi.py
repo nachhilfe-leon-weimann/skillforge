@@ -22,13 +22,6 @@ OPENAPI_TAGS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "bot",
-        "description": (
-            "SkillBot state API: runtime contexts, jobs, two-phase operations, command environments, "
-            "users and authorization."
-        ),
-    },
-    {
         "name": "crm",
         "description": "Customer relationship management: parties and the data attached to them.",
     },
@@ -66,8 +59,8 @@ def operation_id(route: APIRoute) -> str:
     """Build the operation ID ``{tag}_{function_name}`` for a route.
 
     The first tag is the domain (and the generated client's module). A trailing ``_endpoint`` and
-    a leading ``{tag}_`` are stripped from the function name, so ``list_jobs_endpoint`` and
-    ``list_jobs`` both become ``bot_list_jobs`` and ``system_health_check`` does not stutter.
+    a leading ``{tag}_`` are stripped from the function name, so ``list_parties_endpoint`` and
+    ``list_parties`` both become ``crm_list_parties`` and ``system_health_check`` does not stutter.
     """
     if not route.tags:
         raise RuntimeError(

@@ -12,7 +12,7 @@ from app.core.auth import Scope
 from app.main import app
 
 HTTP_METHODS = {"get", "put", "post", "delete", "patch", "head", "options", "trace"}
-OPERATION_ID_PATTERN = re.compile(r"(auth|bot|crm|system)_[a-z0-9_]+")
+OPERATION_ID_PATTERN = re.compile(r"(auth|crm|system)_[a-z0-9_]+")
 COMMITTED_OPENAPI_PATH = Path(__file__).resolve().parents[2] / "openapi.json"
 
 
@@ -154,8 +154,6 @@ def test_every_documented_error_body_is_the_envelope(schema: dict[str, Any]):
 
 
 PAGED_ENDPOINTS = {
-    "/api/v1/bot/jobs": ("Page_JobListItem_", {"status", "kind"}),
-    "/api/v1/bot/operations": ("Page_OperationSummary_", {"guild_id", "subject_discord_id", "status", "kind"}),
     "/api/v1/auth/clients": ("Page_ApplicationClientResponse_", set()),
     "/api/v1/auth/users": ("Page_UserAccountListItem_", {"status", "party_id", "email"}),
     "/api/v1/auth/discord-links": ("Page_DiscordLink_", {"updated_since", "party_id", "active"}),
@@ -173,8 +171,7 @@ def test_no_operation_returns_a_bare_array(schema: dict[str, Any]):
         and response.get("content", {}).get("application/json", {}).get("schema", {}).get("type") == "array"
     ]
 
-    # The job claim hands out a batch of work, not a page of a list.
-    assert bare == ["POST /api/v1/bot/jobs/claim"]
+    assert bare == []
 
 
 @pytest.mark.parametrize("path", PAGED_ENDPOINTS)
@@ -209,11 +206,6 @@ def test_paged_endpoint_returns_the_generic_page(schema: dict[str, Any], path: s
 
     assert response["content"]["application/json"]["schema"] == {"$ref": f"#/components/schemas/{page}"}
     assert schema["components"]["schemas"][page]["required"] == ["items", "total", "limit", "offset"]
-
-
-def test_domain_specific_page_schemas_are_gone(schema: dict[str, Any]):
-    assert "JobPage" not in schema["components"]["schemas"]
-    assert "OperationPage" not in schema["components"]["schemas"]
 
 
 def test_every_documented_error_example_is_a_valid_envelope(schema: dict[str, Any]):
@@ -251,3 +243,64 @@ def test_auth_client_operations_document_auth_errors(schema: dict[str, Any]):
 
     assert "auth:clients:manage" in responses["403"]["description"]
     assert responses["401"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/ErrorResponse"}
+
+
+# The component schemas only the bot routes used when P0-4 of docs/specs/bot-decoupling.md removed the bot API;
+# the published client lost them with `api.bot`.
+REMOVED_BOT_SCHEMAS = frozenset({
+    "AuthorizationCheckRequest",
+    "AuthorizationCheckResponse",
+    "BotJob",
+    "BotPrincipal",
+    "CommandEnvChannelResponse",
+    "CommandEnvKind",
+    "CommandEnvUpsertRequest",
+    "ContactInfoProfile",
+    "DiscordAccountProfile",
+    "DiscordIdBatchRequest",
+    "DiscordUserResponse",
+    "DiscordUserUpsertRequest",
+    "ExternalAccountsProfile",
+    "GroupMembershipResponse",
+    "JobClaimRequest",
+    "JobDetail",
+    "JobFailRequest",
+    "JobKindCounts",
+    "JobListItem",
+    "JobQueueSummary",
+    "JobResponse",
+    "JobStatus",
+    "JobStatusCounts",
+    "MemberRole",
+    "MicrosoftAccountProfile",
+    "OperationCancelResponse",
+    "OperationKind",
+    "OperationResponse",
+    "OperationStatus",
+    "OperationSummary",
+    "OperationalProfile",
+    "Page_JobListItem_",
+    "Page_OperationSummary_",
+    "PersonProfile",
+    "PrincipalBatch",
+    "RelationProfile",
+    "StudentActivationCommitRequest",
+    "StudentActivationPrepareRequest",
+    "StudentChannelState",
+    "StudentContext",
+    "StudentContextBatch",
+    "TransitionCommitResponse",
+    "TransitionPrepareResponse",
+    "TutorActivationCommitRequest",
+    "TutorActivationPrepareRequest",
+    "TutorContext",
+    "TutorContextBatch",
+})
+
+
+def test_the_bot_api_is_gone(schema: dict[str, Any]):
+    areas = {path.split("/")[3] for path in schema["paths"] if path.startswith("/api/v1/")}
+
+    assert areas == {"auth", "crm"}
+    assert {tag["name"] for tag in schema["tags"]} == {"auth", "crm", "system"}
+    assert REMOVED_BOT_SCHEMAS.isdisjoint(schema["components"]["schemas"])
