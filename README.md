@@ -62,9 +62,10 @@ There is no automatic rollback. To go back to an earlier release:
    the `image:` lines is not enough: an older image may lack the module the current `worker` command names.
 2. Dispatch `Deploy` with that version.
 
-The next release PR moves the tags forward again. This rolls back the app, not the database: if a release
-in between shipped a migration, the older image's `migrate` service does not know the database's revision
-and the deploy fails. Fix forward instead, or first run `alembic downgrade <revision>` from the newer image.
+Rolling forward reverts the rollback PR first, restoring the current `compose.yml`; the next release PR then
+only moves the tags forward. This rolls back the app, not the database: if a release in between shipped a
+migration, the older image's `migrate` service does not know the database's revision and the deploy fails.
+Fix forward instead, or first run `alembic downgrade <revision>` from the newer image.
 
 ## Docs
 

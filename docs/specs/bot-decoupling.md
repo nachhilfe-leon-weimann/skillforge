@@ -510,7 +510,9 @@ auth:clients:manage auth:discord-links:read"`. Admins log in again.
   client holds `auth:users:exchange`.
 
 **Releases.** One cleanup release after P0-5 (P0-1 to P0-5). Then as the bot needs them: P0-6 unblocks its pull loop,
-P0-7 its commands, P1-1 `/link`; they may be combined.
+P0-7 its commands, P1-1 `/link`; they may be combined. From the merge of P0-3 until the release that carries it,
+`main`'s `compose.yml` runs `app.workers.housekeeping`, which the pinned `v0.5.0` image lacks - dispatch no `Deploy`
+in that window; a redeploy of `v0.5.0` needs `v0.5.0`'s whole `compose.yml` (README, "Rolling back").
 
 **Pre-flight** before merging the release PR that carries P0-5 - read-only, results recorded in the epic:
 

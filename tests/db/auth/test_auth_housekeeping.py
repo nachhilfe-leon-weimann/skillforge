@@ -83,20 +83,20 @@ async def test_a_session_goes_one_microsecond_past_the_window_and_stays_on_the_b
     assert await _remaining(session, UserSession) == kept
 
 
-async def test_a_revoked_or_rotated_session_goes_by_expires_at_alone(
-    session: AsyncSession, account: UserAccount, application_client: ApplicationClient
+@pytest.mark.parametrize(
+    "state", [{}, {"revoked_at": datetime(1999, 1, 1, tzinfo=UTC)}, {"rotated_at": datetime(1999, 1, 1, tzinfo=UTC)}]
+)
+async def test_a_session_goes_past_the_window_whatever_its_state(
+    session: AsyncSession, account: UserAccount, application_client: ApplicationClient, state: dict[str, datetime]
 ):
     inside, outside = CUTOFF + timedelta(days=1), CUTOFF - timedelta(days=1)
     session.add_all([
-        _session_row(account.id, application_client.id, inside, revoked_at=datetime(1999, 1, 1, tzinfo=UTC)),
-        _session_row(account.id, application_client.id, outside, revoked_at=datetime(1999, 1, 1, tzinfo=UTC)),
-        _session_row(
-            account.id, application_client.id, outside - timedelta(days=1), rotated_at=datetime(1999, 1, 1, tzinfo=UTC)
-        ),
+        _session_row(account.id, application_client.id, inside, **state),
+        _session_row(account.id, application_client.id, outside, **state),
     ])
     await session.flush()
 
-    assert await delete_expired_sessions(session, limit=10, now=NOW) == 2
+    assert await delete_expired_sessions(session, limit=10, now=NOW) == 1
     assert await _remaining(session, UserSession) == {inside}
 
 

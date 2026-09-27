@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from typing import cast
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 
@@ -41,19 +41,27 @@ class _StubLogger:
 
 
 class _StubDatabase:
+    def __init__(self) -> None:
+        # One fresh object per `session()` entry, so a test can tell whether two passes (or a pass and the
+        # heartbeat) shared a transaction instead of each getting its own.
+        self.sessions: list[object] = []
+
     @asynccontextmanager
     async def session(self, *, write: bool = True):
-        yield None
+        session = object()
+        self.sessions.append(session)
+        yield session
 
 
-async def _cycle() -> _StubLogger:
+async def _cycle() -> tuple[_StubLogger, _StubDatabase]:
     logger = _StubLogger()
-    await worker.run_cycle(cast(Database, _StubDatabase()), logger)
-    return logger
+    database = _StubDatabase()
+    await worker.run_cycle(cast(Database, database), logger)
+    return logger, database
 
 
 async def test_a_cycle_logs_exactly_one_line_with_the_counts(passes):
-    logger = await _cycle()
+    logger, _ = await _cycle()
 
     assert [event for event, _ in logger.calls] == ["housekeeping_cycle"]
     fields = logger.calls[0][1]
@@ -61,23 +69,27 @@ async def test_a_cycle_logs_exactly_one_line_with_the_counts(passes):
     assert (fields["sessions_deleted"], fields["action_tokens_deleted"]) == (3, 1)
 
 
-async def test_each_pass_runs_one_batch_per_cycle(passes):
-    await _cycle()
+async def test_each_pass_runs_one_batch_per_cycle(passes, heartbeat):
+    _, database = await _cycle()
 
-    for mock in passes.values():
-        mock.assert_awaited_once_with(None, limit=worker.DELETE_BATCH_LIMIT)
+    # Two passes, one heartbeat - each in its own transaction, so a failing one never rolls back another.
+    assert len(database.sessions) == 3
+    assert len(set(database.sessions)) == 3
+    for mock, session in zip(passes.values(), database.sessions, strict=False):
+        mock.assert_awaited_once_with(session, limit=worker.DELETE_BATCH_LIMIT)
+    assert heartbeat.await_args.args[0] is database.sessions[2]
 
 
 @pytest.mark.parametrize("failing", sorted(COUNTERS))
 async def test_a_failing_pass_degrades_the_beat_and_leaves_the_other(passes, heartbeat, failing: str):
     passes[failing].side_effect = RuntimeError("boom")
 
-    logger = await _cycle()
+    logger, _ = await _cycle()
 
     assert [event for event, _ in logger.calls] == ["housekeeping_cycle"]
     assert logger.exceptions == [("housekeeping_pass_failed", {"counter": failing})]
     other = next(counter for counter in COUNTERS if counter != failing)
-    assert logger.calls[0][1][other] == passes[other].return_value
+    assert logger.calls[0][1] == {failing: 0, other: passes[other].return_value, "duration_ms": ANY}
     assert heartbeat.await_args.kwargs["status"] is WorkerCycleStatus.DEGRADED
 
 
@@ -94,6 +106,6 @@ async def test_a_clean_cycle_beats_ok_under_housekeeping(passes, heartbeat):
 async def test_a_failing_heartbeat_is_logged_and_never_raised(passes, heartbeat):
     heartbeat.side_effect = RuntimeError("db down")
 
-    logger = await _cycle()
+    logger, _ = await _cycle()
 
     assert ("housekeeping_heartbeat_failed", {}) in logger.exceptions

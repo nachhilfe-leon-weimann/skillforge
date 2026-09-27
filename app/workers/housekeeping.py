@@ -60,7 +60,8 @@ async def run_cycle(database: Database, logger) -> None:
             logger.exception("housekeeping_pass_failed", counter=counter)
             cycle_ok = False
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
-    logger.info("housekeeping_cycle", **counts, duration_ms=duration_ms)
+    summary = {**counts, "duration_ms": duration_ms}
+    logger.info("housekeeping_cycle", **summary)
 
     # Liveness for the health plane, in its own transaction: a missing beat is what marks the worker unhealthy.
     try:
@@ -70,7 +71,7 @@ async def run_cycle(database: Database, logger) -> None:
                 worker_name=WorkerName.HOUSEKEEPING,
                 status=WorkerCycleStatus.OK if cycle_ok else WorkerCycleStatus.DEGRADED,
                 fresh_for=HEARTBEAT_FRESH_FOR,
-                detail={**counts, "duration_ms": duration_ms},
+                detail=summary,
             )
     except Exception:
         logger.exception("housekeeping_heartbeat_failed")

@@ -102,7 +102,7 @@ async def test_system_health_ok_when_all_checks_pass(monkeypatch):
     assert body["status"] == "ok"
     assert body["version"] == app.version
     assert body["dependencies"]["checks"]["database"] == "ok"
-    assert body["workers"]["checks"]["housekeeping"] == "ok"
+    assert body["workers"]["checks"] == {"housekeeping": "ok"}
 
 
 async def test_system_health_503_when_dependency_down(monkeypatch):
