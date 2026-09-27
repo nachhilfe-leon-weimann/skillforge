@@ -92,8 +92,11 @@ CRM rules only, never against Discord state. The full design is in the [CRM API 
   ID, relations associations addressed by their natural key
   (`/parties/{party_id}/relations/{type}/{to_party_id}`). Every route has exactly one target party.
 - **Aggregate root.** `Party` is the root: every write inside the aggregate ends with `saved(...)`,
-  which moves `party.updated_at` - the one change signal consumers get - and a relation touches
-  both parties. A request that changes nothing (an empty `PATCH`, a repeated `PUT`) is not a write.
+  which moves `party.updated_at` - the one change signal consumers get ([Change signals](#change-signals)) - and
+  a relation touches both parties. A request that changes nothing (an empty `PATCH`, a repeated `PUT`) is not a
+  write. Taking a role away takes the `tutor_of` it anchored along (`remove_tutor_role` and `remove_student_role`
+  in `roles.py`); every write of a `tutor_of` - its `PUT` and `DELETE` and a role removal - first locks both
+  parties in ID order, so no `tutor_of` slips in beside a removal and no two of these writes deadlock.
 - **One loading path.** Async SQLAlchemy cannot lazy-load, so `PARTY_GRAPH` in `parties.py` names
   everything a representation may touch, `load_party` applies it with `populate_existing`, and every
   write returns through it. A `from_model` mapper touches only what `PARTY_GRAPH` loads.
@@ -226,10 +229,10 @@ the manual procedure is in the [README](../README.md#rolling-back).
 ## Change signals
 
 SkillForge pushes nothing ([ADR 0009](decisions/0009-bot-owns-its-discord-workflows.md)): a frontend asks what
-changed and brings its own state in line. The feeds are the party list (`GET /api/v1/crm/parties`, from P0-6 of
-[`bot-decoupling.md`](specs/bot-decoupling.md) its items carry `updated_at`) and the Discord link feed
-(`GET /api/v1/auth/discord-links`, which returns unlinked rows too, ordered by Discord user ID). Every
-`updated_since` parameter is the shared `UpdatedSince` of `app/api/v1/common/changes.py`, which points here.
+changed and brings its own state in line. The feeds are the party list (`GET /api/v1/crm/parties`, ordered by name)
+and the Discord link feed (`GET /api/v1/auth/discord-links`, which returns unlinked rows too, ordered by Discord
+user ID); every item of both carries `updated_at`. Every `updated_since` parameter is the shared `UpdatedSince` of
+`app/api/v1/common/changes.py`, which points here.
 
 1. **Signals, not events.** An item means "look again" and carries current state. Bring the whole current state of
    what it names in line; never apply it as a delta. Reconcilers are idempotent.
@@ -263,6 +266,30 @@ changed and brings its own state in line. The feeds are the party list (`GET /ap
 
 Consumer defaults (skillbot's configuration): poll every 60 s, overlap 5 minutes, full comparison every 30 minutes,
 skip an item whose (`id`, `updated_at`) equals the stored one.
+
+### The party feed
+
+A party's `updated_at` is the stamp of its whole aggregate ([CRM](#crm)): a CRM write ends with `saved(...)` for
+every party it changed, and a request that changes nothing is no write. A list item's `updated_at`
+(`PartyListItem`, also the `party` of a relation) is the detail's. A `tutor_of` stands on both roles: taking the
+tutor role away removes the person's outgoing `tutor_of`, taking the student role away the incoming ones, and the
+parties on their other side move too - so every `tutor_of` a consumer reads is a valid pair. `WRITES` in
+`tests/db/crm/test_crm_write_services.py` pins the CRM rows of the table below, a related bystander included.
+
+### What moves what
+
+| Write | Route | Moves `updated_at` of |
+|---|---|---|
+| Create | `POST /crm/persons`, `/companies` | the new party |
+| Names | `PATCH /crm/persons/{id}`, `/companies/{id}` | the party, whenever a field is sent (an empty body: nothing) |
+| Give or change a role | `PUT /crm/persons/{id}/student`, `/tutor` | the person, on a real change |
+| Take a role away | `DELETE /crm/persons/{id}/student`, `/tutor` | the person and every other side of the `TUTOR_OF` it removed |
+| Contact infos | `POST` / `PATCH` / `DELETE /crm/parties/{id}/contact-infos...` | the party |
+| Relate / unrelate | `PUT` / `DELETE /crm/parties/{id}/relations/{type}/{to}` | both parties (a repeated `PUT`: nothing) |
+| Delete a party | `DELETE /crm/parties/{id}` | every party related to it |
+| Subjects | `/crm/subjects...` | no party |
+| Discord links | `/auth/discord-links...` | the link row only (the link feed) |
+| Accounts, admin role, disabling | `/auth/users...` | nothing |
 
 ## Roadmap
 

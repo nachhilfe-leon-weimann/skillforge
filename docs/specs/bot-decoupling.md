@@ -745,10 +745,10 @@ now removes its `TUTOR_OF`.
   `WRITES`; subject writes move no party; removing the tutor role removes the outgoing `TUTOR_OF` and moves both
   sides, removing the student role the incoming one; the OpenAPI test pins `updated_at` as required `date-time`.
 - _Acceptance criteria:_
-  - [ ] `PartyListItem.updated_at` is required and described and equals the detail's value.
-  - [ ] Every CRM write moves exactly the parties "What moves what" names.
-  - [ ] After removing a tutor or student role no `TUTOR_OF` names the party on that side, and both sides moved.
-  - [ ] `updated_since` on the party list and the link feed comes from the one `UpdatedSince` alias.
+  - [x] `PartyListItem.updated_at` is required and described and equals the detail's value.
+  - [x] Every CRM write moves exactly the parties "What moves what" names.
+  - [x] After removing a tutor or student role no `TUTOR_OF` names the party on that side, and both sides moved.
+  - [x] `updated_since` on the party list and the link feed comes from the one `UpdatedSince` alias.
 
 **P0-7 - Token exchange.** PR `feat(auth): exchange a Discord user for a person token`.
 
