@@ -2103,7 +2103,7 @@
     }
   },
   "info": {
-    "description": "Backend of the skill-platform",
+    "description": "The platform's hub for central data, identity, permissions and domain rules",
     "title": "skillforge",
     "version": "0.5.0"
   },

@@ -18,9 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.models import PartyRelation, PartyRelationType
 
-# Relations that let a party act on behalf of another party (the relation's ``to_party``). One home,
-# so that the bot's delegation check and the API's reach cannot drift apart (ADR 0008).
-# Tutor authority runs through role/grants, not delegation, so ``TUTOR_OF`` is intentionally absent.
+# The relations that let a party act for another (the relation's ``to_party``): the ``guardian`` basis of reach and
+# the derived ``guardian`` role (``derive_roles_for`` in ``app/services/auth/roles.py``). ``TUTOR_OF`` is absent on
+# purpose: tutoring does not make a guardian.
 DELEGATION_RELATION_TYPES = (PartyRelationType.PARENT_OF, PartyRelationType.PAYS_FOR)
 
 

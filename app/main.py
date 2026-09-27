@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title="skillforge",
     version=get_project_version(),
-    description="Backend of the skill-platform",
+    description="The platform's hub for central data, identity, permissions and domain rules",
     lifespan=lifespan,
     generate_unique_id_function=operation_id,
     openapi_tags=OPENAPI_TAGS,

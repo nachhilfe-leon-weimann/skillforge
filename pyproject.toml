@@ -1,7 +1,7 @@
 [project]
 name = "skillforge"
 version = "0.5.0"
-description = "Backend of the skill-platform."
+description = "The platform's hub for central data, identity, permissions and domain rules."
 authors = [{ name = "Leon Weimann", email = "coding@leonweimann.de" }]
 readme = "README.md"
 requires-python = ">=3.14"
