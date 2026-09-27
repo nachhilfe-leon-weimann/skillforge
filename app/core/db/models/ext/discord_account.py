@@ -1,19 +1,19 @@
-from __future__ import annotations
-
 import uuid
-from typing import TYPE_CHECKING
 
 from sqlalchemy import BigInteger, ForeignKey, Index, true
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from ..shared import TimestampMixin
 from .base import ExtBase
 
-if TYPE_CHECKING:
-    from ..core.party import Party
-
 
 class DiscordAccount(TimestampMixin, ExtBase):
+    """A Discord link: which Discord user speaks for which person party.
+
+    Identity, not CRM data (ADR 0009): ``app/services/auth/discord_links.py`` is its only writer. Like a user
+    account (ADR 0008), it is no part of the party's ORM graph - ``party_id`` is the whole link.
+    """
+
     __tablename__ = "discord_account"
 
     discord_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
@@ -35,5 +35,3 @@ class DiscordAccount(TimestampMixin, ExtBase):
             postgresql_where=is_primary.is_(true()) & active.is_(true()),
         ),
     )
-
-    party: Mapped[Party] = relationship("Party", back_populates="discord_accounts")
