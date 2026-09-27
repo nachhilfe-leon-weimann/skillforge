@@ -7472,7 +7472,7 @@
     },
     "/api/v1/crm/persons/{party_id}/student": {
       "delete": {
-        "description": "Take the student role away. Relations of the person stay as they are.",
+        "description": "Take the student role away, and with it every `tutor_of` pointing to the person.\n\nThe tutors on the other side of those relations change too: their `updated_at` moves. Other relations stay.",
         "operationId": "crm_remove_student_role",
         "parameters": [
           {
@@ -7749,7 +7749,7 @@
     },
     "/api/v1/crm/persons/{party_id}/tutor": {
       "delete": {
-        "description": "Take the tutor role away. Relations of the person stay as they are.",
+        "description": "Take the tutor role away, and with it every `tutor_of` starting at the person.\n\nThe students on the other side of those relations change too: their `updated_at` moves. Other relations stay.",
         "operationId": "crm_remove_tutor_role",
         "parameters": [
           {

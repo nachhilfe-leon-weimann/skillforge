@@ -176,6 +176,28 @@ async def _remove_tutor_role(session: AsyncSession, seed: Seed) -> Party:
     return await roles.remove_tutor_role(session, seed.person_id)
 
 
+async def _remove_student_role_with_its_tutor_of(session: AsyncSession, seed: Seed) -> Party:
+    session.add_all([
+        Student(person_id=seed.person_id, preferred_meeting_tool=PreferredMeetingTool.DISCORD),
+        Tutor(person_id=seed.other_id),
+        PartyRelation(from_party_id=seed.other_id, to_party_id=seed.person_id, type=PartyRelationType.TUTOR_OF),
+    ])
+    await session.flush()
+    session.expunge_all()
+    return await roles.remove_student_role(session, seed.person_id)
+
+
+async def _remove_tutor_role_with_its_tutor_of(session: AsyncSession, seed: Seed) -> Party:
+    session.add_all([
+        Tutor(person_id=seed.person_id),
+        Student(person_id=seed.other_id, preferred_meeting_tool=PreferredMeetingTool.DISCORD),
+        PartyRelation(from_party_id=seed.person_id, to_party_id=seed.other_id, type=PartyRelationType.TUTOR_OF),
+    ])
+    await session.flush()
+    session.expunge_all()
+    return await roles.remove_tutor_role(session, seed.person_id)
+
+
 async def _first_contact_info_id(session: AsyncSession, party_id: uuid.UUID) -> uuid.UUID:
     contact_info_id = await session.scalar(
         select(ContactInfo.id).where(ContactInfo.party_id == party_id, ContactInfo.type == ContactInfoType.EMAIL)
@@ -257,6 +279,19 @@ WRITES = [
     Write(roles.put_tutor_role, _replace_tutor_role, touches=lambda seed: (seed.person_id,), label="[replace]"),
     Write(roles.remove_student_role, _remove_student_role, touches=lambda seed: (seed.person_id,)),
     Write(roles.remove_tutor_role, _remove_tutor_role, touches=lambda seed: (seed.person_id,)),
+    # Decision O of bot-decoupling: the tutor_of goes with the role, and its other side moves too.
+    Write(
+        roles.remove_student_role,
+        _remove_student_role_with_its_tutor_of,
+        touches=lambda seed: (seed.person_id, seed.other_id),
+        label="[with a tutor_of]",
+    ),
+    Write(
+        roles.remove_tutor_role,
+        _remove_tutor_role_with_its_tutor_of,
+        touches=lambda seed: (seed.person_id, seed.other_id),
+        label="[with a tutor_of]",
+    ),
     # A relation belongs to both aggregates.
     Write(relations.put_relation, _put_relation, touches=lambda seed: (seed.company_id, seed.person_id)),
     Write(relations.remove_relation, _remove_relation, touches=lambda seed: (seed.company_id, seed.person_id)),
