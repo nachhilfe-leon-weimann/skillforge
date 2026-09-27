@@ -7,12 +7,10 @@ from .contexts import (
     get_tutor_context_views,
 )
 from .errors import (
-    AccountLinkConflictError,
     BotServiceError,
     CommandEnvConflictError,
     CommandEnvNotFoundError,
     CommandEnvValidationError,
-    DiscordAccountNotFoundError,
     GroupMembershipNotFoundError,
     JobNotClaimedError,
     JobNotFailedError,
@@ -43,8 +41,6 @@ from .principals import get_principal_view, get_principal_views
 from .profile import load_party_for_discord_id
 from .provisioning import (
     add_user_to_group,
-    deactivate_discord_account,
-    link_discord_account,
     remove_user_from_group,
     upsert_discord_user,
 )
@@ -73,12 +69,10 @@ from .views import (
 )
 
 __all__ = [
-    "AccountLinkConflictError",
     "BotServiceError",
     "CommandEnvConflictError",
     "CommandEnvNotFoundError",
     "CommandEnvValidationError",
-    "DiscordAccountNotFoundError",
     "GroupMembershipNotFoundError",
     "JobKindCountsView",
     "JobNotClaimedError",
@@ -108,7 +102,6 @@ __all__ = [
     "commit_tutor_activation",
     "commit_tutor_deactivation",
     "complete_job",
-    "deactivate_discord_account",
     "delete_command_env",
     "enqueue_job",
     "fail_job",
@@ -121,7 +114,6 @@ __all__ = [
     "get_student_context_views",
     "get_tutor_context_view",
     "get_tutor_context_views",
-    "link_discord_account",
     "list_dead_lettered_jobs",
     "list_jobs",
     "list_operations",

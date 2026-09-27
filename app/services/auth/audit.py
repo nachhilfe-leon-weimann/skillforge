@@ -50,6 +50,10 @@ class AuditEventType(StrEnum):
     PASSWORD_SET = "password.set"
     SESSION_REVOKED = "session.revoked"
     SESSION_REUSE_DETECTED = "session.reuse_detected"
+    DISCORD_LINK_ADDED = "discord_link.added"
+    DISCORD_LINK_REACTIVATED = "discord_link.reactivated"
+    DISCORD_LINK_MOVED = "discord_link.moved"
+    DISCORD_LINK_REMOVED = "discord_link.removed"
 
 
 async def write_auth_audit_log(
@@ -90,6 +94,34 @@ async def write_user_account_audit_log(
         session,
         principal_type=PrincipalType.USER,
         principal_id=user_id,
+        event_type=event_type,
+        success=True,
+        detail=f"{what} by {format_actor(actor)}.",
+    )
+
+
+class AuditSubjectType(StrEnum):
+    """Subjects of an audit entry that are not principals: ``principal_type`` of their entries."""
+
+    DISCORD_USER = "discord_user"
+
+
+async def write_discord_link_audit_log(
+    session: AsyncSession,
+    discord_user_id: int,
+    event_type: AuditEventType,
+    what: str,
+    *,
+    actor: Actor,
+) -> None:
+    """Record what happened to a Discord link: the Discord user is the subject, ``detail`` reads ``<what> by <actor>.``
+
+    ``what`` names the party, both parties on a move, and never a secret.
+    """
+    await write_auth_audit_log(
+        session,
+        principal_type=AuditSubjectType.DISCORD_USER,
+        principal_id=str(discord_user_id),
         event_type=event_type,
         success=True,
         detail=f"{what} by {format_actor(actor)}.",

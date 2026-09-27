@@ -76,6 +76,13 @@ async def operator(session: AsyncSession) -> AsyncIterator[AsyncClient]:
         yield api_client
 
 
+@pytest.fixture
+async def link_admin(session: AsyncSession) -> AsyncIterator[AsyncClient]:
+    """An API client holding `auth:users:manage` and `auth:discord-links:read`: it links, unlinks and reads links."""
+    async with _api_client(session, Scope.AUTH_USERS_MANAGE, Scope.AUTH_DISCORD_LINKS_READ) as api_client:
+        yield api_client
+
+
 @asynccontextmanager
 async def _api_client(session: AsyncSession, *scopes: Scope) -> AsyncIterator[AsyncClient]:
     """An API client holding ``scopes`` whose requests run on ``session``.

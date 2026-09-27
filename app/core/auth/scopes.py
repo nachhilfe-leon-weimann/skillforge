@@ -28,6 +28,10 @@ class Scope(StrEnum):
         "Log people in on their behalf (password / refresh_token grants, redeem, revoke). Client-only: never part "
         "of a person's token.",
     )
+    AUTH_DISCORD_LINKS_READ = (
+        "auth:discord-links:read",
+        "Read Discord links - which Discord account belongs to which person party - including unlinked ones.",
+    )
     CRM_READ = "crm:read", "Read parties, relations and subjects."
     CRM_READ_OWN = "crm:read:own", "Read parties within the caller's reach."
     CRM_WRITE = "crm:write", "Create, change and delete parties, relations and subjects."

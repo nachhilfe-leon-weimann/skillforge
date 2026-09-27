@@ -58,7 +58,7 @@ class RelatedPartyNotFoundError(NotFoundError):
 
 
 class PartyInUseError(ConflictError):
-    """The party is linked to an external system or a Discord account and must not be orphaned there."""
+    """The party is linked to an external system or has an active Discord link and must not be orphaned there."""
 
     message = "Party is linked to external systems"
     # Raised with a client-ready message only: it names the kinds of links, never their identifiers.

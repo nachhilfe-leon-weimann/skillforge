@@ -10,19 +10,13 @@ from pydantic import SecretStr
 from app.core.auth import AuthSettings, Scope, create_application_access_token
 from app.core.auth.dependencies import get_auth_settings
 from app.core.db.dependencies import get_db_session
-from app.core.db.models import DiscordAccount, DiscordUser, DiscordUserPermissionGroup, MemberRole
+from app.core.db.models import DiscordUser, DiscordUserPermissionGroup, MemberRole
 from app.main import app
 from app.services.bot import (
-    AccountLinkConflictError,
-    DiscordAccountNotFoundError,
     GroupMembershipNotFoundError,
-    PartyNotFoundError,
     PermissionGroupNotFoundError,
     PrincipalNotFoundError,
 )
-
-PARTY_ID = UUID("11111111-1111-1111-1111-111111111111")
-
 
 # --- upsert user ------------------------------------------------------------
 
@@ -68,104 +62,6 @@ async def test_upsert_user_rejects_empty_nick():
         )
 
     assert response.status_code == 422
-
-
-# --- link account -----------------------------------------------------------
-
-
-async def test_link_account_returns_link(monkeypatch):
-    captured: dict[str, object] = {}
-
-    async def fake_link(session, **kwargs):
-        captured.update(kwargs)
-        return DiscordAccount(discord_id=42, party_id=PARTY_ID, is_primary=True, active=True)
-
-    _patch(monkeypatch, "link_discord_account", fake_link)
-
-    async with _client() as client:
-        response = await client.put(
-            "/api/v1/bot/users/42/account",
-            json={"party_id": str(PARTY_ID), "is_primary": True, "active": True},
-            headers=_auth_headers(Scope.BOT_WRITE),
-        )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "discord_id": 42,
-        "party_id": str(PARTY_ID),
-        "is_primary": True,
-        "active": True,
-    }
-    assert captured == {"discord_id": 42, "party_id": PARTY_ID, "is_primary": True, "active": True}
-
-
-async def test_link_account_requires_bot_write_scope():
-    async with _client() as client:
-        response = await client.put(
-            "/api/v1/bot/users/42/account",
-            json={"party_id": str(PARTY_ID)},
-            headers=_auth_headers(Scope.BOT_READ),
-        )
-
-    assert response.status_code == 403
-
-
-async def test_link_account_returns_404_for_missing_party(monkeypatch):
-    _patch(monkeypatch, "link_discord_account", _raises(PartyNotFoundError()))
-
-    async with _client() as client:
-        response = await client.put(
-            "/api/v1/bot/users/42/account",
-            json={"party_id": str(PARTY_ID)},
-            headers=_auth_headers(Scope.BOT_WRITE),
-        )
-
-    assert response.status_code == 404
-
-
-async def test_link_account_returns_409_for_primary_conflict(monkeypatch):
-    _patch(monkeypatch, "link_discord_account", _raises(AccountLinkConflictError()))
-
-    async with _client() as client:
-        response = await client.put(
-            "/api/v1/bot/users/42/account",
-            json={"party_id": str(PARTY_ID), "is_primary": True},
-            headers=_auth_headers(Scope.BOT_WRITE),
-        )
-
-    assert response.status_code == 409
-
-
-# --- deactivate account -----------------------------------------------------
-
-
-async def test_deactivate_account_returns_deactivated(monkeypatch):
-    async def fake_deactivate(session, **kwargs):
-        return DiscordAccount(discord_id=42, party_id=PARTY_ID, is_primary=False, active=False)
-
-    _patch(monkeypatch, "deactivate_discord_account", fake_deactivate)
-
-    async with _client() as client:
-        response = await client.delete("/api/v1/bot/users/42/account", headers=_auth_headers(Scope.BOT_WRITE))
-
-    assert response.status_code == 200
-    assert response.json() == {"discord_id": 42, "party_id": str(PARTY_ID), "is_primary": False, "active": False}
-
-
-async def test_deactivate_account_requires_bot_write_scope():
-    async with _client() as client:
-        response = await client.delete("/api/v1/bot/users/42/account", headers=_auth_headers(Scope.BOT_READ))
-
-    assert response.status_code == 403
-
-
-async def test_deactivate_account_returns_404(monkeypatch):
-    _patch(monkeypatch, "deactivate_discord_account", _raises(DiscordAccountNotFoundError()))
-
-    async with _client() as client:
-        response = await client.delete("/api/v1/bot/users/42/account", headers=_auth_headers(Scope.BOT_WRITE))
-
-    assert response.status_code == 404
 
 
 # --- group membership -------------------------------------------------------

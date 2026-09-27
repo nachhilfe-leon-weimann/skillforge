@@ -6,23 +6,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.common import error_responses
 from app.core.db.dependencies import get_db_session
 from app.services.bot import (
-    AccountLinkConflictError,
-    DiscordAccountNotFoundError,
     GroupMembershipNotFoundError,
-    PartyNotFoundError,
     PermissionGroupNotFoundError,
     PrincipalNotFoundError,
     add_user_to_group,
-    deactivate_discord_account,
-    link_discord_account,
     remove_user_from_group,
     upsert_discord_user,
 )
 
 from .dependencies import BotWrite
 from .schemas import (
-    DiscordAccountLinkRequest,
-    DiscordAccountLinkResponse,
     DiscordUserResponse,
     DiscordUserUpsertRequest,
     GroupMembershipResponse,
@@ -54,52 +47,6 @@ async def upsert_discord_user_endpoint(
         active=request.active,
     )
     return DiscordUserResponse.from_model(user)
-
-
-@router.put(
-    "/{discord_id}/account",
-    response_model=DiscordAccountLinkResponse,
-    responses=error_responses(PartyNotFoundError, AccountLinkConflictError),
-)
-async def link_discord_account_endpoint(
-    discord_id: DiscordId,
-    request: DiscordAccountLinkRequest,
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-    _: BotWrite,
-) -> DiscordAccountLinkResponse:
-    """Link a Discord account to an existing party.
-
-    The party must already exist (the CRM owns party creation); linking to an unknown party returns
-    404. Promoting an account to primary demotes the party's current primary account in the same
-    transaction.
-    """
-    account = await link_discord_account(
-        session,
-        discord_id=discord_id,
-        party_id=request.party_id,
-        is_primary=request.is_primary,
-        active=request.active,
-    )
-    return DiscordAccountLinkResponse.from_model(account)
-
-
-@router.delete(
-    "/{discord_id}/account",
-    response_model=DiscordAccountLinkResponse,
-    responses=error_responses(DiscordAccountNotFoundError),
-)
-async def deactivate_discord_account_endpoint(
-    discord_id: DiscordId,
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-    _: BotWrite,
-) -> DiscordAccountLinkResponse:
-    """Deactivate (unlink) a Discord account without deleting it.
-
-    Sets `active` to false and clears `is_primary`, freeing the party's primary slot while keeping
-    the row for history. Re-linking via the `PUT` endpoint reactivates it.
-    """
-    account = await deactivate_discord_account(session, discord_id=discord_id)
-    return DiscordAccountLinkResponse.from_model(account)
 
 
 @router.put(

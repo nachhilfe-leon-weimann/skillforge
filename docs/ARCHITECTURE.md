@@ -165,9 +165,10 @@ against Discord state. The full design is in the [CRM API spec](specs/crm-api.md
 - **Personal data stays out of logs.** Validation and domain messages never repeat a name or a
   contact value, text Postgres cannot store is rejected by the request models
   (`require_storable_text`), and the engine runs with `hide_parameters=True`.
-- **Deleting a party** is refused (`party_in_use`) while a Discord account or an `ext` link exists:
-  all foreign keys into `core.party` cascade, so the guard - taken under a row lock - is what keeps
-  external systems from being orphaned. The CRM reads the `ext` tables there and nowhere else.
+- **Deleting a party** is refused (`party_in_use`) while an active Discord link or another `ext` link
+  exists - a deactivated Discord link goes with the party: all foreign keys into `core.party` cascade,
+  so the guard - taken under a row lock - is what keeps external systems from being orphaned. The CRM
+  reads the `ext` tables there and nowhere else.
 - **Commit before the response.** The CRM routes use `DBSession`, whose `scope="function"` ends the
   request transaction before the response is sent: a failing commit is a 500, not a 201.
 
@@ -222,6 +223,10 @@ OAuth2 error. `POST /auth/revoke` logs out.
   refresh and expires after `refresh_token_expire_days`; a rotated-out token ends the session unless it
   arrives within `REFRESH_REUSE_GRACE`. Wrong passwords lock the login per account
   (`login_lockout_threshold`, `login_lockout_max_minutes`). Argon2 runs off the event loop.
+- **Discord links** (`app/services/auth/discord_links.py`, `/api/v1/auth/discord-links`): which Discord account
+  speaks for which person party. The one writer of `ext.discord_account`; admins write, the bot reads the feed.
+  The request log redacts the Discord user ID in these paths (`REDACTED_PATH_SEGMENTS` in
+  `app/core/logging/middleware.py`).
 - **Never** in a log or an audit row: a password, a refresh or action token, an e-mail address.
 
 `just bootstrap-skillbot`, `just bootstrap-client` and `just bootstrap-admin`
@@ -270,6 +275,47 @@ a stale container is a red workflow. Dokploy runs the repo's
 [`compose.yml`](../compose.yml), whose `image:` tags the release commit pins to `vX.Y.Z`: `main` records
 what prod runs. There is no automatic rollback - an app rollback would not roll back an Alembic migration;
 the manual procedure is in the [README](../README.md#rolling-back).
+
+## Change signals
+
+SkillForge pushes nothing ([ADR 0009](decisions/0009-bot-owns-its-discord-workflows.md)): a frontend asks what
+changed and brings its own state in line. The feeds are the party list (`GET /api/v1/crm/parties`, from P0-6 of
+[`bot-decoupling.md`](specs/bot-decoupling.md) its items carry `updated_at`) and the Discord link feed
+(`GET /api/v1/auth/discord-links`, which returns unlinked rows too, ordered by Discord user ID). Every
+`updated_since` parameter is the shared `UpdatedSince` of `app/api/v1/common/changes.py`, which points here.
+
+1. **Signals, not events.** An item means "look again" and carries current state. Bring the whole current state of
+   what it names in line; never apply it as a delta. Reconcilers are idempotent.
+2. **`updated_at` is the start of the writing transaction.** A change can appear behind newer stamps, and an item's
+   stamp can move backwards; compare two stamps of one item only for equality.
+3. **`updated_since` is inclusive.**
+4. **One cursor per feed:** the newest `updated_at` seen. Ask from `cursor - overlap` and keep `updated_since` fixed
+   while paging. An empty page leaves the cursor alone; an error (5xx, timeout) never advances it. Without a cursor,
+   start with a full comparison.
+5. **Overlap:** at least the longest writing transaction plus one poll pass, 5 minutes by default. SkillForge keeps
+   writing transactions short; a change delayed longer is repaired by the next full comparison. A data migration
+   that writes parties is announced, so consumers run a full comparison afterwards.
+6. **Filter only by what never changes** - `type=person`, never `role`, `subject_id` or `q`: a party that stops
+   matching a filter drops out silently.
+7. **Pages are not a snapshot.** Stop at a page shorter than `limit`, never by `total`. A full first page: page to
+   the end, then run a full comparison.
+8. **Full comparison** at start, after a full first page and periodically (default every 30 minutes): first the link
+   feed without `updated_since`; then `GET /crm/parties?type=person`, handling every item whose (`id`, `updated_at`)
+   differs from the stored one like a feed item; then `GET /crm/parties/{id}` for every stored party that did not
+   appear - `404` means deleted, `200` means skipped (bring it in line). A 404 is conclusive only with the
+   unrestricted application `crm:read`.
+9. **Relations.** For each changed person read `GET /crm/parties/{id}/relations?type=tutor_of`, paged to a short
+   page, and re-evaluate every pair touching that person.
+10. **Deletions.** A deleted party is never reported; every party related to it is moved. A party with an active
+    Discord link cannot be deleted. The full comparison catches the rest.
+11. **Not in any feed:** subject titles (compare `GET /crm/subjects` in full if shown), account state and the admin
+    role - the exchange and `GET /auth/me` decide those per command. Disabling an account off-boards nobody from
+    Discord; removing the role, the `TUTOR_OF` or the link does.
+12. **Nothing flows back.** The sync only reads. CRM changes from commands go through the CRM routes with the
+    person's token.
+
+Consumer defaults (skillbot's configuration): poll every 60 s, overlap 5 minutes, full comparison every 30 minutes,
+skip an item whose (`id`, `updated_at`) equals the stored one.
 
 ## Roadmap
 

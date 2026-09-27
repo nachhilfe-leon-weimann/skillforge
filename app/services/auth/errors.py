@@ -113,3 +113,35 @@ class WeakPasswordError(UserAccountManagementError, DomainValidationError):
     """Raised when a password violates the policy in ``passwords.py``."""
 
     message = f"Password must be text of {MIN_PASSWORD_LENGTH} to {MAX_PASSWORD_LENGTH} characters"
+
+
+class DiscordLinkManagementError(ValueError):
+    """Raised when managing a Discord link cannot be completed.
+
+    The catalog below is closed (bot-decoupling spec): a requirement that seems to need another class or
+    ``code`` is a reason to stop and ask, not to add one.
+    """
+
+
+class DiscordLinkNotFoundError(DiscordLinkManagementError, NotFoundError):
+    """Raised when no link, active or not, exists for the Discord user."""
+
+    message = "Discord link not found"
+
+
+class DiscordAccountAlreadyLinkedError(DiscordLinkManagementError, ConflictError):
+    """Raised when the Discord user is actively linked to another party: unlink it there first."""
+
+    message = "The Discord account is linked to another party"
+
+
+class UnknownLinkPartyError(DiscordLinkManagementError, DomainValidationError):
+    """Raised when the party a link names does not exist: a body reference, hence 422."""
+
+    message = "Unknown party"
+
+
+class LinkPartyNotAPersonError(DiscordLinkManagementError, DomainValidationError):
+    """Raised when the party a link names is a company."""
+
+    message = "A Discord link belongs to a person, not to a company"

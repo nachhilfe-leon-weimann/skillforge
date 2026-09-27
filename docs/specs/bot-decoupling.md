@@ -309,7 +309,7 @@ def upgrade() -> None:
 
 ### The pull contract
 
-P0-2 writes it into [`ARCHITECTURE.md`](../ARCHITECTURE.md) under "Change signals" - its one living home; this spec,
+It lives in [`ARCHITECTURE.md`](../ARCHITECTURE.md) under "Change signals" - its one living home; this spec,
 `crm-api.md`, skillbot's docs and the `UpdatedSince` description link to it. It covers every SkillForge feed: the
 party list and the Discord link feed.
 
@@ -644,27 +644,27 @@ by 0009` - and the decisions README (rows, new row 0009, the status value `Amend
   `test_crm_party_delete_api.py::test_an_inactive_discord_account_still_guards_the_party` becomes "a deactivated
   Discord link goes with its party". The seven link tests of `tests/api/test_bot_users_endpoint.py` go.
 - _Acceptance criteria:_
-  - [ ] A `PUT` with a person party answers 200 with an active link; a repeat answers the same body, leaves
+  - [x] A `PUT` with a person party answers 200 with an active link; a repeat answers the same body, leaves
         `updated_at` unchanged and writes no audit row.
-  - [ ] An unknown party is 422 `unknown_link_party`, a company 422 `link_party_not_a_person`, an ID active
+  - [x] An unknown party is 422 `unknown_link_party`, a company 422 `link_party_not_a_person`, an ID active
         elsewhere 409 `discord_account_already_linked` with the row unchanged.
-  - [ ] A person may hold several active links; `is_primary` is `false` after every write.
-  - [ ] An inactive link is reactivated (same party) or moved (other party), each with its own event; a move names
+  - [x] A person may hold several active links; `is_primary` is `false` after every write.
+  - [x] An inactive link is reactivated (same party) or moved (other party), each with its own event; a move names
         both parties.
-  - [ ] `DELETE` of an active link answers 204, keeps the row with `active = false` and writes `discord_link.removed`;
+  - [x] `DELETE` of an active link answers 204, keeps the row with `active = false` and writes `discord_link.removed`;
         of an inactive one 204 and nothing; of an unknown one 404.
-  - [ ] Every change writes exactly one audit row with `principal_type = "discord_user"`; no link write changes
+  - [x] Every change writes exactly one audit row with `principal_type = "discord_user"`; no link write changes
         `core.party.updated_at`.
-  - [ ] A Discord ID is a string in `openapi.json`; `-1`, `+5`, `2**63` and `1e3` are 422 in path and body, never 500.
-  - [ ] The feed pages `Page[DiscordLink]` ordered by `discord_id`, includes inactive links, keeps
+  - [x] A Discord ID is a string in `openapi.json`; `-1`, `+5`, `2**63` and `1e3` are 422 in path and body, never 500.
+  - [x] The feed pages `Page[DiscordLink]` ordered by `discord_id`, includes inactive links, keeps
         `updated_at >= updated_since`, filters by `party_id` and `active`.
-  - [ ] Reads need `auth:discord-links:read`, writes `auth:users:manage`; the scope is in the admin role and
+  - [x] Reads need `auth:discord-links:read`, writes `auth:users:manage`; the scope is in the admin role and
         grantable in both modes.
-  - [ ] `delete_party` answers 409 `party_in_use` naming `discord_account` while an active link exists, and 204 with
+  - [x] `delete_party` answers 409 `party_in_use` naming `discord_account` while an active link exists, and 204 with
         only inactive links, which cascade.
-  - [ ] A re-activation racing `delete_party` never ends in a 200 whose link then vanishes; two `PUT`s of one ID for
+  - [x] A re-activation racing `delete_party` never ends in a 200 whose link then vanishes; two `PUT`s of one ID for
         two parties end in one 200 and one 409.
-  - [ ] The two bot link routes, their schemas and the two bot errors are gone; `discord_links.py` is the only
+  - [x] The two bot link routes, their schemas and the two bot errors are gone; `discord_links.py` is the only
         writer.
 
 **P0-3 - Housekeeping worker.** PR `feat(workers): delete expired sessions and one-time tokens in a housekeeping

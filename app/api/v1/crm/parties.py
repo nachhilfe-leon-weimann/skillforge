@@ -39,7 +39,7 @@ async def get_party(party_id: VisibleParty, session: DBSession) -> PartyDetail:
 async def delete_party(party_id: PartyId, session: DBSession) -> None:
     """Delete a party together with its roles, contact infos and relations.
 
-    Refused while a Discord account or an external system (sevDesk, Clockodo, Microsoft) is linked to
-    the party: remove those links first, in the system that owns them.
+    Refused while an active Discord link or an external system (sevDesk, Clockodo, Microsoft) holds the party:
+    remove those links first, in the system that owns them. A deactivated Discord link goes with the party.
     """
     await parties_service.delete_party(session, party_id)

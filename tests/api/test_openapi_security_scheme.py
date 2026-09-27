@@ -21,6 +21,8 @@ SCHEME_NAME = "OAuth2"
 # the same PR, with a comment naming the slice. Operations added after the rename are not pinned.
 # P0-7 (own data) removed `GET /api/v1/crm/parties` and `GET /api/v1/crm/parties/{party_id}`: they accept
 # `crm:read` or `crm:read:own` as two alternative requirements.
+# P0-2 of docs/specs/bot-decoupling.md removed the two bot link routes: Discord links moved to
+# /api/v1/auth/discord-links.
 SCOPES_AT_THE_RENAME: dict[tuple[str, str], list[str]] = {
     ("GET", "/api/v1/auth/clients"): ["auth:clients:manage"],
     ("POST", "/api/v1/auth/clients"): ["auth:clients:manage"],
@@ -63,8 +65,6 @@ SCOPES_AT_THE_RENAME: dict[tuple[str, str], list[str]] = {
     ("POST", "/api/v1/bot/tutors/{guild_id}/{tutor_discord_id}/deactivate/prepare"): ["bot:write"],
     ("POST", "/api/v1/bot/tutors/{guild_id}/{tutor_discord_id}/deactivate/{operation_id}/commit"): ["bot:write"],
     ("PUT", "/api/v1/bot/users/{discord_id}"): ["bot:write"],
-    ("DELETE", "/api/v1/bot/users/{discord_id}/account"): ["bot:write"],
-    ("PUT", "/api/v1/bot/users/{discord_id}/account"): ["bot:write"],
     ("DELETE", "/api/v1/bot/users/{discord_id}/groups/{group_key}"): ["bot:write"],
     ("PUT", "/api/v1/bot/users/{discord_id}/groups/{group_key}"): ["bot:write"],
     ("POST", "/api/v1/crm/companies"): ["crm:write"],

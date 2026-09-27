@@ -1,5 +1,6 @@
 from app.core.db.dependencies import DBSession
 
+from .changes import UpdatedSince
 from .errors import STATUS_BY_ERROR, ApiError, register_exception_handlers, status_for
 from .openapi import OPENAPI_TAGS, customize_openapi, operation_id
 from .pagination import Page, PageParams, PageQuery
@@ -17,6 +18,7 @@ __all__ = [
     "Page",
     "PageParams",
     "PageQuery",
+    "UpdatedSince",
     "customize_openapi",
     "error_responses",
     "operation_id",

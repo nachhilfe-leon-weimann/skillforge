@@ -52,18 +52,6 @@ class CommandEnvConflictError(BotServiceError, ConflictError):
     message = "Owner already owns a command env of this kind in the guild"
 
 
-class AccountLinkConflictError(BotServiceError, ConflictError):
-    """Linking would violate the one-primary-active-account-per-party invariant."""
-
-    message = "Another primary account already exists for this party"
-
-
-class DiscordAccountNotFoundError(BotServiceError, NotFoundError):
-    """No Discord account is linked for the requested discord_id."""
-
-    message = "Discord account not found"
-
-
 class PermissionGroupNotFoundError(BotServiceError, NotFoundError):
     """No permission group exists for the requested group_key."""
 

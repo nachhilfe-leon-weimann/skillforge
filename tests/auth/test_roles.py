@@ -31,6 +31,7 @@ def test_admin_role_scopes_match_the_spec_and_exclude_bot_write():
         Scope.CRM_WRITE,
         Scope.AUTH_USERS_MANAGE,
         Scope.AUTH_CLIENTS_MANAGE,
+        Scope.AUTH_DISCORD_LINKS_READ,
         Scope.BOT_READ,
     }
 
@@ -47,6 +48,10 @@ def test_no_role_carries_client_only_scopes():
     """Client-only scopes never reach a person's token: they are neither in the scopes every user
     holds nor in any role's scopes."""
     assert not CLIENT_ONLY_SCOPES & scopes_for(Role)
+
+
+def test_reading_discord_links_is_grantable_in_both_modes():
+    assert Scope.AUTH_DISCORD_LINKS_READ not in CLIENT_ONLY_SCOPES
 
 
 def test_stored_roles_are_the_values_of_the_stored_role_enum():

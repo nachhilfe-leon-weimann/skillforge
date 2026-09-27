@@ -86,12 +86,16 @@ async def test_delete_names_every_link_kind_in_a_fixed_order_without_their_ident
     assert "4711" not in response.text and "sev-1" not in response.text
 
 
-async def test_an_inactive_discord_account_still_guards_the_party(client: AsyncClient, session: AsyncSession):
+async def test_a_deactivated_discord_link_goes_with_its_party(client: AsyncClient, session: AsyncSession):
     party_id = uuid.UUID((await _person(client))["id"])
     session.add(DiscordAccount(discord_id=4711, party_id=party_id, active=False, is_primary=False))
     await session.flush()
 
-    assert (await client.delete(f"/parties/{party_id}")).status_code == 409
+    assert (await client.delete(f"/parties/{party_id}")).status_code == 204
+    remaining = await session.scalar(
+        select(DiscordAccount).where(DiscordAccount.discord_id == 4711).execution_options(populate_existing=True)
+    )
+    assert remaining is None
 
 
 async def test_a_link_of_another_party_does_not_guard_this_one(client: AsyncClient, session: AsyncSession):

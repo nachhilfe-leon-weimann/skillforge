@@ -19,7 +19,6 @@ from app.core.db.models import (
 
 if TYPE_CHECKING:
     from app.core.db.models import (
-        DiscordAccount,
         DiscordUser,
         DiscordUserPermissionGroup,
         Job,
@@ -276,25 +275,6 @@ class DiscordUserResponse(BaseModel):
     @classmethod
     def from_model(cls, user: DiscordUser) -> DiscordUserResponse:
         return cls.model_validate(user)
-
-
-class DiscordAccountLinkRequest(BaseModel):
-    party_id: UUID
-    is_primary: bool = False
-    active: bool = True
-
-
-class DiscordAccountLinkResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    discord_id: int
-    party_id: UUID
-    is_primary: bool
-    active: bool
-
-    @classmethod
-    def from_model(cls, account: DiscordAccount) -> DiscordAccountLinkResponse:
-        return cls.model_validate(account)
 
 
 class GroupMembershipResponse(BaseModel):

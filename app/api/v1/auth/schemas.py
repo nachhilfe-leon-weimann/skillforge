@@ -6,13 +6,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.experimental.missing_sentinel import MISSING
 
 from app.api.v1.common import ApiModel
-from app.core.auth.inputs import LoginEmail
+from app.core.auth.inputs import DiscordUserId, LoginEmail
 from app.core.auth.principal import Principal, UserPrincipal
 from app.core.auth.roles import Role
 from app.core.auth.tokens import CreatedAccessToken
 from app.core.db.models import (
     ApplicationClient,
     ApplicationClientStatus,
+    DiscordAccount,
     GrantMode,
     UserAccountRoleName,
     UserAccountStatus,
@@ -291,3 +292,35 @@ class RefreshTokenRevokeRequest(ApiModel):
     refresh_token: str = Field(examples=["sf_rt_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"])
     """A refresh token of the session - the current one or the one it replaced. A token of another client's
     session, or one SkillForge does not know, ends nothing and is answered the same."""
+
+
+class DiscordLinkRequest(ApiModel):
+    """Body of `PUT /discord-links/{discord_user_id}`."""
+
+    party_id: UUID = Field(examples=["7d9f4f3e-1c2b-4a5d-9e8f-0a1b2c3d4e5f"])
+    """ID of the person party the Discord account speaks for. A company is refused; the party needs no user account."""
+
+
+class DiscordLink(ApiModel):
+    """Which Discord account speaks for which person party - identity, written by admins only."""
+
+    discord_user_id: DiscordUserId
+    """The Discord user's snowflake, as a decimal string."""
+    party_id: UUID
+    """ID of the person party the Discord account speaks for."""
+    active: bool
+    """`false` once unlinked. The row stays as history, and a `PUT` links it again."""
+    created_at: datetime
+    """When the Discord account was first linked; a move to another party keeps it."""
+    updated_at: datetime
+    """When the link was last linked, moved or unlinked - what `updated_since` compares."""
+
+    @classmethod
+    def from_model(cls, link: DiscordAccount) -> Self:
+        return cls(
+            discord_user_id=link.discord_id,
+            party_id=link.party_id,
+            active=link.active,
+            created_at=link.created_at,
+            updated_at=link.updated_at,
+        )

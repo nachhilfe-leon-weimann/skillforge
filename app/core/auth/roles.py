@@ -31,6 +31,7 @@ ROLE_SCOPES: dict[Role, frozenset[Scope]] = {
         Scope.CRM_WRITE,
         Scope.AUTH_USERS_MANAGE,
         Scope.AUTH_CLIENTS_MANAGE,
+        Scope.AUTH_DISCORD_LINKS_READ,
         Scope.BOT_READ,
     }),
 }

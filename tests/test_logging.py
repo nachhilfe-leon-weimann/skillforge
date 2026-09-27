@@ -4,6 +4,7 @@ from typing import Annotated, Any
 from uuid import uuid4
 
 import httpx
+import pytest
 from fastapi import FastAPI, Response
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
@@ -20,6 +21,8 @@ from app.core.auth import (
 )
 from app.core.auth.dependencies import get_auth_settings
 from app.core.logging import LogFormat, LoggingSettings, LogLevel, configure_logging, register_request_logging
+from app.core.logging.middleware import _logged_path
+from app.main import app as real_app
 
 BotWritePrincipal = Annotated[Principal, require_scopes("bot:write")]
 AccountSelfPrincipal = Annotated[Principal, require_scopes("account:self")]
@@ -124,6 +127,119 @@ async def test_request_logging_identifies_the_person_behind_a_request(capsys):
         assert event["user_id"] == str(user_id)
         assert event["party_id"] == str(party_id)
         assert str(session_id) not in json.dumps(event)
+
+
+async def test_request_logging_redacts_a_discord_user_id_from_the_path(capsys):
+    """A Discord user ID is identity data: it appears in audit rows only, never in the request log
+    (bot-decoupling spec, "Security rules")."""
+    configure_logging(LoggingSettings(level=LogLevel.WARNING, format=LogFormat.JSON))
+    capsys.readouterr()
+
+    response = await _request(real_app, "GET", "/api/v1/auth/discord-links/123456789012345678")
+
+    output = capsys.readouterr().out
+    event = json.loads(output)
+
+    assert response.status_code == 401
+    assert event["path"] == "/api/v1/auth/discord-links/{discord_user_id}"
+    assert "123456789012345678" not in json.dumps(event)
+
+
+async def test_request_logging_keeps_an_ordinary_routes_raw_path(capsys):
+    """The redaction is scoped to the named path parameters: an ordinary route still logs its concrete path."""
+    configure_logging(LoggingSettings(level=LogLevel.WARNING, format=LogFormat.JSON))
+    capsys.readouterr()
+
+    response = await _request(real_app, "GET", "/api/v1/auth/me")
+
+    output = capsys.readouterr().out
+    event = json.loads(output)
+
+    assert response.status_code == 401
+    assert event["path"] == "/api/v1/auth/me"
+
+
+async def test_request_logging_redacts_a_discord_user_id_behind_a_trailing_slash_redirect(capsys):
+    """`redirect_slashes` matches against a copy of the scope, so routing never populates `path_params` for the
+    redirect response - the redaction must not depend on routing state to still catch the snowflake here."""
+    configure_logging(LoggingSettings(level=LogLevel.INFO, format=LogFormat.JSON))
+    capsys.readouterr()
+
+    response = await _request(real_app, "GET", "/api/v1/auth/discord-links/123456789012345678/")
+
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith("{")]
+    requests = [event for event in events if event["event"].startswith("http_request_")]
+
+    assert response.status_code == 307
+    assert len(requests) == 1
+    assert "123456789012345678" not in json.dumps(requests[0])
+
+
+async def test_request_logging_redacts_a_discord_user_id_on_an_unmatched_sub_path(capsys):
+    """A 404 sub-path beneath the Discord user ID never reaches routing either - same requirement as above."""
+    configure_logging(LoggingSettings(level=LogLevel.WARNING, format=LogFormat.JSON))
+    capsys.readouterr()
+
+    response = await _request(real_app, "GET", "/api/v1/auth/discord-links/123456789012345678/x")
+
+    output = capsys.readouterr().out
+    event = json.loads(output)
+
+    assert response.status_code == 404
+    assert "123456789012345678" not in json.dumps(event)
+
+
+async def test_request_logging_redacts_a_short_numeric_discord_user_id_without_touching_other_segments(capsys):
+    """A substring replacement would also turn `/v1/` into `/v{discord_user_id}/`; the segment-based
+    redaction must leave every segment but the one right after `discord-links` alone."""
+    configure_logging(LoggingSettings(level=LogLevel.WARNING, format=LogFormat.JSON))
+    capsys.readouterr()
+
+    response = await _request(real_app, "GET", "/api/v1/auth/discord-links/1")
+
+    output = capsys.readouterr().out
+    event = json.loads(output)
+
+    assert response.status_code == 401
+    assert event["path"] == "/api/v1/auth/discord-links/{discord_user_id}"
+
+
+async def test_request_logging_redacts_a_discord_user_id_behind_a_doubled_slash(capsys):
+    """An empty segment between `discord-links` and the ID must not break the adjacency check - the ID still
+    needs redacting whether or not routing ever sees it as a neighbour of `discord-links`."""
+    configure_logging(LoggingSettings(level=LogLevel.WARNING, format=LogFormat.JSON))
+    capsys.readouterr()
+
+    response = await _request(real_app, "GET", "/api/v1/auth/discord-links//123456789012345678")
+
+    output = capsys.readouterr().out
+    event = json.loads(output)
+
+    assert response.status_code == 404
+    assert event["path"] == "/api/v1/auth/discord-links//{discord_user_id}"
+    assert "123456789012345678" not in json.dumps(event)
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("/discord-links", "/discord-links"),
+        ("/discord-links/", "/discord-links/"),
+        ("/discord-links/123456789012345678", "/discord-links/{discord_user_id}"),
+        ("/discord-links/123456789012345678/", "/discord-links/{discord_user_id}/"),
+        ("/discord-links/123456789012345678/x", "/discord-links/{discord_user_id}/x"),
+        ("/discord-links//123456789012345678", "/discord-links//{discord_user_id}"),
+        ("/discord-links///123456789012345678", "/discord-links///{discord_user_id}"),
+        ("/api/v1/auth/discord-links/1", "/api/v1/auth/discord-links/{discord_user_id}"),
+        ("/api/v1/auth/discord-links/redeem", "/api/v1/auth/discord-links/redeem"),
+        ("/api/v1/auth/discord-links/-1", "/api/v1/auth/discord-links/{discord_user_id}"),
+        ("/api/v1/auth/me", "/api/v1/auth/me"),
+        ("/", "/"),
+        ("", ""),
+    ],
+)
+def test_logged_path_redacts_the_segment_after_a_redacted_key(path: str, expected: str):
+    assert _logged_path(path) == expected
 
 
 async def test_request_logging_stays_silent_for_healthy_probe(capsys):

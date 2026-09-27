@@ -982,59 +982,6 @@
         "title": "DependencyName",
         "type": "string"
       },
-      "DiscordAccountLinkRequest": {
-        "properties": {
-          "active": {
-            "default": true,
-            "title": "Active",
-            "type": "boolean"
-          },
-          "is_primary": {
-            "default": false,
-            "title": "Is Primary",
-            "type": "boolean"
-          },
-          "party_id": {
-            "format": "uuid",
-            "title": "Party Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "party_id"
-        ],
-        "title": "DiscordAccountLinkRequest",
-        "type": "object"
-      },
-      "DiscordAccountLinkResponse": {
-        "properties": {
-          "active": {
-            "title": "Active",
-            "type": "boolean"
-          },
-          "discord_id": {
-            "title": "Discord Id",
-            "type": "integer"
-          },
-          "is_primary": {
-            "title": "Is Primary",
-            "type": "boolean"
-          },
-          "party_id": {
-            "format": "uuid",
-            "title": "Party Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "discord_id",
-          "party_id",
-          "is_primary",
-          "active"
-        ],
-        "title": "DiscordAccountLinkResponse",
-        "type": "object"
-      },
       "DiscordAccountProfile": {
         "properties": {
           "active": {
@@ -1076,6 +1023,68 @@
           "discord_ids"
         ],
         "title": "DiscordIdBatchRequest",
+        "type": "object"
+      },
+      "DiscordLink": {
+        "description": "Which Discord account speaks for which person party - identity, written by admins only.",
+        "properties": {
+          "active": {
+            "description": "`false` once unlinked. The row stays as history, and a `PUT` links it again.",
+            "title": "Active",
+            "type": "boolean"
+          },
+          "created_at": {
+            "description": "When the Discord account was first linked; a move to another party keeps it.",
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "discord_user_id": {
+            "description": "The Discord user's snowflake, as a decimal string.",
+            "pattern": "^[0-9]{1,19}$",
+            "title": "Discord User Id",
+            "type": "string"
+          },
+          "party_id": {
+            "description": "ID of the person party the Discord account speaks for.",
+            "format": "uuid",
+            "title": "Party Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When the link was last linked, moved or unlinked - what `updated_since` compares.",
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "discord_user_id",
+          "party_id",
+          "active",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DiscordLink",
+        "type": "object"
+      },
+      "DiscordLinkRequest": {
+        "description": "Body of `PUT /discord-links/{discord_user_id}`.",
+        "properties": {
+          "party_id": {
+            "description": "ID of the person party the Discord account speaks for. A company is refused; the party needs no user account.",
+            "examples": [
+              "7d9f4f3e-1c2b-4a5d-9e8f-0a1b2c3d4e5f"
+            ],
+            "format": "uuid",
+            "title": "Party Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "party_id"
+        ],
+        "title": "DiscordLinkRequest",
         "type": "object"
       },
       "DiscordUserResponse": {
@@ -2245,6 +2254,41 @@
           "offset"
         ],
         "title": "Page[ApplicationClientResponse]",
+        "type": "object"
+      },
+      "Page_DiscordLink_": {
+        "properties": {
+          "items": {
+            "description": "The items of this page, in the order of the list.",
+            "items": {
+              "$ref": "#/components/schemas/DiscordLink"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "description": "The page size that was applied.",
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "description": "Number of items skipped before this page.",
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Number of items matching the request across all pages.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[DiscordLink]",
         "type": "object"
       },
       "Page_JobListItem_": {
@@ -3686,6 +3730,7 @@
             "scopes": {
               "account:self": "Manage the caller's own account.",
               "auth:clients:manage": "Manage application clients.",
+              "auth:discord-links:read": "Read Discord links - which Discord account belongs to which person party - including unlinked ones.",
               "auth:users:login": "Log people in on their behalf (password / refresh_token grants, redeem, revoke). Client-only: never part of a person's token.",
               "auth:users:manage": "Create, disable and reset user accounts; assign stored roles.",
               "bot:read": "Read bot API surface.",
@@ -3701,6 +3746,7 @@
             "scopes": {
               "account:self": "Manage the caller's own account.",
               "auth:clients:manage": "Manage application clients.",
+              "auth:discord-links:read": "Read Discord links - which Discord account belongs to which person party - including unlinked ones.",
               "auth:users:manage": "Create, disable and reset user accounts; assign stored roles.",
               "bot:read": "Read bot API surface.",
               "bot:write": "Write bot API surface.",
@@ -4800,6 +4846,583 @@
           }
         ],
         "summary": "Revoke Application Client Secret Endpoint",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/discord-links": {
+      "get": {
+        "description": "List Discord links ordered by Discord user ID, unlinked ones included: a change feed (ADR 0009).",
+        "operationId": "auth_list_discord_links",
+        "parameters": [
+          {
+            "description": "Maximum number of items to return.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Maximum number of items to return.",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Number of items to skip before the first returned item.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Number of items to skip before the first returned item.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only items changed at or after this instant, the boundary included. Write the offset as `Z` or percent-encode the `+`. A change carries the start time of its transaction and can appear behind newer ones: ask from the newest `updated_at` seen minus an overlap (5 minutes), and keep it fixed while paging. Deleted items are not reported, and pages are not a snapshot: filter by fixed facts only, and compare in full now and then. See \"Change signals\" in docs/ARCHITECTURE.md.",
+            "in": "query",
+            "name": "updated_since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only items changed at or after this instant, the boundary included. Write the offset as `Z` or percent-encode the `+`. A change carries the start time of its transaction and can appear behind newer ones: ask from the newest `updated_at` seen minus an overlap (5 minutes), and keep it fixed while paging. Deleted items are not reported, and pages are not a snapshot: filter by fixed facts only, and compare in full now and then. See \"Change signals\" in docs/ARCHITECTURE.md.",
+              "examples": [
+                "2026-09-25T08:00:00Z"
+              ],
+              "title": "Updated Since"
+            }
+          },
+          {
+            "description": "Only the links of this person party.",
+            "in": "query",
+            "name": "party_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only the links of this person party.",
+              "title": "Party Id"
+            }
+          },
+          {
+            "description": "Only active (`true`) or only unlinked (`false`) links.",
+            "in": "query",
+            "name": "active",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only active (`true`) or only unlinked (`false`) links.",
+              "title": "Active"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_DiscordLink_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: auth:discord-links:read"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "auth:discord-links:read"
+            ]
+          }
+        ],
+        "summary": "List Discord Links",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/discord-links/{discord_user_id}": {
+      "delete": {
+        "description": "Unlink a Discord user; the row stays, inactive, in the feed. Unlinking an unlinked one changes nothing.",
+        "operationId": "auth_unlink_discord_account",
+        "parameters": [
+          {
+            "description": "The Discord user's snowflake, as a decimal string.",
+            "in": "path",
+            "name": "discord_user_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Discord User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: auth:users:manage"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "discord_link_not_found": {
+                    "value": {
+                      "code": "discord_link_not_found",
+                      "detail": "Discord link not found"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Discord link not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "auth:users:manage"
+            ]
+          }
+        ],
+        "summary": "Unlink Discord Account",
+        "tags": [
+          "auth"
+        ]
+      },
+      "get": {
+        "description": "Read the link of one Discord user, active or not.",
+        "operationId": "auth_get_discord_link",
+        "parameters": [
+          {
+            "description": "The Discord user's snowflake, as a decimal string.",
+            "in": "path",
+            "name": "discord_user_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Discord User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordLink"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: auth:discord-links:read"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "discord_link_not_found": {
+                    "value": {
+                      "code": "discord_link_not_found",
+                      "detail": "Discord link not found"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Discord link not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "auth:discord-links:read"
+            ]
+          }
+        ],
+        "summary": "Get Discord Link",
+        "tags": [
+          "auth"
+        ]
+      },
+      "put": {
+        "description": "Let a Discord user speak for a person party. Idempotent.\n\nAn unlinked Discord user is linked again, or moved when it named another party; one linked to another party\nis refused - unlink it there first.",
+        "operationId": "auth_link_discord_account",
+        "parameters": [
+          {
+            "description": "The Discord user's snowflake, as a decimal string.",
+            "in": "path",
+            "name": "discord_user_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9]{1,19}$",
+              "title": "Discord User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscordLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordLink"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: auth:users:manage"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "discord_account_already_linked": {
+                    "value": {
+                      "code": "discord_account_already_linked",
+                      "detail": "The Discord account is linked to another party"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The Discord account is linked to another party"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "link_party_not_a_person": {
+                    "value": {
+                      "code": "link_party_not_a_person",
+                      "detail": "A Discord link belongs to a person, not to a company"
+                    }
+                  },
+                  "unknown_link_party": {
+                    "value": {
+                      "code": "unknown_link_party",
+                      "detail": "Unknown party"
+                    }
+                  },
+                  "validation_error": {
+                    "value": {
+                      "code": "validation_error",
+                      "detail": "Request validation failed",
+                      "errors": [
+                        {
+                          "loc": [
+                            "query",
+                            "limit"
+                          ],
+                          "message": "Input should be less than or equal to 100",
+                          "type": "less_than_equal"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unknown party / A Discord link belongs to a person, not to a company"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "auth:users:manage"
+            ]
+          }
+        ],
+        "summary": "Link Discord Account",
         "tags": [
           "auth"
         ]
@@ -11023,282 +11646,6 @@
         ]
       }
     },
-    "/api/v1/bot/users/{discord_id}/account": {
-      "delete": {
-        "description": "Deactivate (unlink) a Discord account without deleting it.\n\nSets `active` to false and clears `is_primary`, freeing the party's primary slot while keeping\nthe row for history. Re-linking via the `PUT` endpoint reactivates it.",
-        "operationId": "bot_deactivate_discord_account",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "discord_id",
-            "required": true,
-            "schema": {
-              "minimum": 0,
-              "title": "Discord Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DiscordAccountLinkResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "examples": {
-                  "invalid_token": {
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "Invalid authentication credentials"
-                    }
-                  },
-                  "missing_token": {
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "Not authenticated"
-                    }
-                  }
-                },
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Missing or invalid bearer token"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "examples": {
-                  "forbidden": {
-                    "value": {
-                      "code": "forbidden",
-                      "detail": "Not enough permissions"
-                    }
-                  }
-                },
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Missing required scope: bot:write"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "examples": {
-                  "discord_account_not_found": {
-                    "value": {
-                      "code": "discord_account_not_found",
-                      "detail": "Discord account not found"
-                    }
-                  }
-                },
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Discord account not found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "example": {
-                  "code": "validation_error",
-                  "detail": "Request validation failed",
-                  "errors": [
-                    {
-                      "loc": [
-                        "query",
-                        "limit"
-                      ],
-                      "message": "Input should be less than or equal to 100",
-                      "type": "less_than_equal"
-                    }
-                  ]
-                },
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed"
-          }
-        },
-        "security": [
-          {
-            "OAuth2": [
-              "bot:write"
-            ]
-          }
-        ],
-        "summary": "Deactivate Discord Account Endpoint",
-        "tags": [
-          "bot"
-        ]
-      },
-      "put": {
-        "description": "Link a Discord account to an existing party.\n\nThe party must already exist (the CRM owns party creation); linking to an unknown party returns\n404. Promoting an account to primary demotes the party's current primary account in the same\ntransaction.",
-        "operationId": "bot_link_discord_account",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "discord_id",
-            "required": true,
-            "schema": {
-              "minimum": 0,
-              "title": "Discord Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DiscordAccountLinkRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DiscordAccountLinkResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "examples": {
-                  "invalid_token": {
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "Invalid authentication credentials"
-                    }
-                  },
-                  "missing_token": {
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "Not authenticated"
-                    }
-                  }
-                },
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Missing or invalid bearer token"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "examples": {
-                  "forbidden": {
-                    "value": {
-                      "code": "forbidden",
-                      "detail": "Not enough permissions"
-                    }
-                  }
-                },
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Missing required scope: bot:write"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "examples": {
-                  "party_not_found": {
-                    "value": {
-                      "code": "party_not_found",
-                      "detail": "Party not found"
-                    }
-                  }
-                },
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Party not found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "examples": {
-                  "account_link_conflict": {
-                    "value": {
-                      "code": "account_link_conflict",
-                      "detail": "Another primary account already exists for this party"
-                    }
-                  }
-                },
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Another primary account already exists for this party"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "example": {
-                  "code": "validation_error",
-                  "detail": "Request validation failed",
-                  "errors": [
-                    {
-                      "loc": [
-                        "query",
-                        "limit"
-                      ],
-                      "message": "Input should be less than or equal to 100",
-                      "type": "less_than_equal"
-                    }
-                  ]
-                },
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed"
-          }
-        },
-        "security": [
-          {
-            "OAuth2": [
-              "bot:write"
-            ]
-          }
-        ],
-        "summary": "Link Discord Account Endpoint",
-        "tags": [
-          "bot"
-        ]
-      }
-    },
     "/api/v1/bot/users/{discord_id}/groups/{group_key}": {
       "delete": {
         "description": "Remove a Discord user from a permission group.",
@@ -12041,7 +12388,7 @@
     },
     "/api/v1/crm/parties/{party_id}": {
       "delete": {
-        "description": "Delete a party together with its roles, contact infos and relations.\n\nRefused while a Discord account or an external system (sevDesk, Clockodo, Microsoft) is linked to\nthe party: remove those links first, in the system that owns them.",
+        "description": "Delete a party together with its roles, contact infos and relations.\n\nRefused while an active Discord link or an external system (sevDesk, Clockodo, Microsoft) holds the party:\nremove those links first, in the system that owns them. A deactivated Discord link goes with the party.",
         "operationId": "crm_delete_party",
         "parameters": [
           {

@@ -5,7 +5,6 @@ and remove what they created - including their audit entries, which do not casca
 test's ``session`` only reads what the others committed.
 """
 
-import asyncio
 import uuid
 from collections.abc import AsyncIterator, Callable, Coroutine
 
@@ -33,6 +32,7 @@ from app.services.auth.results import IssuedActionToken, UserAccountWithRoles
 from app.services.auth.users import create_user_account
 from app.services.crm import parties, persons
 from tests.db.auth.logins import LoginClientCredentials, bootstrap_login_client
+from tests.db.auth.overlap import overlapping
 
 pytestmark = pytest.mark.db
 
@@ -65,34 +65,6 @@ async def user_id(db: Database, party_id: uuid.UUID) -> AsyncIterator[uuid.UUID]
             await cleanup.execute(delete(AuthAuditLog).where(AuthAuditLog.principal_id == str(view.account.id)))
 
 
-async def _overlapping[T](
-    db: Database,
-    first_call: Callable[[AsyncSession], Coroutine[object, object, object]],
-    second_call: Callable[[AsyncSession], Coroutine[object, object, T]],
-) -> asyncio.Task[T]:
-    """Run ``first_call`` in a transaction, start ``second_call`` in another, check that it waits, commit the first.
-
-    Returns the second call, finished; its transaction is committed if it succeeded, else rolled back.
-    """
-    first: AsyncSession = db.session_factory()
-    second: AsyncSession = db.session_factory()
-    try:
-        await first_call(first)
-        pending = asyncio.create_task(second_call(second))
-        await asyncio.sleep(0.5)
-        assert not pending.done(), "the second transaction waits for the first"
-        await first.commit()
-        await asyncio.wait([pending], timeout=10)
-        if pending.exception() is None:
-            await second.commit()
-        else:
-            await second.rollback()
-        return pending
-    finally:
-        await first.close()
-        await second.close()
-
-
 async def test_two_issues_arriving_together_leave_one_live_token(
     db: Database, user_id: uuid.UUID, auth_settings: AuthSettings, live_tokens
 ):
@@ -101,7 +73,7 @@ async def test_two_issues_arriving_together_leave_one_live_token(
             session, auth_settings, user_id=user_id, purpose=UserActionTokenPurpose.INVITATION, actor=Operator.CLI
         )
 
-    await _overlapping(db, issue, issue)
+    await overlapping(db, issue, issue)
 
     assert len(await live_tokens(user_id)) == 1
 
@@ -117,7 +89,7 @@ async def test_two_overlapping_redeems_of_one_token_set_one_password(
 
         return _redeem
 
-    second = await _overlapping(db, redeem(FIRST_PASSWORD), redeem(SECOND_PASSWORD))
+    second = await overlapping(db, redeem(FIRST_PASSWORD), redeem(SECOND_PASSWORD))
 
     assert isinstance(second.exception(), InvalidActionTokenError)
     password_hash = await session.scalar(select(UserAccount.password_hash).where(UserAccount.id == user_id))
@@ -137,7 +109,7 @@ async def test_a_redeem_racing_the_deletion_of_the_party_is_invalid_action_token
     async def redeem(session: AsyncSession) -> UserAccount:
         return await redeem_action_token(session, plaintext=token, new_password=FIRST_PASSWORD, actor=Operator.CLI)
 
-    second = await _overlapping(db, delete_the_party, redeem)
+    second = await overlapping(db, delete_the_party, redeem)
 
     assert isinstance(second.exception(), InvalidActionTokenError)
 
@@ -151,7 +123,7 @@ async def test_a_create_racing_the_deletion_of_the_party_is_unknown_account_part
     async def create(session: AsyncSession) -> UserAccountWithRoles:
         return await create_user_account(session, party_id=party_id, actor=Operator.CLI)
 
-    second = await _overlapping(db, delete_the_party, create)
+    second = await overlapping(db, delete_the_party, create)
 
     assert isinstance(second.exception(), UnknownAccountPartyError)
 
@@ -207,7 +179,7 @@ async def test_two_overlapping_refreshes_of_one_token_yield_one_rotation_and_lea
     async def first(session: AsyncSession) -> None:
         first_result.append(await refresh(session))
 
-    second = await _overlapping(db, first, refresh)
+    second = await overlapping(db, first, refresh)
 
     [rotated] = first_result
     assert isinstance(rotated, IssuedUserToken)
@@ -242,7 +214,7 @@ async def test_two_overlapping_wrong_passwords_on_one_account_both_count(
         )
 
     # The first holds the row lock it took to count; the second verifies meanwhile, then waits for it.
-    second = await _overlapping(db, wrong_password, wrong_password)
+    second = await overlapping(db, wrong_password, wrong_password)
 
     assert second.result() is TokenDenial.INVALID_GRANT
     count = await session.scalar(select(UserAccount.failed_login_count).where(UserAccount.id == user_id))

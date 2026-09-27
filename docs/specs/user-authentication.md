@@ -512,7 +512,7 @@ What SkillForge expects from the portal's backend-for-frontend; implemented in t
 
    ```
    just bootstrap-client operator --application "auth:users:login crm:write" \
-     --delegated "account:self crm:read crm:write auth:users:manage auth:clients:manage bot:read"
+     --delegated "account:self crm:read crm:write auth:users:manage auth:clients:manage auth:discord-links:read bot:read"
    ```
 
    The `delegated` set is `BASE_USER_SCOPES` plus `ROLE_SCOPES[admin]`; `crm:write` in `application` mode exists

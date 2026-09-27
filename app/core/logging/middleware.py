@@ -16,6 +16,9 @@ _REQUEST_LOG_CONTEXT_STATE = "request_log_context"
 # health via the status code.
 _PROBE_PATH_PREFIXES = ("/health",)
 
+# The segment after each key is redacted when it holds a digit: a Discord ID (bot-decoupling spec, "Security rules").
+REDACTED_PATH_SEGMENTS = {"discord-links": "{discord_user_id}"}
+
 
 def bind_request_log_context(request: Request | None = None, **values: object) -> None:
     context = {key: value for key, value in values.items() if value is not None}
@@ -50,7 +53,7 @@ def register_request_logging(app: FastAPI) -> None:
                 request_logger.exception(
                     "http_request_failed",
                     method=request.method,
-                    path=request.url.path,
+                    path=_logged_path(request.url.path),
                     status_code=500,
                     duration_ms=_duration_ms(started_at),
                     client_ip=_client_ip(request),
@@ -99,7 +102,7 @@ def _log_http_request(request: Request, response: Response, started_at: float) -
     log(
         event,
         method=request.method,
-        path=request.url.path,
+        path=_logged_path(request.url.path),
         route=_route_path(request),
         endpoint=_endpoint_name(request),
         status_code=status_code,
@@ -122,6 +125,21 @@ def _client_ip(request: Request) -> str | None:
         return None
 
     return request.client.host
+
+
+def _logged_path(path: str) -> str:
+    """The path to log: a redacted key's next segment replaced by its placeholder when it holds a digit,
+    else `path` unchanged."""
+    segments = path.split("/")
+    previous = ""
+    for index, segment in enumerate(segments):
+        if not segment:
+            continue
+        if (placeholder := REDACTED_PATH_SEGMENTS.get(previous)) and any(char.isdigit() for char in segment):
+            segments[index] = placeholder
+        previous = segment
+
+    return "/".join(segments)
 
 
 def _route_path(request: Request) -> str | None:

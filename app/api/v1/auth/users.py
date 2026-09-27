@@ -7,7 +7,7 @@ from fastapi import APIRouter, Path, Query, status
 from pydantic import Field
 
 from app.api.v1.common import DBSession, Page, PageParams, error_responses
-from app.core.auth import Principal, Scope
+from app.core.auth import Scope
 from app.core.auth.dependencies import AuthConfig, require_scopes
 from app.core.auth.inputs import LoginEmail
 from app.core.db.models import UserAccountRoleName, UserAccountStatus, UserActionTokenPurpose
@@ -24,6 +24,7 @@ from app.services.auth.errors import (
     UserRoleNotFoundError,
 )
 
+from .params import ManageUsers
 from .schemas import (
     ActionTokenResponse,
     UserAccountCreateRequest,
@@ -33,8 +34,6 @@ from .schemas import (
 )
 
 router = APIRouter(prefix="/users")
-
-ManageUsers = Annotated[Principal, require_scopes(Scope.AUTH_USERS_MANAGE)]
 
 UserId = Annotated[UUID, Path(description="ID of the user account.", examples=["3f2b8c1e-5a4d-4e6f-8a9b-0c1d2e3f4a5b"])]
 StoredRole = Annotated[
