@@ -11,7 +11,7 @@ from .clients import get_application_client
 from .errors import ApplicationClientScopeGrantNotFoundError, InvalidClientScopeError
 
 EXCLUSIVE_CLIENT_SCOPES: frozenset[Scope] = frozenset({Scope.AUTH_USERS_LOGIN, Scope.AUTH_USERS_EXCHANGE})
-"""A client holds at most one of these (bot-decoupling spec, decision T): the portal can never vouch for a person,
+"""A client never holds both of these (bot-decoupling spec, decision T): the portal can never vouch for a person,
 the bot can never take a password - by code, not by discipline."""
 
 
@@ -102,6 +102,9 @@ async def grant_client_scopes(
         raise InvalidClientScopeError("Client-only scopes cannot be granted in delegated mode")
 
     permission_scopes = [await _active_permission_scope(session, scope_key) for scope_key in sorted(scope_keys)]
+    # Lock the client row before reading its grants: decision T's check-then-write needs them stable, or two
+    # concurrent grants on the same client (e.g. one `auth:users:login`, one `auth:users:exchange`) could both pass.
+    await session.execute(select(ApplicationClient.id).where(ApplicationClient.id == client.id).with_for_update())
     existing_scope_keys = set(
         (
             await session.execute(

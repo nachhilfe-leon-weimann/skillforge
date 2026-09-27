@@ -56,7 +56,8 @@ class Principal(ABC):
 
     principal_id: uuid.UUID
     client_id: str
-    """The client the token was issued to; for a person, the client that logged them in (``azp``)."""
+    """The client the token was issued to; for a person, the client that logged them in or vouched for them
+    (``azp``)."""
     scopes: frozenset[str]
 
     @property
@@ -78,7 +79,8 @@ class ApplicationPrincipal(Principal):
 
 @dataclass(frozen=True, kw_only=True)
 class UserPrincipal(Principal):
-    """A person, acting through the client that logged them in; ``principal_id`` is their user account."""
+    """A person, acting through the client that logged them in or vouched for them; ``principal_id`` is their user
+    account."""
 
     principal_type = PrincipalType.USER
 

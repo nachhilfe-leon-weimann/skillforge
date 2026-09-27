@@ -935,7 +935,7 @@
                 "type": "null"
               }
             ],
-            "description": "Client ID of the application client, or for a person the client that logged them in.",
+            "description": "Client ID of the application client, or for a person the client that logged them in or vouched for them.",
             "title": "Client Id"
           },
           "party_id": {
