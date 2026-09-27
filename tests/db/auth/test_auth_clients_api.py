@@ -70,3 +70,36 @@ async def test_granting_a_client_only_scope_as_delegated_is_invalid_scope_and_gr
     assert response.json() == {"detail": "Invalid requested scope", "code": "invalid_scope"}
     assert await grants() == set()
     assert await scope_grant_details() == Counter()
+
+
+@pytest.mark.db
+async def test_the_exchange_scope_is_refused_as_delegated_and_beside_the_login_scope(
+    api: AsyncClient, grants, scope_grant_details
+):
+    """Decision T of the bot-decoupling spec: the portal never vouches for a person, the bot never takes a password."""
+    for client_id in ("bot", "both"):
+        assert (await api.post("/clients", json={"client_id": client_id, "name": client_id})).status_code == 201
+    login = await api.post("/clients/portal/scopes", json={"scopes": ["auth:users:login"], "mode": "application"})
+    exchange = await api.post("/clients/bot/scopes", json={"scopes": ["auth:users:exchange"], "mode": "application"})
+
+    refused = [
+        await api.post(f"/clients/{client_id}/scopes", json={"scopes": scopes, "mode": mode})
+        for client_id, scopes, mode in [
+            ("bot", ["auth:users:exchange"], "delegated"),
+            ("bot", ["crm:read", "auth:users:login"], "application"),
+            ("portal", ["auth:users:exchange"], "application"),
+            ("both", ["auth:users:exchange", "auth:users:login"], "application"),
+        ]
+    ]
+
+    invalid_scope = {"detail": "Invalid requested scope", "code": "invalid_scope"}
+    assert (login.status_code, exchange.status_code) == (200, 200)
+    assert [(r.status_code, r.json()) for r in refused] == [(400, invalid_scope)] * 4
+    assert await grants() == {
+        ("auth:users:login", GrantMode.APPLICATION),
+        ("auth:users:exchange", GrantMode.APPLICATION),
+    }
+    assert await scope_grant_details() == Counter([
+        "Granted scope auth:users:login in application mode to application client portal.",
+        "Granted scope auth:users:exchange in application mode to application client bot.",
+    ])

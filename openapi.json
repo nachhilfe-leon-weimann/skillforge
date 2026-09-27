@@ -2079,6 +2079,7 @@
               "account:self": "Manage the caller's own account.",
               "auth:clients:manage": "Manage application clients.",
               "auth:discord-links:read": "Read Discord links - which Discord account belongs to which person party - including unlinked ones.",
+              "auth:users:exchange": "Obtain a person's token for the Discord user they linked, and redeem Discord link codes; the client's secret speaks for every linked person up to its delegated ceiling. Client-only: never part of a person's token.",
               "auth:users:login": "Log people in on their behalf (password / refresh_token grants, redeem, revoke). Client-only: never part of a person's token.",
               "auth:users:manage": "Create, disable and reset user accounts; assign stored roles.",
               "crm:read": "Read parties, relations and subjects.",

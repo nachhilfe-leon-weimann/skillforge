@@ -10,6 +10,10 @@ from .audit import AuditEventType, write_auth_audit_log
 from .clients import get_application_client
 from .errors import ApplicationClientScopeGrantNotFoundError, InvalidClientScopeError
 
+EXCLUSIVE_CLIENT_SCOPES: frozenset[Scope] = frozenset({Scope.AUTH_USERS_LOGIN, Scope.AUTH_USERS_EXCHANGE})
+"""A client holds at most one of these (bot-decoupling spec, decision T): the portal can never vouch for a person,
+the bot can never take a password - by code, not by discipline."""
+
 
 async def seed_default_scopes(session: AsyncSession) -> list[PermissionScope]:
     scopes: list[PermissionScope] = []
@@ -91,8 +95,8 @@ async def grant_client_scopes(
     """Grant ``scope_keys`` to ``client`` in ``mode``; a scope already granted in that mode is kept.
 
     Checks the whole request before it writes a grant, so a refused request grants nothing: every
-    scope must be known and active, and a client-only scope is refused in ``delegated`` mode
-    (ADR 0008).
+    scope must be known and active, a client-only scope is refused in ``delegated`` mode
+    (ADR 0008), and no client ends up holding both ``EXCLUSIVE_CLIENT_SCOPES``.
     """
     if mode == GrantMode.DELEGATED and not CLIENT_ONLY_SCOPES.isdisjoint(scope_keys):
         raise InvalidClientScopeError("Client-only scopes cannot be granted in delegated mode")
@@ -110,6 +114,8 @@ async def grant_client_scopes(
         .scalars()
         .all()
     )
+    if EXCLUSIVE_CLIENT_SCOPES <= existing_scope_keys | scope_keys:
+        raise InvalidClientScopeError("A client cannot both log people in and exchange Discord users")
 
     for permission_scope in permission_scopes:
         if permission_scope.key in existing_scope_keys:

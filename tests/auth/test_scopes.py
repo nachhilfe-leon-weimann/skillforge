@@ -3,7 +3,15 @@ from itertools import chain, combinations
 import pytest
 
 from app.core.auth import Scope
-from app.core.auth.scopes import CLIENT_ONLY_SCOPES, OWN_VARIANT, canonical, expand, format_scopes, parse_scopes
+from app.core.auth.scopes import (
+    CLIENT_ONLY_SCOPES,
+    OWN_VARIANT,
+    VOUCHED_SCOPES,
+    canonical,
+    expand,
+    format_scopes,
+    parse_scopes,
+)
 
 
 @pytest.mark.parametrize("scope", list(Scope))
@@ -26,8 +34,18 @@ def test_no_scope_of_the_bot_is_left():
     assert [scope for scope in Scope if scope.startswith("bot:")] == []
 
 
-def test_client_only_scopes_are_exactly_the_login_scope():
-    assert CLIENT_ONLY_SCOPES == {Scope.AUTH_USERS_LOGIN}
+def test_client_only_scopes_are_exactly_the_login_and_the_exchange_scope():
+    assert CLIENT_ONLY_SCOPES == {Scope.AUTH_USERS_LOGIN, Scope.AUTH_USERS_EXCHANGE}
+
+
+def test_vouched_scopes_are_exactly_the_crm_scopes():
+    """Decision R of the bot-decoupling spec: a scope joins only on purpose, and then this pin changes with it."""
+    assert VOUCHED_SCOPES == {Scope.CRM_READ, Scope.CRM_READ_OWN, Scope.CRM_WRITE}
+
+
+def test_no_vouched_scope_is_client_only_or_an_account_or_auth_scope():
+    assert VOUCHED_SCOPES.isdisjoint(CLIENT_ONLY_SCOPES)
+    assert not any(scope.startswith(("account:", "auth:")) for scope in VOUCHED_SCOPES)
 
 
 def test_own_variant_maps_crm_read_to_crm_read_own_only():
