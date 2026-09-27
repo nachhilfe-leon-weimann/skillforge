@@ -226,7 +226,7 @@ class UserAccountListItem(ApiModel):
     roles: list[Role]
     """Every role the account holds, stored (`admin`) and derived from the CRM, sorted."""
     last_login_at: datetime | None
-    """When the person last logged in; `null` until the first login."""
+    """When the person last logged in with their password; `null` until then - a Discord-user exchange is no login."""
     created_at: datetime
     """When the account was created."""
 
