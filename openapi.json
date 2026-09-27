@@ -1237,13 +1237,20 @@
           "type": {
             "$ref": "#/components/schemas/PartyType",
             "description": "Whether the party is a person or a company."
+          },
+          "updated_at": {
+            "description": "When anything in the party last changed - the person or company, a role, a contact info, a relation - or a\nparty related to it was deleted. The start of the writing transaction: pull as `updated_since` describes.",
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
           }
         },
         "required": [
           "id",
           "type",
           "display_name",
-          "roles"
+          "roles",
+          "updated_at"
         ],
         "title": "PartyListItem",
         "type": "object"
@@ -5822,7 +5829,7 @@
             }
           },
           {
-            "description": "Only parties changed at or after this instant, by any write inside the party: its names, roles, contact infos and relations. The offset is required; write it as `Z` or percent-encode the `+`. A deleted party is not reported, and a change carries the start time of its transaction - so poll with an overlap rather than from the newest timestamp seen.",
+            "description": "Only items changed at or after this instant, the boundary included. Write the offset as `Z` or percent-encode the `+`. A change carries the start time of its transaction and can appear behind newer ones: ask from the newest `updated_at` seen minus an overlap (5 minutes), and keep it fixed while paging. Deleted items are not reported, and pages are not a snapshot: filter by fixed facts only, and compare in full now and then. See \"Change signals\" in docs/ARCHITECTURE.md.",
             "in": "query",
             "name": "updated_since",
             "required": false,
@@ -5836,9 +5843,9 @@
                   "type": "null"
                 }
               ],
-              "description": "Only parties changed at or after this instant, by any write inside the party: its names, roles, contact infos and relations. The offset is required; write it as `Z` or percent-encode the `+`. A deleted party is not reported, and a change carries the start time of its transaction - so poll with an overlap rather than from the newest timestamp seen.",
+              "description": "Only items changed at or after this instant, the boundary included. Write the offset as `Z` or percent-encode the `+`. A change carries the start time of its transaction and can appear behind newer ones: ask from the newest `updated_at` seen minus an overlap (5 minutes), and keep it fixed while paging. Deleted items are not reported, and pages are not a snapshot: filter by fixed facts only, and compare in full now and then. See \"Change signals\" in docs/ARCHITECTURE.md.",
               "examples": [
-                "2026-09-01T00:00:00Z"
+                "2026-09-25T08:00:00Z"
               ],
               "title": "Updated Since"
             }

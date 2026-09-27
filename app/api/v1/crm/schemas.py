@@ -166,10 +166,19 @@ class PartyListItem(ApiModel):
     """First and last name of a person, or the name of a company."""
     roles: list[PartyRole]
     """The roles a person holds; always empty for a company."""
+    updated_at: datetime
+    """When anything in the party last changed - the person or company, a role, a contact info, a relation - or a
+    party related to it was deleted. The start of the writing transaction: pull as `updated_since` describes."""
 
     @classmethod
     def from_model(cls, party: Party) -> Self:
-        return cls(id=party.id, type=party.type, display_name=_display_name(party), roles=_roles(party))
+        return cls(
+            id=party.id,
+            type=party.type,
+            display_name=_display_name(party),
+            roles=_roles(party),
+            updated_at=party.updated_at,
+        )
 
 
 class RelationResponse(ApiModel):

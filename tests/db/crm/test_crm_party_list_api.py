@@ -247,7 +247,7 @@ async def test_roles_are_listed_for_a_person_with_none_one_and_both_and_never_fo
         "Sina Student": ("person", ["student"]),
         "Tom Tutor": ("person", ["tutor"]),
     }
-    assert set(page["items"][0]) == {"id", "type", "display_name", "roles"}
+    assert set(page["items"][0]) == {"id", "type", "display_name", "roles", "updated_at"}
 
 
 # --- order and paging ---
@@ -410,3 +410,37 @@ async def test_a_write_anywhere_in_the_aggregate_makes_its_party_appear(client: 
         "Hanna Since-Write",
         "Ida Since-Write",
     ]
+
+
+# --- updated_at: every item carries its party's pull signal (bot-decoupling P0-6) ---
+
+
+async def test_every_item_carries_the_updated_at_of_its_party(client: AsyncClient, session: AsyncSession):
+    """Distinct stamps with a microsecond part: the item neither rounds nor mixes them up, and equals the detail."""
+    stamps = {
+        "Anna Stamp": datetime(2025, 6, 1, 12, 0, 0, 123456, tzinfo=UTC),
+        "Ben Stamp": datetime(2025, 6, 2, 8, 30, 15, 654321, tzinfo=UTC),
+        "Stamp GmbH": datetime(2025, 6, 3, 9, 0, 0, 1, tzinfo=UTC),
+    }
+    for party in [await _person(client, "Anna", "Stamp"), await _person(client, "Ben", "Stamp")]:
+        await _set_updated_at(session, party, stamps[party["display_name"]])
+    await _set_updated_at(session, await _company(client, "Stamp GmbH"), stamps["Stamp GmbH"])
+
+    page = await _list(client, q="stamp")
+
+    assert {item["display_name"]: datetime.fromisoformat(item["updated_at"]) for item in page["items"]} == stamps
+    for item in page["items"]:
+        assert item["updated_at"] == (await client.get(f"/parties/{item['id']}")).json()["updated_at"]
+
+
+async def test_an_items_updated_at_passed_back_as_updated_since_returns_it_again(
+    client: AsyncClient, session: AsyncSession
+):
+    """The cursor of the pull contract: the stamp goes out and comes back without losing its last microsecond."""
+    party = await _person(client, "Clara", "Cursor")
+    await _set_updated_at(session, party, datetime(2025, 6, 1, 12, 0, 0, 999999, tzinfo=UTC))
+    (item,) = (await _list(client, q="cursor"))["items"]
+
+    again = await _list(client, q="cursor", updated_since=item["updated_at"])
+
+    assert [found["id"] for found in again["items"]] == [party["id"]]

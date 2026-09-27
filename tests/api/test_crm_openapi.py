@@ -268,3 +268,20 @@ def test_the_search_says_how_to_find_a_phone_number(schema: dict[str, Any]):
 
     assert "E.164" in q["description"]
     assert "leading zero" in q["description"]
+
+
+def test_every_party_list_item_carries_a_required_updated_at(schema: dict[str, Any]):
+    """Bot-decoupling P0-6: the party list and the other side of a relation carry the pull signal, placed last."""
+    item = schema["components"]["schemas"]["PartyListItem"]
+    updated_at = item["properties"]["updated_at"]
+
+    assert item["required"] == ["id", "type", "display_name", "roles", "updated_at"]
+    assert (updated_at["type"], updated_at["format"]) == ("string", "date-time")
+    assert " ".join(updated_at["description"].split()) == (
+        "When anything in the party last changed - the person or company, a role, a contact info, a relation - or a "
+        "party related to it was deleted. The start of the writing transaction: pull as `updated_since` describes."
+    )
+    assert schema["components"]["schemas"]["RelationResponse"]["properties"]["party"] == {
+        "$ref": "#/components/schemas/PartyListItem",
+        "description": "The party on the other side of the relation.",
+    }

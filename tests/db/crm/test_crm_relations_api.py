@@ -1,6 +1,7 @@
 """`/parties/{party_id}/relations` and the four-call reference flow, against the real database."""
 
 import uuid
+from datetime import datetime
 
 import pytest
 from httpx import AsyncClient
@@ -49,7 +50,14 @@ async def _relation_count(session: AsyncSession) -> int:
 
 
 def _item(party: dict, roles: list[str]) -> dict:
-    return {"id": party["id"], "type": party["type"], "display_name": party["display_name"], "roles": roles}
+    """The list item of ``party``. A test runs in one transaction, so every write stamps the ``updated_at`` it had."""
+    return {
+        "id": party["id"],
+        "type": party["type"],
+        "display_name": party["display_name"],
+        "roles": roles,
+        "updated_at": party["updated_at"],
+    }
 
 
 # --- the rules ---
@@ -184,7 +192,11 @@ async def test_put_is_idempotent_and_the_second_one_is_not_a_write(
     second = await _put(client, parent, "parent_of", child)
 
     assert (first.status_code, second.status_code) == (200, 200)
-    assert second.json() == first.json()
+    first_body, second_body = first.json(), second.json()
+    # The same answer but for the other side's stamp: the backdate moved it, and the repeat - no write - left it there.
+    assert datetime.fromisoformat(second_body["party"].pop("updated_at")) == before[1]
+    del first_body["party"]["updated_at"]
+    assert second_body == first_body
     assert [await updated_at(party_id) for party_id in ids] == before
     assert await _relation_count(session) == 1
 
