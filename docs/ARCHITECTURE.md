@@ -34,7 +34,7 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
   `/health/dependencies[/{name}]`, and `/health/workers[/{name}]`.
 - **`app/api/v1/`** - `router.py` with prefix `/api/v1` aggregates two areas, which share the
   vocabulary in `common/` (see [API conventions](#api-conventions)):
-  - `auth/` - `token.py` (OAuth2 token endpoint, three grants), `revoke.py` (logout), `password.py`
+  - `auth/` - `token.py` (OAuth2 token endpoint, four grants), `revoke.py` (logout), `password.py`
     (redeem a one-time token), `users.py` (accounts), `clients.py` (client management), `me.py`, `params.py`
     (shared parameter aliases).
   - `crm/` - one module per resource: `parties.py` (list, detail, guarded delete), `persons.py` &
@@ -42,7 +42,7 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
     `subjects.py`. `params.py` holds the path and query vocabulary, `schemas.py` the read and write
     models with their `from_model` mappers (see [CRM](#crm)).
 - **`app/services/auth/`** - the auth services, same shape as the CRM's: `clients.py`, `scopes.py` (grants
-  per mode, `resolve_token_scopes`), `secrets.py` (client secrets), `tokens.py` (the three grants),
+  per mode, `resolve_token_scopes`), `secrets.py` (client secrets), `tokens.py` (the four grants),
   `sessions.py`, `accounts.py`, `users.py`, `action_tokens.py` (invitations and resets), `housekeeping.py`
   (deletes expired sessions and one-time tokens), `roles.py` (`derive_roles`), `bootstrap.py`, `audit.py`,
   `results.py`, `errors.py`. Never imports the API or another domain.
@@ -155,17 +155,26 @@ Every grant at `POST /api/v1/auth/token` authenticates the client (`client_id` +
 | `client_credentials` | the client itself | access token from its `application` grants |
 | `password` | a person, through a login client | access + refresh token; opens a `user_session` |
 | `refresh_token` | the same person, same client | new access token; the refresh token rotates |
+| `urn:skillforge:params:oauth:grant-type:discord-user` | a person a client vouches for | access token only, no session |
 
-The person grants need `auth:users:login` in `application` mode. Their services (`issue_user_token`,
-`refresh_user_token` in `app/services/auth/tokens.py`) *return* a `TokenDenial` instead of raising, so the
-failed-login counter, a revoked session and the audit entry commit; `create_token` turns it into the
-OAuth2 error. `POST /auth/revoke` logs out.
+The password and refresh grants need `auth:users:login` in `application` mode, the Discord-user exchange
+`auth:users:exchange` - and no client holds both (`grant_client_scopes`). Their services (`issue_user_token`,
+`refresh_user_token`, `exchange_discord_user` in `app/services/auth/tokens.py`) *return* a `TokenDenial`
+instead of raising, so the failed-login counter, a revoked session and the audit entry commit; `create_token`
+turns it into the OAuth2 error. `POST /auth/revoke` logs out. The exchange follows an active Discord link to
+the party, its account and `active`; every break is the same `invalid_grant`, and the login lock is neither
+read nor written.
 
 - **Tokens:** a stateless JWT for an `ApplicationPrincipal` or a `UserPrincipal` (`principal.py`), claims
-  declared once in `tokens.py`; a person's token names the client (`azp`), party, session and `amr`.
+  declared once in `tokens.py`; a person's token names the client (`azp`), the party and how it was obtained:
+  `UserPrincipal.login` is a `PasswordLogin` (`amr: ["pwd"]`, its session as `sid`) or a `DiscordLogin`
+  (`amr: ["discord"]`, no `sid`).
 - **Scopes** are computed at issuance (`resolve_token_scopes`): a grant is `application` (for the client)
   or `delegated` (the ceiling for people); a person gets `delegated ∩ role scopes` (on refresh also
-  `∩` the session's scope). Purposes live on `Scope`; `CLIENT_ONLY_SCOPES` are application-only.
+  `∩` the session's scope, on the exchange also `∩ VOUCHED_SCOPES`). Purposes live on `Scope`;
+  `CLIENT_ONLY_SCOPES` are application-only. A token obtained without a password carries only `VOUCHED_SCOPES`
+  (`crm:read`, `crm:read:own`, `crm:write`), checked at issuance and at validation: `account:self` and every
+  `auth:*` scope need a password login.
 - **Roles** (`roles.py`) only produce scopes: `BASE_USER_SCOPES` for everyone, `ROLE_SCOPES` per role;
   `admin` is stored, the others are derived from the CRM.
 - **Reach:** `x:own` limits `x` to the caller's reach (`reach.py`); `require_access(...)` hands a route
@@ -178,7 +187,8 @@ OAuth2 error. `POST /auth/revoke` logs out.
   speaks for which person party. The one writer of `ext.discord_account`; admins write, the bot reads the feed.
   The request log redacts the Discord user ID in these paths (`REDACTED_PATH_SEGMENTS` in
   `app/core/logging/middleware.py`).
-- **Never** in a log or an audit row: a password, a refresh or action token, an e-mail address.
+- **Never** in a log or an audit row: a password, a refresh or action token, an e-mail address. A Discord user ID
+  appears in audit rows only - never in the request log, a token or an error.
 
 `just bootstrap-client` and `just bootstrap-admin` ([`app/cli/bootstrap.py`](../app/cli/bootstrap.py)) seed the
 first clients - skillbot's too, once the bot needs one - and the first admin.
