@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth.config import AuthSettings
 from app.core.auth.inputs import normalize_email
 from app.core.auth.passwords import verify_dummy_password
-from app.core.auth.principal import ApplicationPrincipal, AuthMethod, PrincipalType, UserPrincipal
+from app.core.auth.principal import ApplicationPrincipal, PasswordLogin, PrincipalType, UserPrincipal
 from app.core.auth.roles import Role, scopes_for
 from app.core.auth.scopes import Scope, parse_scopes
 from app.core.auth.secrets import digest, verify_and_update_async, verify_secret_async
@@ -54,9 +54,6 @@ MAX_CLIENT_CREDENTIAL_LENGTH = 255
 is ``invalid_client`` at once - never hashed, never looked up, never written into the audit log."""
 RACED_REFRESH_DETAIL = "refresh token reused within grace"
 """The fixed ``token.denied`` detail of a rotated-out refresh token presented within ``REFRESH_REUSE_GRACE``."""
-
-PASSWORD_AUTH_METHODS = frozenset({AuthMethod.PASSWORD})
-"""The ``amr`` of every token of this arc's sessions: each one comes from a password login (decision Q)."""
 
 
 @dataclass(frozen=True)
@@ -317,9 +314,8 @@ async def _issue(
         client_id=authenticated.client.client_id,
         scopes=scopes,
         party_id=account.party_id,
-        session_id=user_session.id,
         roles=roles,
-        auth_methods=PASSWORD_AUTH_METHODS,
+        login=PasswordLogin(session_id=user_session.id),
     )
     token = create_access_token(settings, principal, now=now)
     await write_auth_audit_log(

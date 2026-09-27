@@ -9,8 +9,8 @@ from pydantic import SecretStr
 
 from app.core.auth import (
     ApplicationPrincipal,
-    AuthMethod,
     AuthSettings,
+    PasswordLogin,
     Principal,
     Scope,
     UserPrincipal,
@@ -231,9 +231,8 @@ def _person(*, scopes: set[str]) -> UserPrincipal:
         client_id="portal",
         scopes=frozenset(scopes),
         party_id=uuid4(),
-        session_id=uuid4(),
         roles=frozenset(),
-        auth_methods=frozenset({AuthMethod.PASSWORD}),
+        login=PasswordLogin(session_id=uuid4()),
     )
 
 

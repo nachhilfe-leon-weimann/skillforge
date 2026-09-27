@@ -12,8 +12,8 @@ from pydantic import SecretStr
 
 from app.core.auth import (
     Access,
-    AuthMethod,
     AuthSettings,
+    PasswordLogin,
     ReachBasis,
     Scope,
     UserPrincipal,
@@ -158,9 +158,8 @@ def _person_token(*scopes: Scope) -> str:
         client_id="portal",
         scopes=frozenset(str(scope) for scope in scopes),
         party_id=PARTY_ID,
-        session_id=uuid4(),
         roles=frozenset(),
-        auth_methods=frozenset({AuthMethod.PASSWORD}),
+        login=PasswordLogin(session_id=uuid4()),
     )
     return create_access_token(_settings(), principal).access_token
 

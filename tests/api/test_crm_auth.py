@@ -17,8 +17,8 @@ from pydantic import SecretStr
 
 from app.api.v1.common import ErrorResponse
 from app.core.auth import (
-    AuthMethod,
     AuthSettings,
+    PasswordLogin,
     Scope,
     UserPrincipal,
     create_access_token,
@@ -162,9 +162,8 @@ def _person_headers(*scopes: Scope) -> dict[str, str]:
         client_id="portal",
         scopes=frozenset(str(scope) for scope in scopes),
         party_id=UUID(PATH_VALUES["party_id"]),
-        session_id=uuid4(),
         roles=frozenset(),
-        auth_methods=frozenset({AuthMethod.PASSWORD}),
+        login=PasswordLogin(session_id=uuid4()),
     )
     return {"Authorization": f"Bearer {create_access_token(_auth_settings(), principal).access_token}"}
 

@@ -4,6 +4,8 @@ The application token is pinned here too: its claims are the contract SkillBot a
 this file asserts them against a fixture that a new claim would break.
 """
 
+import base64
+import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -13,9 +15,11 @@ from pydantic import SecretStr
 
 from app.core.auth import (
     ApplicationPrincipal,
-    AuthMethod,
     AuthSettings,
     CreatedAccessToken,
+    DiscordLogin,
+    Login,
+    PasswordLogin,
     TokenValidationError,
     UserPrincipal,
     create_access_token,
@@ -30,6 +34,8 @@ USER_ID = UUID("aaaaaaaa-1111-1111-1111-111111111111")
 PARTY_ID = UUID("22222222-2222-2222-2222-222222222222")
 SESSION_ID = UUID("33333333-3333-3333-3333-333333333333")
 APPLICATION_ID = UUID("44444444-4444-4444-4444-444444444444")
+DISCORD = {"amr": ["discord"], "scope": "crm:read:own"}
+"""The claims that make ``_encode_person_claims`` a Discord token - together with ``without="sid"``."""
 
 
 def test_application_access_token_claims_match_the_fixture():
@@ -102,6 +108,50 @@ def test_person_access_token_claims_match_the_fixture():
     }
 
 
+def test_a_password_token_is_byte_for_byte_what_it_was_before_the_discord_login():
+    """The payload bytes - claim order included - of a password or refresh token before P0-7 of bot-decoupling.md
+    added the Discord login; only ``jti`` differs from token to token."""
+    settings = _settings()
+
+    created = _person_token(
+        settings, scopes={"crm:read:own", "account:self"}, roles={Role.TUTOR, Role.ADMIN}, now=ISSUED_AT
+    )
+
+    segment = created.access_token.split(".")[1]
+    payload = base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4))
+    jti = json.loads(payload)["jti"]
+    expected = (
+        '{"iss":"skillforge","aud":"skillforge-api",'
+        f'"sub":"user:{USER_ID}","principal_id":"{USER_ID}","azp":"portal","scope":"account:self crm:read:own",'
+        f'"principal_type":"user","party_id":"{PARTY_ID}","sid":"{SESSION_ID}","roles":["admin","tutor"],'
+        f'"amr":["pwd"],"iat":{int(ISSUED_AT.timestamp())},"exp":{int(EXPIRES_AT.timestamp())},"jti":"{jti}"}}'
+    )
+    assert payload == expected.encode()
+
+
+def test_a_discord_token_carries_amr_discord_and_no_sid():
+    settings = _settings()
+
+    created = _person_token(settings, scopes={"crm:read:own"}, login=DiscordLogin(), now=ISSUED_AT)
+
+    claims = _decode(created.access_token, settings)
+    assert UUID(str(claims.pop("jti")))
+    assert claims == {
+        "iss": "skillforge",
+        "aud": "skillforge-api",
+        "sub": f"user:{USER_ID}",
+        "principal_type": "user",
+        "principal_id": str(USER_ID),
+        "azp": "portal",
+        "scope": "crm:read:own",
+        "party_id": str(PARTY_ID),
+        "roles": [],
+        "amr": ["discord"],
+        "iat": int(ISSUED_AT.timestamp()),
+        "exp": int(EXPIRES_AT.timestamp()),
+    }
+
+
 def test_a_person_token_carries_the_canonical_scope():
     """A token never holds both a scope and its `:own` variant (ADR 0008)."""
     settings = _settings()
@@ -121,10 +171,20 @@ def test_a_person_token_validates_back_into_the_user_principal_it_was_issued_for
     assert principal == person
     assert isinstance(principal, UserPrincipal)
     assert principal.party_id == PARTY_ID
-    assert principal.session_id == SESSION_ID
     assert principal.roles == frozenset({Role.ADMIN, Role.GUARDIAN})
-    assert principal.auth_methods == frozenset({AuthMethod.PASSWORD})
+    assert principal.login == PasswordLogin(session_id=SESSION_ID)
     assert principal.subject == f"user:{USER_ID}"
+
+
+def test_a_discord_token_validates_back_into_a_discord_login():
+    settings = _settings()
+    person = _person(scopes={"crm:read", "crm:write"}, login=DiscordLogin())
+
+    principal = validate_access_token(create_access_token(settings, person).access_token, settings)
+
+    assert principal == person
+    assert isinstance(principal, UserPrincipal)
+    assert principal.login == DiscordLogin()
 
 
 def test_the_claims_the_rejections_below_start_from_are_valid():
@@ -132,8 +192,10 @@ def test_the_claims_the_rejections_below_start_from_are_valid():
     settings = _settings()
 
     principal = validate_access_token(_encode_person_claims(settings), settings)
+    discord = validate_access_token(_encode_person_claims(settings, without="sid", **DISCORD), settings)
 
     assert principal == _person(scopes={"account:self"})
+    assert discord == _person(scopes={"crm:read:own"}, login=DiscordLogin())
 
 
 @pytest.mark.parametrize("claim", ["party_id", "sid", "amr"])
@@ -154,10 +216,34 @@ def test_validate_access_token_rejects_a_person_token_with_an_unknown_role(roles
         validate_access_token(token, settings)
 
 
-@pytest.mark.parametrize("amr", ["pwd", [], ["discord"], ["PWD"], [1]])
+@pytest.mark.parametrize("amr", ["pwd", [], ["otp"], ["PWD"], [1]])
 def test_validate_access_token_rejects_a_person_token_with_an_unknown_or_no_method(amr: object):
     settings = _settings()
     token = _encode_person_claims(settings, amr=amr)
+
+    with pytest.raises(TokenValidationError):
+        validate_access_token(token, settings)
+
+
+@pytest.mark.parametrize(
+    ("without", "changes"),
+    [
+        pytest.param("sid", {}, id="pwd-without-sid"),
+        pytest.param(None, {"sid": None}, id="pwd-with-null-sid"),
+        pytest.param(None, DISCORD, id="discord-with-sid"),
+        pytest.param(None, DISCORD | {"sid": None}, id="discord-with-null-sid"),
+        pytest.param(None, {"amr": ["discord", "pwd"]}, id="mixed-with-sid"),
+        pytest.param("sid", {"amr": ["discord", "pwd"]}, id="mixed-without-sid"),
+        pytest.param("sid", DISCORD | {"scope": "account:self"}, id="discord-with-account-self"),
+        pytest.param("sid", DISCORD | {"scope": "crm:read:own auth:users:manage"}, id="discord-with-an-auth-scope"),
+    ],
+)
+def test_validate_access_token_rejects_a_person_token_whose_amr_and_sid_name_no_login(
+    without: str | None, changes: dict[str, object]
+):
+    """``[pwd]`` needs a session, ``[discord]`` has none and carries only ``VOUCHED_SCOPES``; nothing else is valid."""
+    settings = _settings()
+    token = _encode_person_claims(settings, without=without, **changes)
 
     with pytest.raises(TokenValidationError):
         validate_access_token(token, settings)
@@ -241,27 +327,30 @@ def test_create_access_token_rejects_empty_scopes():
         _person_token(_settings(), scopes=set())
 
 
-def test_create_access_token_rejects_a_person_without_an_auth_method():
-    person = _person(scopes={"account:self"}, auth_methods=set())
+def test_create_access_token_refuses_a_scope_outside_the_vouched_ones_for_a_discord_login_only():
+    """``account:self`` and every ``auth:*`` scope keep demanding a password login (decision R)."""
+    settings = _settings()
 
-    with pytest.raises(ValueError, match="amr"):
-        create_access_token(_settings(), person)
+    with pytest.raises(ValueError, match="vouched"):
+        _person_token(settings, scopes={"crm:read:own", "account:self"}, login=DiscordLogin())
+
+    password = _person_token(settings, scopes={"crm:read:own", "account:self"})
+    assert validate_access_token(password.access_token, settings).scopes == {"crm:read:own", "account:self"}
 
 
 def _person(
     *,
     scopes: set[str],
     roles: set[Role] | None = None,
-    auth_methods: set[AuthMethod] | None = None,
+    login: Login | None = None,
 ) -> UserPrincipal:
     return UserPrincipal(
         principal_id=USER_ID,
         client_id="portal",
         scopes=frozenset(scopes),
         party_id=PARTY_ID,
-        session_id=SESSION_ID,
         roles=frozenset(roles or ()),
-        auth_methods=frozenset({AuthMethod.PASSWORD} if auth_methods is None else auth_methods),
+        login=PasswordLogin(session_id=SESSION_ID) if login is None else login,
     )
 
 
@@ -270,9 +359,10 @@ def _person_token(
     *,
     scopes: set[str],
     roles: set[Role] | None = None,
+    login: Login | None = None,
     now: datetime | None = None,
 ) -> CreatedAccessToken:
-    return create_access_token(settings, _person(scopes=scopes, roles=roles), now=now)
+    return create_access_token(settings, _person(scopes=scopes, roles=roles, login=login), now=now)
 
 
 def _decode(token: str, settings: AuthSettings) -> dict[str, object]:

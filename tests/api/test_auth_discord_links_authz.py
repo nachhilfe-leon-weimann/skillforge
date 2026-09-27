@@ -9,8 +9,8 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 
 from app.core.auth import (
-    AuthMethod,
     AuthSettings,
+    PasswordLogin,
     Scope,
     UserPrincipal,
     create_access_token,
@@ -101,8 +101,7 @@ def _person_headers(*scopes: Scope) -> dict[str, str]:
         client_id="portal",
         scopes=frozenset(scopes),
         party_id=uuid4(),
-        session_id=uuid4(),
         roles=frozenset(),
-        auth_methods=frozenset({AuthMethod.PASSWORD}),
+        login=PasswordLogin(session_id=uuid4()),
     )
     return {"Authorization": f"Bearer {create_access_token(SETTINGS, principal).access_token}"}

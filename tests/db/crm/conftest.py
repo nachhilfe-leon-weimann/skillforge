@@ -11,8 +11,8 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import (
-    AuthMethod,
     AuthSettings,
+    PasswordLogin,
     Scope,
     UserPrincipal,
     create_access_token,
@@ -70,9 +70,8 @@ def person_headers() -> Callable[..., dict[str, str]]:
             client_id="portal",
             scopes=frozenset(str(scope) for scope in scopes),
             party_id=party_id,
-            session_id=uuid4(),
             roles=frozenset(),
-            auth_methods=frozenset({AuthMethod.PASSWORD}),
+            login=PasswordLogin(session_id=uuid4()),
         )
         return {"Authorization": f"Bearer {create_access_token(_AUTH_SETTINGS, principal).access_token}"}
 

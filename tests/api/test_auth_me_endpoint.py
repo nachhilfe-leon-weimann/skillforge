@@ -17,8 +17,8 @@ from pydantic import SecretStr
 from app.api.v1.auth.me import get_me
 from app.api.v1.common import ErrorResponse
 from app.core.auth import (
-    AuthMethod,
     AuthSettings,
+    PasswordLogin,
     Scope,
     UserPrincipal,
     create_access_token,
@@ -96,10 +96,14 @@ async def test_me_accepts_the_person_token_the_broken_ones_are_made_from():
     "changes",
     [
         pytest.param({"without": "party_id"}, id="without-party_id"),
-        pytest.param({"without": "sid"}, id="without-sid"),
+        pytest.param({"without": "sid"}, id="pwd-without-sid"),
+        pytest.param({"sid": None}, id="pwd-with-null-sid"),
         pytest.param({"without": "amr"}, id="without-amr"),
         pytest.param({"roles": ["pope"]}, id="unknown-role"),
-        pytest.param({"amr": ["discord"]}, id="unknown-method"),
+        pytest.param({"amr": ["otp"]}, id="unknown-method"),
+        pytest.param({"amr": ["discord", "pwd"]}, id="mixed-methods"),
+        pytest.param({"amr": ["discord"], "scope": "crm:read:own"}, id="discord-with-sid"),
+        pytest.param({"amr": ["discord"], "without": "sid"}, id="discord-with-account-self"),
         pytest.param({"sub": "user:someone-else"}, id="sub-not-the-principal"),
     ],
 )
@@ -109,6 +113,16 @@ async def test_me_with_a_broken_person_token_is_the_401_envelope(changes: dict[s
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Invalid authentication credentials", "code": "unauthorized"}
+
+
+async def test_me_accepts_a_discord_token_without_a_session():
+    headers = _hand_signed_person_auth_headers(amr=["discord"], scope="crm:read:own", without="sid")
+
+    async with _client() as client:
+        response = await client.get(ME, headers=headers)
+
+    assert response.status_code == 200
+    assert (response.json()["user_id"], response.json()["scopes"]) == (str(USER_ID), ["crm:read:own"])
 
 
 async def test_me_without_a_token_is_the_401_envelope():
@@ -173,9 +187,8 @@ def _person_auth_headers(*, roles: set[Role]) -> dict[str, str]:
         client_id="portal",
         scopes=frozenset({Scope.ACCOUNT_SELF, Scope.CRM_READ_OWN}),
         party_id=PARTY_ID,
-        session_id=SESSION_ID,
         roles=frozenset(roles),
-        auth_methods=frozenset({AuthMethod.PASSWORD}),
+        login=PasswordLogin(session_id=SESSION_ID),
     )
     token = create_access_token(_auth_settings(), person)
     return {"Authorization": f"Bearer {token.access_token}"}

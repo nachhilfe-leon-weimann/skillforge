@@ -11,8 +11,8 @@ from pydantic import SecretStr
 
 from app.api.v1.common import register_exception_handlers
 from app.core.auth import (
-    AuthMethod,
     AuthSettings,
+    PasswordLogin,
     Principal,
     UserPrincipal,
     create_access_token,
@@ -108,9 +108,8 @@ async def test_request_logging_identifies_the_person_behind_a_request(capsys):
         client_id="portal",
         scopes=frozenset({"account:self"}),
         party_id=party_id,
-        session_id=session_id,
         roles=frozenset(),
-        auth_methods=frozenset({AuthMethod.PASSWORD}),
+        login=PasswordLogin(session_id=session_id),
     )
     headers = {"Authorization": f"Bearer {create_access_token(_settings(), person).access_token}"}
     capsys.readouterr()
