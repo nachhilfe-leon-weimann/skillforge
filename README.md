@@ -5,8 +5,10 @@ people, organisations and how they relate - and decides who may do what with it.
 portal (skillsite) are frontends: they come to SkillForge for central data and decisions.
 
 What SkillForge is for, where its borders are and what comes next is in the
-[project sketch](docs/PROJECT.md). Some of today's code is on its way out: SkillBot's state, the job queue
-and the two-phase operations move to the bot ([where we are](docs/PROJECT.md#where-we-are)).
+[project sketch](docs/PROJECT.md). SkillForge no longer runs SkillBot's Discord workflows - its state, the job
+queue, the two-phase operations: the bot owns them
+([ADR 0009](docs/decisions/0009-bot-owns-its-discord-workflows.md)), and the old code stays readable at tag
+`v0.5.0`.
 
 ## Development
 

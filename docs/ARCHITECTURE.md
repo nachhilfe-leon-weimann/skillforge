@@ -7,21 +7,19 @@ design in [`specs/`](specs/).
 
 ## What is SkillForge?
 
-The central service of the skill-platform. Today it is the **source of truth** for the desired
-state and orchestrates SkillBot (the Discord bot) through three channels:
-
-- a **REST API** (`/api/v1`, OAuth2-protected),
-- a **job queue** that SkillBot pulls work from,
-- **two-phase operations** (`prepare`/`commit`) for Discord state changes.
-
-Forge **never touches the Discord API itself** - only SkillBot does.
+The central service of the skill-platform: the **hub for central data, identity, permissions and domain
+rules** ([project sketch](PROJECT.md), principle 1). Frontends - SkillBot (the Discord bot) and the portal
+(skillsite) - reach it through one channel, the **REST API** (`/api/v1`, OAuth2-protected), and keep their
+own state themselves. SkillForge **pushes nothing**: frontends pull what changed
+([Change signals](#change-signals), [ADR 0009](decisions/0009-bot-owns-its-discord-workflows.md)). It never
+touches the Discord API.
 
 ## Layers
 
 ```
 HTTP -> app/api/system    liveness + health probes (dependencies, workers)
         app/api/v1        endpoints, request/response schemas, scope checks
-        app/services/bot  business logic (transitions, jobs, permissions, views)
+        app/services/auth identity: accounts, clients and grants, tokens, sessions, Discord links
         app/services/crm  system of record: parties, roles, contact infos, relations, subjects
         app/services/system  health aggregation + worker heartbeats
         app/core          cross-cutting: auth, db, logging, config
@@ -34,17 +32,11 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
 - **`app/api/system/`** - `health.py`: `GET /health` (aggregate over all dependencies **and**
   workers; `200` healthy / `503` unhealthy / `500` on error), plus `/health/live`,
   `/health/dependencies[/{name}]`, and `/health/workers[/{name}]`.
-- **`app/api/v1/`** - `router.py` with prefix `/api/v1` aggregates three areas, which share the
+- **`app/api/v1/`** - `router.py` with prefix `/api/v1` aggregates two areas, which share the
   vocabulary in `common/` (see [API conventions](#api-conventions)):
   - `auth/` - `token.py` (OAuth2 token endpoint, three grants), `revoke.py` (logout), `password.py`
     (redeem a one-time token), `users.py` (accounts), `clients.py` (client management), `me.py`, `params.py`
     (shared parameter aliases).
-  - `bot/` - `runtime.py` (read: principals, contexts, command envs), `operations.py` (operation
-    reads: by id + filtered list), `jobs.py` (queue reads - by id, filtered list, queue summary -
-    plus claim/complete/fail), `students.py` & `tutors.py` (state transitions), `command_envs.py`,
-    `users.py` (provisioning: register users, link/deactivate accounts, group membership),
-    `authz.py` (delegated authorization check). `dependencies.py` wires the scope gates. Endpoints
-    do not catch domain errors: the handlers in `app/api/v1/common/errors.py` map them to HTTP.
   - `crm/` - one module per resource: `parties.py` (list, detail, guarded delete), `persons.py` &
     `companies.py` (typed create and update), `roles.py`, `contact_infos.py`, `relations.py`,
     `subjects.py`. `params.py` holds the path and query vocabulary, `schemas.py` the read and write
@@ -54,15 +46,11 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
   `sessions.py`, `accounts.py`, `users.py`, `action_tokens.py` (invitations and resets), `housekeeping.py`
   (deletes expired sessions and one-time tokens), `roles.py` (`derive_roles`), `bootstrap.py`, `audit.py`,
   `results.py`, `errors.py`. Never imports the API or another domain.
-- **`app/services/bot/`** - the actual logic, free of HTTP concerns: `transitions.py`,
-  `operations.py` (operation reads), `jobs.py`, `principals.py`, `provisioning.py`, `authz.py`,
-  `command_envs.py`, `contexts.py`, `profile.py`, `views.py` (immutable view models for
-  responses), `errors.py` (service error hierarchy).
-- **`app/services/crm/`** - the CRM services, same shape as the bot's (function modules, `session`
-  first, no commits, no `app.api` imports): `parties.py` (`PARTY_GRAPH`, `load_party`, `saved`,
-  list, delete), `persons.py`, `companies.py`, `roles.py`, `contact_infos.py`, `relations.py`,
-  `subjects.py`, `inputs.py` (enums, input dataclasses and `normalize_contact_value`, shared with the
-  API), `errors.py` (the error catalog). Never imports the bot domain.
+- **`app/services/crm/`** - the CRM services (function modules, `session` first, no commits, no
+  `app.api` imports): `parties.py` (`PARTY_GRAPH`, `load_party`, `saved`, list, delete), `persons.py`,
+  `companies.py`, `roles.py`, `contact_infos.py`, `relations.py`, `subjects.py`, `inputs.py` (enums,
+  input dataclasses and `normalize_contact_value`, shared with the API), `errors.py` (the error
+  catalog). Imports no other domain.
 - **`app/services/system/`** - health aggregation (`health_service.py`) and worker liveness
   (`heartbeat_service.py`), backing the `/health` tree.
 - **`app/core/`** - `auth/` (what validates a request: OAuth2 scheme, JWT, principals, scopes, roles, reach,
@@ -70,44 +58,7 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
   `db/` (async engine, sessions, models), `logging/` (structured logging via `skillcore`), `errors.py`
   (HTTP-agnostic error taxonomy), `config.py` (settings).
 
-## Two core concepts
-
-### Two-phase transitions (`prepare` -> `commit`)
-
-Discord state changes go through `bot.operation` and are deliberately decoupled: Forge plans and
-reserves, SkillBot executes, Forge confirms.
-
-- **`prepare`** (the `prepare_*` functions in [`transitions.py`](../app/services/bot/transitions.py))
-  validates, locks the affected rows with `FOR UPDATE` (`.with_for_update()`), reserves capacity,
-  and writes a `PREPARED` operation with a `plan` and `expires_at` (TTL **10 min**, `OPERATION_TTL`).
-  Forge hands SkillBot an executable plan in return.
-- **`commit`** persists the Discord results confirmed by the bot and marks the operation
-  `COMMITTED`.
-- Capacity counts committed workspaces **plus** outstanding `PREPARED` reservations, so parallel
-  prepares cannot overbook.
-
-Operations: `TUTOR_ACTIVATE`, `STUDENT_ACTIVATE`, `STUDENT_STASH`, `STUDENT_POP`,
-`STUDENT_DEACTIVATE`, `TUTOR_DEACTIVATE`. The two off-boarding kinds tear a workspace down
-(hard-deleting the workspace + channel rows and flipping `DiscordUser.active` off), the exact
-inverse of activation; a tutor teardown refuses while any student still hangs under it. See
-[off-boarding transitions](specs/off-boarding-transitions.md).
-Rationale & trade-offs: [ADR 0003](decisions/0003-two-phase-transitions.md).
-
-### Forge-first job queue
-
-Forge `enqueue`s work, SkillBot polls it.
-
-- Claiming is atomic via **`SELECT ... FOR UPDATE SKIP LOCKED`**
-  ([`jobs.py`](../app/services/bot/jobs.py)) - concurrent workers never collide.
-- Lifecycle `PENDING -> CLAIMED -> COMPLETED | FAILED`; failures requeue with backoff
-  (`RETRY_BACKOFF = 60 s`, [`jobs.py`](../app/services/bot/jobs.py)) until `max_attempts`.
-
-Dead-lettered (`FAILED`) jobs have an operator path: `just dead-jobs` lists them and
-`just requeue <job_id>` resets one to `PENDING` so it is claimable again
-([`app/cli/deadletters.py`](../app/cli/deadletters.py)). Rationale & scope:
-[ADR 0004](decisions/0004-forge-first-job-queue.md).
-
-### Housekeeping worker
+## Housekeeping worker
 
 A dedicated worker ([`app/workers/housekeeping.py`](../app/workers/housekeeping.py), the `worker`
 service in `compose.yml`) runs every pass in `PASSES` every `HOUSEKEEPING_INTERVAL` (30 s), each in
@@ -129,10 +80,10 @@ alone. Design details: [`bot-decoupling.md`](specs/bot-decoupling.md#housekeepin
 ## CRM
 
 The CRM is the **system of record** for who exists and how people relate
-([ADR 0007](decisions/0007-crm-system-of-record.md)): `core` holds the intended state, the `bot`
-schema mirrors what is true in Discord. The dependency is one-way - `app/services/bot` may import
-`app/services/crm`, never the reverse - and a CRM write is validated against CRM rules only, never
-against Discord state. The full design is in the [CRM API spec](specs/crm-api.md).
+([ADR 0007](decisions/0007-crm-system-of-record.md)): `core` holds the intended state; what is true in
+Discord is the bot's to track ([ADR 0009](decisions/0009-bot-owns-its-discord-workflows.md)). The CRM
+imports nothing but `app.core`, the shared API vocabulary and itself, and a CRM write is validated against
+CRM rules only, never against Discord state. The full design is in the [CRM API spec](specs/crm-api.md).
 
 - **Route form.** A polymorphic read side (`GET /parties`, `GET /parties/{party_id}`, whose
   `PartyDetail` is a discriminated union of `PersonDetail` and `CompanyDetail`) and a typed write
@@ -146,13 +97,9 @@ against Discord state. The full design is in the [CRM API spec](specs/crm-api.md
 - **One loading path.** Async SQLAlchemy cannot lazy-load, so `PARTY_GRAPH` in `parties.py` names
   everything a representation may touch, `load_party` applies it with `populate_existing`, and every
   write returns through it. A `from_model` mapper touches only what `PARTY_GRAPH` loads.
-- **The bot as a consumer.** The bot reads the CRM in two places. Its operational profile loads the
-  party through `PARTY_GRAPH` plus the relationships only the profile touches
-  (`load_parties_for_discord_ids` in `profile.py`). And `prepare_student_activation` checks the pair
-  it is given against the intended state (`_require_tutor_of` in `transitions.py`): both users must
-  be linked to a party through an active Discord account, and the tutor's party must be `tutor_of`
-  the student's. The commit does not check again - a relation that moved on is divergence to
-  reconcile, not a failed commit.
+- **Frontends pull.** The CRM knows none of its consumers. The bot, the portal and operator tools read it
+  through its routes, learn what changed from `updated_at` ([Change signals](#change-signals)) and bring
+  their own state in line; no CRM write waits for them or asks them first.
 - **Uniqueness by constraint.** Subject titles (`uq_subject_title_lower`) and contact infos
   (`uq_contact_info`) are decided by the database: the change is made and flushed *inside* a
   SAVEPOINT and an `IntegrityError` becomes the domain error (`_unique_title`,
