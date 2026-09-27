@@ -13,7 +13,6 @@ Everything runs through [`just`](justfile) (which wraps `uv`):
 - `just test`, `just test-db` (only `@pytest.mark.db`), `just test-without-db`,
   `just test-one <name>`, `just test-file <path>`.
 - `just openapi` - regenerate `openapi.json`; `just openapi-check` checks for drift (CI).
-- `just bootstrap-skillbot` - seed the initial auth state.
 - `just bootstrap-client <client_id> --application "<scopes>" --delegated "<scopes>"` - seed an application
   client with grants in both modes.
 - `just bootstrap-admin --party-id <uuid> --email <address>` - ensure an enabled admin account for a person party
@@ -56,7 +55,7 @@ tests/               api/, auth/, db/ (db/crm/, db/auth/: the CRM and auth apps 
 scripts/             coverage_summary.py, dump_openapi.py
 ```
 
-DB schemas: `core`, `geo`, `ext`, `bot`, `auth`, `system` - see
+DB schemas: `core`, `geo`, `ext`, `auth`, `system` - see
 [`docs/DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md).
 
 ## Conventions
@@ -69,7 +68,10 @@ DB schemas: `core`, `geo`, `ext`, `bot`, `auth`, `system` - see
   and commit ([ADR 0001](docs/decisions/0001-openapi-as-contract.md)).
 - **Migrations** use the direct DB URL (`DB__MIGRATION_URL`), the app uses the pooled one
   ([ADR 0002](docs/decisions/0002-pooled-vs-migration-url.md)). Drop enum types explicitly on
-  downgrade; schemas are created in `migrations/env.py`.
+  downgrade. `migrations/env.py` creates the schema of every model package (`get_schemata` in `schemata.py`);
+  a schema only history knows is created by the revision that first needs it and dropped by the one that
+  retires it - `bot`: `0001_baseline` and `0013_retire_bot`
+  ([ADR 0009](docs/decisions/0009-bot-owns-its-discord-workflows.md)).
 - **Endpoints follow the API conventions** ([spec](docs/specs/api-conventions.md),
   [ADR 0006](docs/decisions/0006-error-envelope.md)): guard with `require_scopes(...)` on the
   decorator; services raise taxonomy errors (`app/core/errors.py`) and endpoints neither catch them

@@ -23,7 +23,7 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
         app/services/crm  system of record: parties, roles, contact infos, relations, subjects
         app/services/system  health aggregation + worker heartbeats
         app/core          cross-cutting: auth, db, logging, config
-                          `-> Postgres (schemas: core/geo/ext/bot/auth/system)
+                          `-> Postgres (schemas: core/geo/ext/auth/system)
 ```
 
 - **`app/main.py`** - FastAPI entry point. Mounts the top-level `app.api` router (which aggregates
@@ -120,7 +120,7 @@ CRM rules only, never against Discord state. The full design is in the [CRM API 
 
 ## Database
 
-One Postgres DB, six schemas by domain - details in
+One Postgres DB, five schemas by domain - details in
 [`DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md):
 
 | Schema | Contents |
@@ -128,7 +128,6 @@ One Postgres DB, six schemas by domain - details in
 | `core` | Central business domain: party/person/company, students, tutors, subjects |
 | `geo`  | Geographic reference data (PLZ/Ort) |
 | `ext`  | Links from external system ids (Discord, sevDesk, Clockodo, Microsoft) to a `core.party` |
-| `bot`  | SkillBot operational state: Discord topology, workspaces, permissions, job queue, operations |
 | `auth` | OAuth2 clients, secrets, scope grants, user accounts, roles, sessions, one-time tokens, audit |
 | `system` | Runtime/operational state: background-worker liveness heartbeats |
 
@@ -136,7 +135,9 @@ One Postgres DB, six schemas by domain - details in
   `*Base` class per schema with `{"schema": ...}`.
 - **Migrations** via Alembic (`migrations/`). The app uses the pooled connection, migrations the
   direct one - see [ADR 0002](decisions/0002-pooled-vs-migration-url.md). Schema/baseline
-  convention: [ADR 0005](decisions/0005-multi-schema-db.md).
+  convention: [ADR 0005](decisions/0005-multi-schema-db.md), amended by
+  [ADR 0009](decisions/0009-bot-owns-its-discord-workflows.md): a schema only history knows (`bot`) is created
+  and dropped by revisions, not by `migrations/env.py`.
 
 ## Auth
 
@@ -175,8 +176,8 @@ OAuth2 error. `POST /auth/revoke` logs out.
   `app/core/logging/middleware.py`).
 - **Never** in a log or an audit row: a password, a refresh or action token, an e-mail address.
 
-`just bootstrap-skillbot`, `just bootstrap-client` and `just bootstrap-admin`
-([`app/cli/bootstrap.py`](../app/cli/bootstrap.py)) seed the first clients and the first admin.
+`just bootstrap-client` and `just bootstrap-admin` ([`app/cli/bootstrap.py`](../app/cli/bootstrap.py)) seed the
+first clients - skillbot's too, once the bot needs one - and the first admin.
 
 ## API contract
 
