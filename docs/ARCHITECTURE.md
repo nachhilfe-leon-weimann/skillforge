@@ -91,12 +91,13 @@ CRM rules only, never against Discord state. The full design is in the [CRM API 
   (`PUT` / `DELETE /persons/{party_id}/student|tutor`), contact infos owned children with their own
   ID, relations associations addressed by their natural key
   (`/parties/{party_id}/relations/{type}/{to_party_id}`). Every route has exactly one target party.
-- **Aggregate root.** `Party` is the root: every write inside the aggregate ends with `saved(...)`,
-  which moves `party.updated_at` - the one change signal consumers get ([Change signals](#change-signals)) - and
-  a relation touches both parties. A request that changes nothing (an empty `PATCH`, a repeated `PUT`) is not a
-  write. Taking a role away takes the `tutor_of` it anchored along (`remove_tutor_role` and `remove_student_role`
-  in `roles.py`); every write of a `tutor_of` - its `PUT` and `DELETE` and a role removal - first locks both
-  parties in ID order, so no `tutor_of` slips in beside a removal and no two of these writes deadlock.
+- **Aggregate root.** `Party` is the root: every write inside the aggregate ends with `saved(...)`, which moves
+  `party.updated_at` - the one change signal consumers get ([Change signals](#change-signals)) - and a relation
+  touches both parties. A request that changes nothing (an empty `PATCH`, a repeated `PUT`) is not a write. Taking a
+  role away takes the `tutor_of` it anchored along (`remove_tutor_role` and `remove_student_role` in `roles.py`);
+  every write of a `tutor_of` - its `PUT` and `DELETE` and a role removal - first locks both parties in ID order, so
+  no `tutor_of` slips in beside a removal and no two of these writes deadlock - but for two rare races, documented
+  in `_lock_pair` and `_lock_with_tutor_of`.
 - **One loading path.** Async SQLAlchemy cannot lazy-load, so `PARTY_GRAPH` in `parties.py` names
   everything a representation may touch, `load_party` applies it with `populate_existing`, and every
   write returns through it. A `from_model` mapper touches only what `PARTY_GRAPH` loads.

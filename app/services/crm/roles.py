@@ -160,6 +160,8 @@ async def _lock_with_tutor_of(session: AsyncSession, party_id: uuid.UUID, direct
     PUT or DELETE of that pair that locked the other side first. ``_load_person`` locks the person again - a no-op.
     A ``tutor_of`` committed while this statement waits for the person is not in the set: ``_remove_tutor_of`` still
     removes it, and ``saved`` locks its other side last - a deadlock only with a third request that holds that party.
+    A concurrent ``delete_party`` of one of those other sides can deadlock with it too: ``delete_party`` locks its party
+    first and the related parties only in ``saved`` - a 500 for one of the two.
     """
     match direction:
         case RelationDirection.OUTGOING:
