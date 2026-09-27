@@ -51,12 +51,12 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
     models with their `from_model` mappers (see [CRM](#crm)).
 - **`app/services/auth/`** - the auth services, same shape as the CRM's: `clients.py`, `scopes.py` (grants
   per mode, `resolve_token_scopes`), `secrets.py` (client secrets), `tokens.py` (the three grants),
-  `sessions.py`, `accounts.py`, `users.py`, `action_tokens.py` (invitations and resets), `roles.py`
-  (`derive_roles`), `bootstrap.py`, `audit.py`, `results.py`, `errors.py`. Never imports the API or another
-  domain.
+  `sessions.py`, `accounts.py`, `users.py`, `action_tokens.py` (invitations and resets), `housekeeping.py`
+  (deletes expired sessions and one-time tokens), `roles.py` (`derive_roles`), `bootstrap.py`, `audit.py`,
+  `results.py`, `errors.py`. Never imports the API or another domain.
 - **`app/services/bot/`** - the actual logic, free of HTTP concerns: `transitions.py`,
   `operations.py` (operation reads), `jobs.py`, `principals.py`, `provisioning.py`, `authz.py`,
-  `command_envs.py`, `contexts.py`, `profile.py`, `reaper.py`, `views.py` (immutable view models for
+  `command_envs.py`, `contexts.py`, `profile.py`, `views.py` (immutable view models for
   responses), `errors.py` (service error hierarchy).
 - **`app/services/crm/`** - the CRM services, same shape as the bot's (function modules, `session`
   first, no commits, no `app.api` imports): `parties.py` (`PARTY_GRAPH`, `load_party`, `saved`,
@@ -101,31 +101,30 @@ Forge `enqueue`s work, SkillBot polls it.
   ([`jobs.py`](../app/services/bot/jobs.py)) - concurrent workers never collide.
 - Lifecycle `PENDING -> CLAIMED -> COMPLETED | FAILED`; failures requeue with backoff
   (`RETRY_BACKOFF = 60 s`, [`jobs.py`](../app/services/bot/jobs.py)) until `max_attempts`.
-- **At-least-once**: a claimed job whose worker dies is reclaimed once its lease expires and
-  delivered again, so handlers in the bot **must be idempotent**.
-
-### Lifecycle guardian (self-healing)
-
-A dedicated worker ([`app/workers/reaper.py`](../app/workers/reaper.py), its own `worker`
-service in `compose.yml`) runs two passes every `REAPER_INTERVAL` (30 s), reusing the existing
-transitions ([`reaper.py`](../app/services/bot/reaper.py)):
-
-- **Job reaper** - reclaims `CLAIMED` jobs whose `claimed_at` is older than `JOB_LEASE` (5 min)
-  via the regular `fail_job` retry path (`PENDING` with backoff, or `FAILED` once attempts are
-  exhausted). The lease reclaim costs no extra attempt - the increment on `claim` carries it. It
-  works in bounded batches (`REAP_BATCH_LIMIT`), draining the backlog across batches so one run
-  never locks an unbounded number of rows in a single transaction.
-- **Operation sweeper** - flips `PREPARED` operations past their `expires_at` to `EXPIRED`
-  (the lazy commit path already did this on access; the sweep makes it active and bounded).
-
-Every run logs one structured counter line (`jobs_reclaimed`, `jobs_dead_lettered`,
-`operations_expired`, `duration_ms`).
 
 Dead-lettered (`FAILED`) jobs have an operator path: `just dead-jobs` lists them and
 `just requeue <job_id>` resets one to `PENDING` so it is claimable again
 ([`app/cli/deadletters.py`](../app/cli/deadletters.py)). Rationale & scope:
-[ADR 0004](decisions/0004-forge-first-job-queue.md),
-[lifecycle guardian spec](specs/lifecycle-guardian.md).
+[ADR 0004](decisions/0004-forge-first-job-queue.md).
+
+### Housekeeping worker
+
+A dedicated worker ([`app/workers/housekeeping.py`](../app/workers/housekeeping.py), the `worker`
+service in `compose.yml`) runs every pass in `PASSES` every `HOUSEKEEPING_INTERVAL` (30 s), each in
+its own transaction:
+
+- **Expired sessions** and **expired one-time tokens** - `delete_expired_sessions` and
+  `delete_expired_action_tokens` in
+  [`app/services/auth/housekeeping.py`](../app/services/auth/housekeeping.py) delete rows whose
+  `expires_at` lies more than `RETENTION_AFTER_EXPIRY` (30 days) in the past - live, revoked,
+  rotated, used or invalidated alike. Each pass deletes one `SKIP LOCKED` batch of at most
+  `DELETE_BATCH_LIMIT` rows per cycle, oldest first, and writes no audit row: the history stays in
+  `auth_audit_log`.
+
+Every cycle logs exactly one `housekeeping_cycle` line (`sessions_deleted`, `action_tokens_deleted`,
+`duration_ms`), then beats for `/health` under `WorkerName.HOUSEKEEPING`, which
+`GET /health/workers` reads; a failing pass marks the beat `DEGRADED` and leaves the other pass
+alone. Design details: [`bot-decoupling.md`](specs/bot-decoupling.md#housekeeping-worker).
 
 ## CRM
 

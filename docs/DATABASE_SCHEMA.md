@@ -472,6 +472,7 @@ revoked_at TIMESTAMPTZ NULL                -- NULL = live
 revoked_reason TEXT NULL                   -- logout, password_reset, account_disabled, admin, reuse_detected
 created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 INDEX (user_account_id), INDEX (application_client_id)
+INDEX (expires_at)  -- ix_user_session_expires_at
 
 -- auth.user_action_token  (one-time tokens for invitation and password reset)
 id UUID PRIMARY KEY DEFAULT uuid4
@@ -484,13 +485,14 @@ invalidated_at TIMESTAMPTZ NULL            -- set when the token is replaced or 
 issued_by TEXT NOT NULL                    -- "<principal_type>:<principal_id>" of the issuer, or "cli"
 created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 INDEX (user_account_id)
+INDEX (expires_at)  -- ix_user_action_token_expires_at
 ```
 
 ## System Schema
 
 Internal runtime state for background workers - not a business domain. Currently just worker
-liveness, consumed by the `/health/workers` endpoints (see the lifecycle guardian in
-`app/workers/reaper.py`).
+liveness, consumed by the `/health/workers` endpoints (see the housekeeping worker in
+`app/workers/housekeeping.py`).
 
 ```sql
 system.worker_cycle_status = ('ok', 'degraded')

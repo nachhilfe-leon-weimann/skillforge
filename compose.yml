@@ -1,6 +1,6 @@
 # The image tag is the deployed version: release-please rewrites the annotated `image:` lines in the
-# release commit, so `main` records what prod runs. Change the tag by hand only to roll back (README,
-# "Rolling back"), and then on every service.
+# release commit, so `main` records what prod runs. A rollback never sets an older tag by hand here -
+# it restores an earlier tag's whole compose.yml (README, "Rolling back").
 services:
   migrate:
     image: ghcr.io/nachhilfe-leon-weimann/skillforge:v0.5.0 # x-release-please-version

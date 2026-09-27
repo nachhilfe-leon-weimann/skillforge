@@ -680,17 +680,17 @@ worker`, `Closes #159`.
   importable module; `test_health.py`, `test_worker_heartbeat_service.py` and `test_system_models.py` use the new
   name; `test_bot_reaper_service.py` goes.
 - _Acceptance criteria:_
-  - [ ] A session or action token more than 30 days past `expires_at` is deleted, one on the boundary or inside it
+  - [x] A session or action token more than 30 days past `expires_at` is deleted, one on the boundary or inside it
         stays - live, rotated, revoked, used or invalidated alike.
-  - [ ] A call deletes at most `limit` rows, oldest first; a row another transaction holds is skipped, not waited
+  - [x] A call deletes at most `limit` rows, oldest first; a row another transaction holds is skipped, not waited
         on, and deleted later. No audit row is written.
-  - [ ] Each pass runs one batch per cycle in its own transaction; a failing pass marks the heartbeat `DEGRADED` and
+  - [x] Each pass runs one batch per cycle in its own transaction; a failing pass marks the heartbeat `DEGRADED` and
         the cycle still logs one `housekeeping_cycle` line with exactly its three counters.
-  - [ ] `WorkerName` has exactly `HOUSEKEEPING`; `GET /health/workers/housekeeping` reports it.
-  - [ ] compose's `worker` runs `python -m app.workers.housekeeping` with its healthcheck disabled;
+  - [x] `WorkerName` has exactly `HOUSEKEEPING`; `GET /health/workers/housekeeping` reports it.
+  - [x] compose's `worker` runs `python -m app.workers.housekeeping` with its healthcheck disabled;
         `just worker-housekeeping` exists, `worker-reaper` does not.
-  - [ ] The revision adds both indexes, `alembic check` is clean, the downgrade drops them.
-  - [ ] `app/services/bot/reaper.py` is gone; no `reaper` remains in `app/` outside `app/services/bot/`, in
+  - [x] The revision adds both indexes, `alembic check` is clean, the downgrade drops them.
+  - [x] `app/services/bot/reaper.py` is gone; no `reaper` remains in `app/` outside `app/services/bot/`, in
         `tests/`, `compose.yml`, the justfile, `CLAUDE.md`, `ARCHITECTURE.md` or `DATABASE_SCHEMA.md`.
 
 **P0-4 - Remove the bot API.** PR `feat(api): remove the bot API`; the body lists the 34 removed operations and says

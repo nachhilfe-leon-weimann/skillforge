@@ -35,13 +35,14 @@ app/
                      (shared API vocabulary: error envelope + handlers, error_responses, Page/PageParams, OpenAPI
                      hooks; re-exports DBSession)
   services/auth/     accounts, users, clients, scopes (grants per mode), tokens (the grants), sessions,
-                     action_tokens, discord_links, secrets, roles, bootstrap, audit, results, errors
+                     action_tokens, discord_links, housekeeping, secrets, roles, bootstrap, audit, results,
+                     errors
   services/bot/      business logic: transitions, operations, jobs, principals, provisioning,
-                     authz, command_envs, contexts, profile, reaper, views, errors
+                     authz, command_envs, contexts, profile, views, errors
   services/crm/      system of record: parties (PARTY_GRAPH, load_party, saved), persons, companies,
                      roles, contact_infos, relations, subjects, inputs, errors
   services/system/   health aggregation + worker heartbeats (backs /health)
-  workers/           reaper.py (lifecycle guardian: job reaper + operation sweeper)
+  workers/           housekeeping.py (deletes auth sessions and one-time tokens 30 days past expiry; heartbeat)
   cli/               deadletters.py (dead-letter list/requeue operator commands), bootstrap.py (behind the
                      `just bootstrap-*` recipes)
   core/              auth/ (OAuth2 scheme, JWT, principals, scopes, roles, reach, guards), db/ (engine, DBSession,
