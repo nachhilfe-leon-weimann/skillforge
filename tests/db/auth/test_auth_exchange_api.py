@@ -44,6 +44,7 @@ DISCORD_USER_GRANT = "urn:skillforge:params:oauth:grant-type:discord-user"
 DISCORD_ID = 123456789012345678
 OTHER_ID = 987654321098765432
 EMAIL = "anna.schmidt@example.org"
+INVALID_CLIENT = {"detail": "Invalid client credentials", "code": "invalid_client"}
 INVALID_GRANT = {"detail": "Invalid credentials or refresh token", "code": "invalid_grant"}
 INVALID_SCOPE = {"detail": "Invalid requested scope", "code": "invalid_scope"}
 UNAUTHORIZED_CLIENT = {"detail": "Client may not use this grant", "code": "unauthorized_client"}
@@ -379,6 +380,52 @@ async def test_only_an_exchange_client_exchanges_and_an_exchange_client_cannot_l
         (str(reader.id), "Client lacks auth:users:exchange"): 1,
         (str(bot.id), "Client lacks auth:users:login"): 2,
     })
+
+
+async def test_the_client_is_authenticated_before_any_look_up(
+    token_api: AsyncClient,
+    bot: LoginClientCredentials,
+    make_client,
+    make_login_account,
+    session: AsyncSession,
+    audit_rows,
+    restore_logging,
+    capsys,
+):
+    """A wrong secret and a missing `auth:users:exchange` scope answer the identical denial whether the Discord ID
+    is linked or unknown, and neither look-up runs: the client is authenticated, then authorized, before the
+    Discord user is ever read (review focus)."""
+    account = await make_login_account()
+    await _link(session, account.party_id)
+    reader = await make_client(application=[Scope.CRM_READ])
+    configure_logging(LoggingSettings(level=LogLevel.DEBUG, format=LogFormat.JSON))
+    existing_ids = {row.id for row in await session.scalars(select(AuthAuditLog))}
+    capsys.readouterr()
+
+    wrong_secret = [
+        await token_api.post(
+            "/token",
+            data={"grant_type": DISCORD_USER_GRANT, "discord_user_id": str(discord_user_id)}
+            | bot.form
+            | {"client_secret": "wrong"},
+        )
+        for discord_user_id in (DISCORD_ID, OTHER_ID)
+    ]
+    missing_scope = [await _exchange(token_api, reader, discord_user_id) for discord_user_id in (DISCORD_ID, OTHER_ID)]
+
+    output = capsys.readouterr().out
+    assert [(r.status_code, r.json()) for r in wrong_secret] == [(401, INVALID_CLIENT)] * 2
+    assert wrong_secret[0].content == wrong_secret[1].content
+    assert [(r.status_code, r.json()) for r in missing_scope] == [(400, UNAUTHORIZED_CLIENT)] * 2
+    assert missing_scope[0].content == missing_scope[1].content
+    assert await audit_rows(AuditEventType.TOKEN_DENIED, PrincipalType.USER) == []
+    new_details = [
+        row.detail or "" for row in await session.scalars(select(AuthAuditLog)) if row.id not in existing_ids
+    ]
+    assert new_details, "the wrong secret and the missing scope each write a denial"
+    for discord_id in (str(DISCORD_ID), str(OTHER_ID)):
+        assert not any(discord_id in detail for detail in new_details)
+        assert discord_id not in output
 
 
 # --- What never leaves the process ---------------------------------------------------------------
