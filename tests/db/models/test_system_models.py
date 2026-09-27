@@ -25,16 +25,16 @@ async def test_worker_heartbeat_upsert_keeps_one_row_per_worker(session):
     from app.core.db.models import WorkerCycleStatus, WorkerHeartbeat
 
     first_beat = datetime(2026, 6, 7, 12, 0, 0, tzinfo=UTC)
-    await session.execute(_beat("bot-ops-reaper", first_beat, WorkerCycleStatus.OK))
+    await session.execute(_beat("housekeeping", first_beat, WorkerCycleStatus.OK))
 
     second_beat = first_beat + timedelta(seconds=30)
-    await session.execute(_beat("bot-ops-reaper", second_beat, WorkerCycleStatus.DEGRADED))
+    await session.execute(_beat("housekeeping", second_beat, WorkerCycleStatus.DEGRADED))
     await session.flush()
 
     rows = (await session.execute(select(WorkerHeartbeat))).scalars().all()
 
     assert len(rows) == 1
-    assert rows[0].worker_name == "bot-ops-reaper"
+    assert rows[0].worker_name == "housekeeping"
     assert rows[0].last_beat_at == second_beat
     assert rows[0].last_status is WorkerCycleStatus.DEGRADED
 
@@ -44,14 +44,14 @@ async def test_worker_heartbeat_tracks_workers_independently(session):
     from app.core.db.models import WorkerCycleStatus, WorkerHeartbeat
 
     beat_at = datetime(2026, 6, 7, 12, 0, 0, tzinfo=UTC)
-    await session.execute(_beat("bot-ops-reaper", beat_at, WorkerCycleStatus.OK))
+    await session.execute(_beat("housekeeping", beat_at, WorkerCycleStatus.OK))
     await session.execute(_beat("future-sync-worker", beat_at, WorkerCycleStatus.OK))
     await session.flush()
 
     result = await session.execute(select(WorkerHeartbeat.worker_name).order_by(WorkerHeartbeat.worker_name))
     names = result.scalars().all()
 
-    assert names == ["bot-ops-reaper", "future-sync-worker"]
+    assert names == ["future-sync-worker", "housekeeping"]
 
 
 def _beat(worker_name, last_beat_at, last_status):

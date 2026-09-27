@@ -815,7 +815,8 @@ exchange, Discord links, the retirement of the grant engine and the change signa
 - **P1-2 - Self-service.** `require_user`; `POST /auth/me/password` (current + new password, demands `amr`
   `pwd`, revokes the other sessions); `GET /auth/me/sessions`, `DELETE /auth/me/sessions/{session_id}`. Guarded by
   `account:self`.
-- **P1-3 - Housekeeping.** The reaper deletes sessions and action tokens that expired more than 30 days ago.
+- **P1-3 - Housekeeping.** The housekeeping worker deletes sessions and action tokens that expired more than
+  30 days ago. _Implemented with P0-3 of [bot-decoupling.md](bot-decoupling.md) (#159)._
 - **P1-4 - Reach-aware writes.** `crm:write:own` and the first routes that accept it. An `:own` write never widens
   reach or roles, and every party it names must be in reach.
 - **P1-5 - Remaining CRM reads** become reach-aware where a restricted view makes sense.

@@ -25,6 +25,7 @@ class UserActionToken(CreatedAtMixin, AuthBase):
     __tablename__ = "user_action_token"
     __table_args__ = AuthBase.extend_table_args(
         Index("ix_user_action_token_user_account_id", "user_account_id"),
+        Index("ix_user_action_token_expires_at", "expires_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

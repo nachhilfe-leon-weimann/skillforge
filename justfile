@@ -107,9 +107,9 @@ test-one test:
 
 # --- Workers ---
 
-# Run the lifecycle guardian (job reaper + operation sweeper) loop locally.
-worker-reaper:
-    uv run python -m app.workers.reaper
+# Run the housekeeping worker loop locally (deletes auth sessions and one-time tokens 30 days past expiry; beats for /health).
+worker-housekeeping:
+    uv run python -m app.workers.housekeeping
 
 # --- Dead-letter queue ---
 

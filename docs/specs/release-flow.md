@@ -270,10 +270,11 @@ What is identical in every repo; everything else is repo-specific detail behind 
   line is unpinned or lost its annotation, when the services disagree on the version, or when the
   `extra-files` entry is gone - each of them a silent no-op in the release PR. It deliberately does not compare
   the pin with the project version: a rollback pins an older one.
-- *Technique:* rollback procedure in the [README](../../README.md#rolling-back): set the earlier tag in a
-  `chore(deploy)` PR, merge it, dispatch `deploy.yml` with that version. The next release PR rewrites the pin,
-  so nothing is undone by hand. It rolls back the app only: an earlier image cannot run `alembic upgrade head`
-  against a schema that is ahead of it.
+- *Technique:* rollback procedure in the [README](../../README.md#rolling-back): restore the earlier tag's
+  whole `compose.yml` in a `chore(deploy)` PR, merge it, dispatch `deploy.yml` with that version. Rolling
+  forward reverts the rollback PR first, restoring the current `compose.yml`; the next release PR then only
+  moves the pins. It rolls back the app only: an earlier image cannot run `alembic upgrade head` against a
+  schema that is ahead of it.
 - *Acceptance criteria:*
   - [x] `compose.yml` names one released version on every `image:` line. *(`v0.4.0`, the image prod already
         runs - the PR itself deploys nothing)*

@@ -34,7 +34,7 @@ class DependenciesHealthCheckResponse(HealthCheckResponse):
 
 
 class WorkerName(StrEnum):
-    REAPER = "bot-ops-reaper"
+    HOUSEKEEPING = "housekeeping"
 
 
 class WorkerHealthCheckResponse(HealthCheckResponse):

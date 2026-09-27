@@ -44,7 +44,6 @@ from .provisioning import (
     remove_user_from_group,
     upsert_discord_user,
 )
-from .reaper import reap_expired_jobs, sweep_expired_operations
 from .transitions import (
     cancel_operation,
     commit_student_activation,
@@ -124,11 +123,9 @@ __all__ = [
     "prepare_student_stash",
     "prepare_tutor_activation",
     "prepare_tutor_deactivation",
-    "reap_expired_jobs",
     "remove_user_from_group",
     "requeue_job",
     "resolve_command_env",
-    "sweep_expired_operations",
     "upsert_command_env",
     "upsert_discord_user",
 ]

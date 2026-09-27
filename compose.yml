@@ -1,6 +1,6 @@
 # The image tag is the deployed version: release-please rewrites the annotated `image:` lines in the
-# release commit, so `main` records what prod runs. Change the tag by hand only to roll back (README,
-# "Rolling back"), and then on every service.
+# release commit, so `main` records what prod runs. A rollback never sets an older tag by hand here -
+# it restores an earlier tag's whole compose.yml (README, "Rolling back").
 services:
   migrate:
     image: ghcr.io/nachhilfe-leon-weimann/skillforge:v0.5.0 # x-release-please-version
@@ -22,9 +22,10 @@ services:
     ports:
       - "8000:8000"
 
-  # Lifecycle guardian: reclaims expired job leases and sweeps stale prepared operations.
-  # Same image as the app, separate entrypoint, pooled DB connection. Runs independently of
-  # the app; SKIP LOCKED / idempotent sweeps make multiple replicas safe.
+  # Housekeeping: deletes login sessions and one-time tokens 30 days after they expire, and beats for
+  # /health. Same image as the app, its own entrypoint, the pooled DB connection; SKIP LOCKED batches
+  # make several replicas safe. The image's HEALTHCHECK probes the API on :8000, which this container
+  # does not serve - /health reports the worker through its heartbeat instead.
   worker:
     image: ghcr.io/nachhilfe-leon-weimann/skillforge:v0.5.0 # x-release-please-version
     pull_policy: always
@@ -34,4 +35,6 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    command: [ "python", "-m", "app.workers.reaper" ]
+    healthcheck:
+      disable: true
+    command: [ "python", "-m", "app.workers.housekeeping" ]
