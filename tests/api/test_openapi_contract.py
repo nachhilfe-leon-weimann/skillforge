@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -304,3 +305,85 @@ def test_the_bot_api_is_gone(schema: dict[str, Any]):
     assert areas == {"auth", "crm"}
     assert {tag["name"] for tag in schema["tags"]} == {"auth", "crm", "system"}
     assert REMOVED_BOT_SCHEMAS.isdisjoint(schema["components"]["schemas"])
+
+
+# A Discord snowflake - of a user, guild, channel or role - by the name of the property or parameter holding it.
+DISCORD_ID_NAME = re.compile(r"discord|guild|channel|snowflake")
+JAVASCRIPT_MAX_SAFE_INTEGER = 2**53 - 1
+
+
+def test_no_discord_id_is_a_json_number(schema: dict[str, Any]):
+    """Snowflakes exceed 2^53, so JavaScript - the portal, release-please's rewrite of `openapi.json` - would round
+    a JSON number: every Discord ID is a decimal string on the wire (bot-decoupling spec, decision I)."""
+    discord_ids = [(where, node) for where, name, node in _named_schemas(schema) if DISCORD_ID_NAME.search(name)]
+
+    assert discord_ids, "the contract names Discord IDs (`discord_user_id`), so the check must see some"
+    assert [where for where, node in discord_ids if _admits_a_number(node)] == []
+
+
+def test_the_discord_id_check_finds_a_number_anywhere():
+    document = {
+        "components": {
+            "schemas": {
+                "Probe": {
+                    "properties": {
+                        "guild_id": {"type": "integer"},
+                        "discord_ids": {"type": "array", "items": {"type": "integer"}},
+                        "channel_id": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+                        "discord_user_id": {"type": "string", "pattern": "^[0-9]{1,19}$"},
+                        "subject_id": {"type": "integer"},
+                    }
+                }
+            }
+        },
+        "paths": {
+            "/probe/{discord_id}": {
+                "get": {"parameters": [{"name": "discord_id", "in": "path", "schema": {"type": "integer"}}]}
+            }
+        },
+    }
+
+    numbers = sorted(
+        name for _, name, node in _named_schemas(document) if DISCORD_ID_NAME.search(name) and _admits_a_number(node)
+    )
+
+    assert numbers == ["channel_id", "discord_id", "discord_ids", "guild_id"]
+
+
+def test_the_committed_contract_holds_no_integer_javascript_would_round():
+    """An example or a bound above 2^53, written as a JSON number, comes back changed from JavaScript's JSON.parse."""
+    unsafe: list[str] = []
+
+    def parse_int(token: str) -> int:
+        if abs(int(token)) > JAVASCRIPT_MAX_SAFE_INTEGER:
+            unsafe.append(token)
+        return int(token)
+
+    json.loads(COMMITTED_OPENAPI_PATH.read_text(), parse_int=parse_int)
+
+    assert unsafe == []
+
+
+def _named_schemas(node: Any, where: str = "#") -> Iterator[tuple[str, str, Any]]:
+    """Every property and parameter of an OpenAPI document: where it sits, its name and its schema."""
+    if isinstance(node, dict):
+        properties = node.get("properties")
+        if isinstance(properties, dict):
+            for name, definition in properties.items():
+                yield f"{where}/properties/{name}", name, definition
+        if node.get("in") in ("path", "query", "header", "cookie") and isinstance(node.get("name"), str):
+            yield where, node["name"], node.get("schema", {})
+        for key, value in node.items():
+            yield from _named_schemas(value, f"{where}/{key}")
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            yield from _named_schemas(value, f"{where}/{index}")
+
+
+def _admits_a_number(node: Any) -> bool:
+    """Whether a schema, or anything nested in it (`items`, `anyOf`), admits a JSON number."""
+    if isinstance(node, dict):
+        return node.get("type") in ("integer", "number") or any(_admits_a_number(value) for value in node.values())
+    if isinstance(node, list):
+        return any(_admits_a_number(value) for value in node)
+    return False
