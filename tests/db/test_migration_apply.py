@@ -26,6 +26,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 pytestmark = pytest.mark.db
 
+_REVISION_0010 = "0010_subject_title_unique"
+_REVISION_0011 = "0011_grant_mode_user_accounts"
+# The schemas of today's models. `bot` is history: 0001_baseline creates it, 0013_retire_bot drops it.
+_APPLICATION_SCHEMAS = {"auth", "core", "ext", "geo", "system"}
+
 
 def _asyncpg_dsn(url: str) -> str:
     # SQLAlchemy URL (postgresql+asyncpg://...) -> plain libpq DSN for asyncpg.
@@ -91,6 +96,63 @@ async def _primary_key_columns(url: str, schema: str, table: str) -> list[str]:
     return [str(name) for (name,) in rows]
 
 
+async def _schemas(url: str) -> set[str]:
+    """Every schema but Postgres' own and `public`."""
+    rows = await _rows(
+        url,
+        """
+        SELECT nspname FROM pg_namespace
+        WHERE nspname !~ '^pg_' AND nspname NOT IN ('information_schema', 'public')
+        """,
+    )
+    return {str(name) for (name,) in rows}
+
+
+async def _leftovers(url: str) -> list[str]:
+    """Every relation in an application schema and every enum type, `bot` and `public` included."""
+    rows = await _rows(
+        url,
+        """
+        SELECT n.nspname || '.' || c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname IN ('auth', 'bot', 'core', 'ext', 'geo', 'system')
+        UNION ALL
+        SELECT n.nspname || '.' || t.typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+        WHERE t.typtype = 'e' AND n.nspname IN ('auth', 'bot', 'core', 'ext', 'geo', 'public', 'system')
+        """,
+    )
+    return sorted(str(name) for (name,) in rows)
+
+
+# What `alembic check` cannot see: every column with its type, nullability and default, every constraint and
+# index by name and definition, and every enum type with its labels in order - of the `bot` schema.
+_BOT_CATALOG = """
+SELECT 'column', c.relname, a.attnum || ' ' || a.attname,
+       format_type(a.atttypid, a.atttypmod) || CASE WHEN a.attnotnull THEN ' NOT NULL' ELSE '' END
+       || coalesce(' DEFAULT ' || pg_get_expr(d.adbin, d.adrelid), '')
+FROM pg_attribute a
+JOIN pg_class c ON c.oid = a.attrelid
+LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+WHERE c.relnamespace = 'bot'::regnamespace AND c.relkind = 'r' AND a.attnum > 0 AND NOT a.attisdropped
+UNION ALL
+SELECT 'constraint', c.relname, k.conname, pg_get_constraintdef(k.oid)
+FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid
+WHERE k.connamespace = 'bot'::regnamespace
+UNION ALL
+SELECT 'index', c.relname, i.relname, pg_get_indexdef(i.oid)
+FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid JOIN pg_class c ON c.oid = x.indrelid
+WHERE c.relnamespace = 'bot'::regnamespace
+UNION ALL
+SELECT 'enum', t.typname, '', string_agg(e.enumlabel, ', ' ORDER BY e.enumsortorder)
+FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
+WHERE t.typnamespace = 'bot'::regnamespace
+GROUP BY t.typname
+"""
+
+
+async def _bot_catalog(url: str) -> list[tuple[object, ...]]:
+    return sorted(await _rows(url, _BOT_CATALOG))
+
+
 @pytest.fixture
 def migration_db_url(db_url: str):
     """A freshly created, empty database so migrations run from a clean slate."""
@@ -102,26 +164,36 @@ def migration_db_url(db_url: str):
         asyncio.run(_run_on_server(db_url, f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
 
 
-def _alembic(db_url: str, *args: str) -> None:
+def _alembic_result(db_url: str, *args: str) -> subprocess.CompletedProcess[str]:
     env = {**os.environ, "DB__URL": db_url, "DB__MIGRATION_URL": db_url}
-    result = subprocess.run(
+    return subprocess.run(
         [sys.executable, "-m", "alembic", *args],
         cwd=_REPO_ROOT,
         env=env,
         capture_output=True,
         text=True,
     )
+
+
+def _alembic(db_url: str, *args: str) -> None:
+    result = _alembic_result(db_url, *args)
     assert result.returncode == 0, f"`alembic {' '.join(args)}` failed:\n{result.stdout}\n{result.stderr}"
 
 
 def test_migrations_apply_match_models_and_reverse(migration_db_url: str) -> None:
-    # 1. Every migration applies cleanly from an empty database.
+    # 1. Every migration applies cleanly from an empty database - without the bot models: 0001_baseline
+    #    creates the `bot` schema itself and 0013_retire_bot drops it (bot-decoupling spec, decision L).
     _alembic(migration_db_url, "upgrade", "head")
     # 2. The migrated schema matches the models - fails if a revision is missing or
-    #    incomplete (drift), which create_all-based tests cannot detect.
+    #    incomplete (drift), which create_all-based tests cannot detect. `check` runs env.py once
+    #    more: a leftover `models/bot/__pycache__/` must not bring the schema back.
     _alembic(migration_db_url, "check")
-    # 3. The chain is reversible and can be rebuilt from scratch.
+    assert asyncio.run(_schemas(migration_db_url)) == _APPLICATION_SCHEMAS
+    # 3. The chain is reversible and can be rebuilt from scratch. env.py creates the schemas of
+    #    today's models on every run, so they stay behind, empty; `bot` goes with 0001's downgrade.
     _alembic(migration_db_url, "downgrade", "base")
+    assert asyncio.run(_schemas(migration_db_url)) == _APPLICATION_SCHEMAS
+    assert asyncio.run(_leftovers(migration_db_url)) == []
     _alembic(migration_db_url, "upgrade", "head")
 
 
@@ -139,14 +211,15 @@ _OPERATION_KINDS_WITHOUT_OFF_BOARDING = _OPERATION_KINDS_WITH_OFF_BOARDING[:4]
 def test_off_boarding_operation_kinds_migration_is_reversible(migration_db_url: str) -> None:
     # `alembic check` is blind to enum-label drift, so assert the actual DB labels the
     # migration path produces - forward adds the off-boarding kinds, downgrade removes them
-    # (exercising the enum-recreate recast), re-upgrade adds them back.
-    _alembic(migration_db_url, "upgrade", "head")
+    # (exercising the enum-recreate recast), re-upgrade adds them back. The type lives until
+    # 0011: 0013_retire_bot drops the `bot` schema.
+    _alembic(migration_db_url, "upgrade", _REVISION_0011)
     assert asyncio.run(_enum_labels(migration_db_url, "bot", "operation_kind")) == _OPERATION_KINDS_WITH_OFF_BOARDING
 
     _alembic(migration_db_url, "downgrade", "0006_worker_heartbeat")
     assert asyncio.run(_enum_labels(migration_db_url, "bot", "operation_kind")) == _OPERATION_KINDS_WITHOUT_OFF_BOARDING
 
-    _alembic(migration_db_url, "upgrade", "head")
+    _alembic(migration_db_url, "upgrade", _REVISION_0011)
     assert asyncio.run(_enum_labels(migration_db_url, "bot", "operation_kind")) == _OPERATION_KINDS_WITH_OFF_BOARDING
 
 
@@ -158,7 +231,8 @@ def test_cancelled_operation_status_migration_is_reversible(migration_db_url: st
     # `alembic check` is blind to enum-label drift, so assert the actual labels the migration
     # path produces: forward adds `cancelled`, downgrade recreates the type without it
     # (exercising the enum-recreate recast under a server_default), re-upgrade adds it back.
-    _alembic(migration_db_url, "upgrade", "head")
+    # The type lives until 0011: 0013_retire_bot drops the `bot` schema.
+    _alembic(migration_db_url, "upgrade", _REVISION_0011)
     assert asyncio.run(_enum_labels(migration_db_url, "bot", "operation_status")) == _OPERATION_STATUSES_WITH_CANCELLED
 
     _alembic(migration_db_url, "downgrade", "0008_idempotent_prepare")
@@ -166,12 +240,9 @@ def test_cancelled_operation_status_migration_is_reversible(migration_db_url: st
         asyncio.run(_enum_labels(migration_db_url, "bot", "operation_status")) == _OPERATION_STATUSES_WITHOUT_CANCELLED
     )
 
-    _alembic(migration_db_url, "upgrade", "head")
+    _alembic(migration_db_url, "upgrade", _REVISION_0011)
     assert asyncio.run(_enum_labels(migration_db_url, "bot", "operation_status")) == _OPERATION_STATUSES_WITH_CANCELLED
 
-
-_REVISION_0010 = "0010_subject_title_unique"
-_REVISION_0011 = "0011_grant_mode_user_accounts"
 
 _REVISION_0011_ENUM_LABELS = {
     "grant_mode": ["application", "delegated"],
@@ -251,3 +322,113 @@ def test_grant_mode_and_user_account_migration_is_reversible(migration_db_url: s
 
     _alembic(migration_db_url, "upgrade", _REVISION_0011)
     assert asyncio.run(_primary_key_columns(migration_db_url, *_GRANT_TABLE)) == _GRANT_KEY_WITH_MODE
+
+
+# --- 0013_retire_bot (bot-decoupling spec, decision M) ---
+
+_SKILLBOT_ID = "55555555-5555-5555-5555-555555555555"
+_OPERATOR_ID = "66666666-6666-6666-6666-666666666666"
+
+# What the revision meets in production: the bot scopes granted in both modes, a grant of another scope,
+# and a row in a bot table.
+_SEED_BOT_STATE = f"""
+INSERT INTO auth.permission_scope (key, description) VALUES
+    ('bot:read', 'Read bot API surface.'), ('bot:write', 'Write bot API surface.'), ('crm:read', 'Read the CRM');
+INSERT INTO auth.application_client (id, client_id, name) VALUES
+    ('{_SKILLBOT_ID}', 'skillbot', 'SkillBot'), ('{_OPERATOR_ID}', 'operator', 'Operator');
+INSERT INTO auth.application_client_scope_grant (application_client_id, scope_key, mode) VALUES
+    ('{_SKILLBOT_ID}', 'bot:read', 'application'),
+    ('{_SKILLBOT_ID}', 'bot:write', 'application'),
+    ('{_OPERATOR_ID}', 'bot:read', 'delegated'),
+    ('{_OPERATOR_ID}', 'crm:read', 'delegated');
+INSERT INTO bot.job (job_id, kind) VALUES (gen_random_uuid(), 'sync_roles');
+"""
+
+_GRANTS = """
+SELECT c.client_id, g.scope_key, g.mode::text
+FROM auth.application_client_scope_grant g JOIN auth.application_client c ON c.id = g.application_client_id
+ORDER BY 1, 2, 3
+"""
+_SCOPES = "SELECT key, description, active FROM auth.permission_scope ORDER BY key"
+_AUDIT = "SELECT principal_type, principal_id, event_type, success, detail FROM auth.auth_audit_log ORDER BY detail"
+
+_ALL_SEEDED_GRANTS = [
+    ("operator", "bot:read", "delegated"),
+    ("operator", "crm:read", "delegated"),
+    ("skillbot", "bot:read", "application"),
+    ("skillbot", "bot:write", "application"),
+]
+_ALL_SEEDED_SCOPES = [
+    ("bot:read", "Read bot API surface.", True),
+    ("bot:write", "Write bot API surface.", True),
+    ("crm:read", "Read the CRM", True),
+]
+
+
+def test_retiring_the_bot_schema_is_audited_and_reversible(migration_db_url: str) -> None:
+    _alembic(migration_db_url, "upgrade", _REVISION_0011)
+    catalog_at_0011 = asyncio.run(_bot_catalog(migration_db_url))
+    asyncio.run(_run_on_server(migration_db_url, _SEED_BOT_STATE))
+
+    _alembic(migration_db_url, "upgrade", "head")
+
+    assert asyncio.run(_schemas(migration_db_url)) == _APPLICATION_SCHEMAS
+    assert asyncio.run(_rows(migration_db_url, _GRANTS)) == [("operator", "crm:read", "delegated")]
+    assert asyncio.run(_rows(migration_db_url, _SCOPES)) == [("crm:read", "Read the CRM", True)]
+    # One entry per deleted grant, worded as revoke_application_client_scope words a removal.
+    assert asyncio.run(_rows(migration_db_url, _AUDIT)) == [
+        (
+            "application",
+            _SKILLBOT_ID,
+            "scope_grant.removed",
+            True,
+            "Removed scope bot:read in application mode from application client skillbot.",
+        ),
+        (
+            "application",
+            _OPERATOR_ID,
+            "scope_grant.removed",
+            True,
+            "Removed scope bot:read in delegated mode from application client operator.",
+        ),
+        (
+            "application",
+            _SKILLBOT_ID,
+            "scope_grant.removed",
+            True,
+            "Removed scope bot:write in application mode from application client skillbot.",
+        ),
+    ]
+
+    _alembic(migration_db_url, "downgrade", _REVISION_0011)
+
+    # The structure of 0011 and the two scope rows come back - no data, no grant.
+    assert asyncio.run(_bot_catalog(migration_db_url)) == catalog_at_0011
+    assert asyncio.run(_rows(migration_db_url, _SCOPES)) == _ALL_SEEDED_SCOPES
+    assert asyncio.run(_rows(migration_db_url, _GRANTS)) == [("operator", "crm:read", "delegated")]
+    assert asyncio.run(_rows(migration_db_url, "SELECT count(*) FROM bot.job")) == [(0,)]
+
+    # Upgraded again, there is nothing left to revoke.
+    _alembic(migration_db_url, "upgrade", "head")
+    assert "bot" not in asyncio.run(_schemas(migration_db_url))
+    assert len(asyncio.run(_rows(migration_db_url, _AUDIT))) == 3
+
+
+def test_an_unknown_object_in_the_bot_schema_fails_the_upgrade_and_changes_nothing(migration_db_url: str) -> None:
+    _alembic(migration_db_url, "upgrade", _REVISION_0011)
+    asyncio.run(_run_on_server(migration_db_url, _SEED_BOT_STATE))
+    asyncio.run(_run_on_server(migration_db_url, "CREATE TABLE bot.stray (id integer PRIMARY KEY)"))
+    catalog_before = asyncio.run(_bot_catalog(migration_db_url))
+
+    refused = _alembic_result(migration_db_url, "upgrade", "head")
+
+    assert refused.returncode != 0
+    assert "cannot drop schema bot because other objects depend on it" in refused.stderr
+    # One transaction: neither 0012 nor 0013 happened, and every grant, scope, row and table is still there.
+    version = "SELECT version_num FROM public.alembic_version"
+    assert asyncio.run(_rows(migration_db_url, version)) == [(_REVISION_0011,)]
+    assert asyncio.run(_bot_catalog(migration_db_url)) == catalog_before
+    assert asyncio.run(_rows(migration_db_url, _GRANTS)) == _ALL_SEEDED_GRANTS
+    assert asyncio.run(_rows(migration_db_url, _SCOPES)) == _ALL_SEEDED_SCOPES
+    assert asyncio.run(_rows(migration_db_url, _AUDIT)) == []
+    assert asyncio.run(_rows(migration_db_url, "SELECT count(*) FROM bot.job")) == [(1,)]

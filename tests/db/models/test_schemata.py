@@ -32,3 +32,7 @@ def test_a_private_folder_and_a_module_are_no_schema(tmp_path: Path):
     (tmp_path / "shared.py").touch()
 
     assert get_schemata(tmp_path) == {"core"}
+
+
+def test_the_models_define_the_five_schemas():
+    assert get_schemata() == {"auth", "core", "ext", "geo", "system"}
