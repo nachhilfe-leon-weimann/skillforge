@@ -21,7 +21,7 @@ from app.core.auth import (
 )
 from app.core.auth.dependencies import get_auth_settings, get_current_principal
 
-BotWritePrincipal = Annotated[Principal, require_scopes("bot:write")]
+ManageUsersPrincipal = Annotated[Principal, require_scopes("auth:users:manage")]
 # require_scopes refuses a reach-qualified scope, so this requirement is declared with the bare marker.
 CrmReadOwnPrincipal = Annotated[Principal, Security(get_current_principal, scopes=["crm:read:own"])]
 CurrentPrincipal = Annotated[Principal, Depends(get_current_principal)]
@@ -33,8 +33,8 @@ async def test_get_current_principal_returns_principal_for_valid_token():
     token = create_application_access_token(
         settings,
         principal_id=uuid4(),
-        client_id="skillbot",
-        scopes=["bot:read"],
+        client_id="integration",
+        scopes=["auth:clients:manage"],
     )
     app = _app(settings)
 
@@ -48,8 +48,8 @@ async def test_get_current_principal_returns_principal_for_valid_token():
     assert response.status_code == 200
     assert response.json() == {
         "principal_type": "application",
-        "client_id": "skillbot",
-        "scopes": ["bot:read"],
+        "client_id": "integration",
+        "scopes": ["auth:clients:manage"],
     }
 
 
@@ -71,8 +71,8 @@ async def test_require_scopes_accepts_token_with_required_scope():
     token = create_application_access_token(
         settings,
         principal_id=uuid4(),
-        client_id="skillbot",
-        scopes=["bot:write"],
+        client_id="integration",
+        scopes=["auth:users:manage"],
     )
     app = _app(settings)
 
@@ -84,7 +84,7 @@ async def test_require_scopes_accepts_token_with_required_scope():
     )
 
     assert response.status_code == 200
-    assert response.json() == {"client_id": "skillbot"}
+    assert response.json() == {"client_id": "integration"}
 
 
 async def test_require_scopes_rejects_token_without_required_scope():
@@ -92,8 +92,8 @@ async def test_require_scopes_rejects_token_without_required_scope():
     token = create_application_access_token(
         settings,
         principal_id=uuid4(),
-        client_id="skillbot",
-        scopes=["bot:read"],
+        client_id="integration",
+        scopes=["auth:clients:manage"],
     )
     app = _app(settings)
 
@@ -112,11 +112,11 @@ async def test_require_scopes_guards_a_route_from_the_decorator():
     app = _app(settings)
 
     missing_token = await _request(app, "POST", "/guarded")
-    wrong_scope = await _request(app, "POST", "/guarded", headers=_bearer(settings, scopes=["bot:read"]))
-    granted = await _request(app, "POST", "/guarded", headers=_bearer(settings, scopes=["bot:write"]))
+    wrong_scope = await _request(app, "POST", "/guarded", headers=_bearer(settings, scopes=["auth:clients:manage"]))
+    granted = await _request(app, "POST", "/guarded", headers=_bearer(settings, scopes=["auth:users:manage"]))
 
     assert missing_token.status_code == 401
-    assert missing_token.headers["www-authenticate"] == 'Bearer scope="bot:write"'
+    assert missing_token.headers["www-authenticate"] == 'Bearer scope="auth:users:manage"'
     assert wrong_scope.status_code == 403
     assert granted.status_code == 200
 
@@ -124,8 +124,8 @@ async def test_require_scopes_guards_a_route_from_the_decorator():
 def test_require_scopes_declares_the_scopes_in_openapi_for_both_positions():
     paths = _app(_settings()).openapi()["paths"]
 
-    assert paths["/write"]["post"]["security"] == [{"OAuth2": ["bot:write"]}]
-    assert paths["/guarded"]["post"]["security"] == [{"OAuth2": ["bot:write"]}]
+    assert paths["/write"]["post"]["security"] == [{"OAuth2": ["auth:users:manage"]}]
+    assert paths["/guarded"]["post"]["security"] == [{"OAuth2": ["auth:users:manage"]}]
 
 
 async def test_a_crm_read_own_token_is_forbidden_on_a_route_that_requires_crm_read():
@@ -155,7 +155,7 @@ async def test_require_application_rejects_non_application_principal():
     app = FastAPI()
 
     async def fake_principal() -> Principal:
-        return _person(scopes={"bot:read"})
+        return _person(scopes={"auth:clients:manage"})
 
     app.dependency_overrides[get_current_principal] = fake_principal
 
@@ -178,7 +178,7 @@ async def test_require_application_rejects_a_person_token_whatever_it_carries():
     async def application_only(principal: ApplicationOnlyPrincipal):
         return {"principal_type": principal.principal_type}
 
-    token = create_access_token(settings, _person(scopes={"account:self", "bot:read", "crm:write"}))
+    token = create_access_token(settings, _person(scopes={"account:self", "auth:clients:manage", "crm:write"}))
     response = await _request(
         app, "GET", "/application-only", headers={"Authorization": f"Bearer {token.access_token}"}
     )
@@ -207,10 +207,10 @@ def _app(settings: AuthSettings) -> FastAPI:
         }
 
     @app.post("/write")
-    async def write(principal: BotWritePrincipal):
+    async def write(principal: ManageUsersPrincipal):
         return {"client_id": principal.client_id}
 
-    @app.post("/guarded", dependencies=[require_scopes("bot:write")])
+    @app.post("/guarded", dependencies=[require_scopes("auth:users:manage")])
     async def guarded():
         return {"ok": True}
 
@@ -238,7 +238,7 @@ def _person(*, scopes: set[str]) -> UserPrincipal:
 
 
 def _bearer(settings: AuthSettings, *, scopes: list[str]) -> dict[str, str]:
-    token = create_application_access_token(settings, principal_id=uuid4(), client_id="skillbot", scopes=scopes)
+    token = create_application_access_token(settings, principal_id=uuid4(), client_id="integration", scopes=scopes)
     return {"Authorization": f"Bearer {token.access_token}"}
 
 

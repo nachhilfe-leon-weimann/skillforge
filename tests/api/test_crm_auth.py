@@ -77,7 +77,7 @@ async def test_crm_route_answers_403_with_a_token_lacking_the_scope(method: str,
     other_crm_scope = Scope.CRM_WRITE if method == "GET" else Scope.CRM_READ
 
     async with _client() as client:
-        response = await client.request(method, path, headers=_auth_headers(other_crm_scope, Scope.BOT_WRITE))
+        response = await client.request(method, path, headers=_auth_headers(other_crm_scope, Scope.AUTH_USERS_MANAGE))
 
     assert response.status_code == 403
     assert response.json() == {"detail": "Not enough permissions", "code": "forbidden"}

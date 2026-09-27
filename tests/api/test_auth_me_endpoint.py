@@ -37,13 +37,15 @@ SESSION_ID = UUID("00000000-0000-0000-0000-0000000000c3")
 
 async def test_me_reports_the_principal_type_the_client_and_the_sorted_scopes():
     async with _client() as client:
-        response = await client.get(ME, headers=_auth_headers(Scope.CRM_WRITE, Scope.BOT_READ, Scope.CRM_READ))
+        response = await client.get(
+            ME, headers=_auth_headers(Scope.CRM_WRITE, Scope.AUTH_CLIENTS_MANAGE, Scope.CRM_READ)
+        )
 
     assert response.status_code == 200
     assert response.json() == {
         "principal_type": "application",
         "client_id": "swagger-operator",
-        "scopes": ["bot:read", "crm:read", "crm:write"],
+        "scopes": ["auth:clients:manage", "crm:read", "crm:write"],
         "user_id": None,
         "party_id": None,
         "roles": [],
@@ -74,7 +76,7 @@ async def test_me_answers_both_principal_types_without_a_database_session():
 
     async with _client() as client:
         app.dependency_overrides[get_db_session] = recording_session
-        application = await client.get(ME, headers=_auth_headers(Scope.BOT_READ))
+        application = await client.get(ME, headers=_auth_headers(Scope.AUTH_CLIENTS_MANAGE))
         person = await client.get(ME, headers=_person_auth_headers(roles=set()))
 
     assert (application.status_code, person.status_code) == (200, 200)

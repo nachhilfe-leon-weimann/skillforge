@@ -25,14 +25,13 @@ def test_derived_roles_carry_no_scopes_of_their_own(role: Role):
     assert ROLE_SCOPES[role] == frozenset()
 
 
-def test_admin_role_scopes_match_the_spec_and_exclude_bot_write():
+def test_admin_role_holds_exactly_five_scopes():
     assert ROLE_SCOPES[Role.ADMIN] == {
         Scope.CRM_READ,
         Scope.CRM_WRITE,
         Scope.AUTH_USERS_MANAGE,
         Scope.AUTH_CLIENTS_MANAGE,
         Scope.AUTH_DISCORD_LINKS_READ,
-        Scope.BOT_READ,
     }
 
 

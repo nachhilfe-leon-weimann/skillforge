@@ -24,7 +24,7 @@ from app.core.logging import LogFormat, LoggingSettings, LogLevel, configure_log
 from app.core.logging.middleware import _logged_path
 from app.main import app as real_app
 
-BotWritePrincipal = Annotated[Principal, require_scopes("bot:write")]
+ManageUsersPrincipal = Annotated[Principal, require_scopes("auth:users:manage")]
 AccountSelfPrincipal = Annotated[Principal, require_scopes("account:self")]
 
 
@@ -62,14 +62,14 @@ async def test_request_logging_includes_auth_context_for_missing_scopes(capsys):
     register_request_logging(app)
 
     @app.post("/write")
-    async def write(principal: BotWritePrincipal):
+    async def write(principal: ManageUsersPrincipal):
         return {"client_id": principal.client_id}
 
     token = create_application_access_token(
         _settings(),
         principal_id=uuid4(),
-        client_id="skillbot",
-        scopes=["bot:read"],
+        client_id="integration",
+        scopes=["auth:clients:manage"],
     )
     capsys.readouterr()
 
@@ -81,9 +81,9 @@ async def test_request_logging_includes_auth_context_for_missing_scopes(capsys):
     assert response.status_code == 403
     assert event["event"] == "http_request_forbidden"
     assert event["auth_reason"] == "missing_scopes"
-    assert event["client_id"] == "skillbot"
-    assert event["required_scopes"] == ["bot:write"]
-    assert event["missing_scopes"] == ["bot:write"]
+    assert event["client_id"] == "integration"
+    assert event["required_scopes"] == ["auth:users:manage"]
+    assert event["missing_scopes"] == ["auth:users:manage"]
 
 
 async def test_request_logging_identifies_the_person_behind_a_request(capsys):
@@ -99,7 +99,7 @@ async def test_request_logging_identifies_the_person_behind_a_request(capsys):
         return {"client_id": principal.client_id}
 
     @app.post("/write")
-    async def write(principal: BotWritePrincipal):
+    async def write(principal: ManageUsersPrincipal):
         return {"client_id": principal.client_id}
 
     user_id, party_id, session_id = uuid4(), uuid4(), uuid4()

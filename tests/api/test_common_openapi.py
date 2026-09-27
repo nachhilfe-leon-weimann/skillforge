@@ -78,15 +78,15 @@ def test_untagged_route_is_rejected_at_registration():
 def _customized_app() -> FastAPI:
     app = FastAPI()
 
-    @app.get("/guarded", dependencies=[require_scopes(Scope.BOT_READ)])
+    @app.get("/guarded", dependencies=[require_scopes(Scope.AUTH_CLIENTS_MANAGE)])
     async def guarded() -> None: ...
 
-    @app.get("/guarded-twice", dependencies=[require_scopes(Scope.BOT_READ, Scope.BOT_WRITE)])
+    @app.get("/guarded-twice", dependencies=[require_scopes(Scope.AUTH_CLIENTS_MANAGE, Scope.AUTH_USERS_MANAGE)])
     async def guarded_twice() -> None: ...
 
     @app.get(
         "/guarded-with-own-errors",
-        dependencies=[require_scopes(Scope.BOT_READ)],
+        dependencies=[require_scopes(Scope.AUTH_CLIENTS_MANAGE)],
         responses=error_responses(ACCOUNT_LOCKED, SESSION_EXPIRED),
     )
     async def guarded_with_own_errors() -> None: ...
@@ -143,13 +143,13 @@ def test_guarded_operation_documents_401_and_403_with_the_error_envelope():
 def test_forbidden_description_names_the_required_scope():
     responses = _responses(_customized_app(), "/guarded")
 
-    assert responses["403"]["description"] == "Missing required scope: bot:read"
+    assert responses["403"]["description"] == "Missing required scope: auth:clients:manage"
 
 
 def test_forbidden_description_names_all_required_scopes():
     responses = _responses(_customized_app(), "/guarded-twice")
 
-    assert responses["403"]["description"] == "Missing required scopes: bot:read, bot:write"
+    assert responses["403"]["description"] == "Missing required scopes: auth:clients:manage, auth:users:manage"
 
 
 def test_operation_that_needs_a_token_but_no_scope_documents_the_401_only():
@@ -184,7 +184,7 @@ def test_auth_errors_a_guarded_route_declares_itself_are_kept_next_to_the_derive
     ]
     assert list(forbidden["content"]["application/json"]["examples"]) == ["forbidden", "account_locked"]
     assert unauthorized["description"] == "Missing or invalid bearer token / Session expired"
-    assert forbidden["description"] == "Missing required scope: bot:read / Account is locked"
+    assert forbidden["description"] == "Missing required scope: auth:clients:manage / Account is locked"
 
 
 def test_unguarded_operation_documents_no_auth_errors():
@@ -198,7 +198,7 @@ def _app_without_envelope_references() -> FastAPI:
     """Only a guarded, parameterless route: nothing makes FastAPI register ``ErrorResponse`` itself."""
     app = FastAPI()
 
-    @app.get("/guarded", dependencies=[require_scopes(Scope.BOT_READ)])
+    @app.get("/guarded", dependencies=[require_scopes(Scope.AUTH_CLIENTS_MANAGE)])
     async def guarded() -> None: ...
 
     return app
@@ -280,10 +280,10 @@ def test_customized_schema_follows_routes_added_later():
     app = _customized_app()
     app.openapi()
 
-    @app.get("/late", dependencies=[require_scopes(Scope.BOT_WRITE)])
+    @app.get("/late", dependencies=[require_scopes(Scope.AUTH_USERS_MANAGE)])
     async def late() -> None: ...
 
-    assert _responses(app, "/late")["403"]["description"] == "Missing required scope: bot:write"
+    assert _responses(app, "/late")["403"]["description"] == "Missing required scope: auth:users:manage"
 
 
 def test_customize_openapi_rejects_an_untagged_included_router_right_away():
@@ -312,8 +312,8 @@ def _reach_aware_app() -> FastAPI:
     @app.get("/parties")
     async def parties(access: CrmReadAccess) -> None: ...
 
-    @app.get("/parties/bot", dependencies=[require_scopes(Scope.BOT_READ)])
-    async def parties_for_the_bot(access: CrmReadAccess) -> None: ...
+    @app.get("/parties/operators", dependencies=[require_scopes(Scope.AUTH_CLIENTS_MANAGE)])
+    async def parties_for_operators(access: CrmReadAccess) -> None: ...
 
     customize_openapi(app)
     return app
@@ -337,21 +337,23 @@ def test_the_forbidden_description_joins_alternatives_with_or():
 
 
 def test_the_other_scopes_of_a_requirement_stay_in_every_alternative():
-    operation = _operation(_reach_aware_app(), "/parties/bot")
+    operation = _operation(_reach_aware_app(), "/parties/operators")
 
     assert operation["security"] == [
-        {"OAuth2": ["bot:read", "crm:read"]},
-        {"OAuth2": ["bot:read", "crm:read:own"]},
+        {"OAuth2": ["auth:clients:manage", "crm:read"]},
+        {"OAuth2": ["auth:clients:manage", "crm:read:own"]},
     ]
     assert operation["responses"]["403"]["description"] == (
-        "Missing required scopes: bot:read, crm:read or bot:read, crm:read:own"
+        "Missing required scopes: auth:clients:manage, crm:read or auth:clients:manage, crm:read:own"
     )
 
 
 def test_an_operation_without_a_reach_qualified_scope_keeps_its_one_requirement():
     app = _customized_app()
 
-    assert app.openapi()["paths"]["/guarded-twice"]["get"]["security"] == [{"OAuth2": ["bot:read", "bot:write"]}]
+    assert app.openapi()["paths"]["/guarded-twice"]["get"]["security"] == [
+        {"OAuth2": ["auth:clients:manage", "auth:users:manage"]}
+    ]
 
 
 def test_a_route_mixing_require_scopes_and_require_access_of_one_scope_fails_when_the_schema_is_built():

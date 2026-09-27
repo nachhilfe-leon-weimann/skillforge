@@ -92,7 +92,7 @@ async def test_a_refused_rerun_leaves_the_client_as_it_was(grants):
 
     with pytest.raises(SystemExit) as exit_code:
         await bootstrap.bootstrap_client(
-            "operator", application=frozenset({"bot:write"}), delegated=frozenset({"auth:users:login"})
+            "operator", application=frozenset({"auth:users:manage"}), delegated=frozenset({"auth:users:login"})
         )
 
     assert exit_code.value.code == "invalid_scope: --delegated: Client-only scopes cannot be granted in delegated mode"

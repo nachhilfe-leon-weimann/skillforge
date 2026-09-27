@@ -196,7 +196,14 @@ async def test_bootstrap_admin_needs_nothing_but_an_existing_person_party(
     await bootstrap_application_client(
         session,
         client_id="operator",
-        scopes=["account:self", "crm:read", "crm:write", "auth:users:manage", "auth:clients:manage", "bot:read"],
+        scopes=[
+            "account:self",
+            "crm:read",
+            "crm:write",
+            "auth:users:manage",
+            "auth:clients:manage",
+            "auth:discord-links:read",
+        ],
         mode=GrantMode.DELEGATED,
     )
     party = await persons.create_person(session, firstname="Ada", lastname="Admin")

@@ -32,7 +32,6 @@ ROLE_SCOPES: dict[Role, frozenset[Scope]] = {
         Scope.AUTH_USERS_MANAGE,
         Scope.AUTH_CLIENTS_MANAGE,
         Scope.AUTH_DISCORD_LINKS_READ,
-        Scope.BOT_READ,
     }),
 }
 """Scopes a role adds on top of ``BASE_USER_SCOPES``; the derived roles add none yet.

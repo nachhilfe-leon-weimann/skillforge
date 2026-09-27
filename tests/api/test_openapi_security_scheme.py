@@ -79,6 +79,16 @@ def test_the_contract_declares_exactly_one_security_scheme(schema: dict[str, Any
     assert set(schema["components"]["securitySchemes"]) == {SCHEME_NAME}
 
 
+def test_neither_oauth2_flow_offers_a_bot_scope(schema: dict[str, Any]):
+    """The bot scopes retired with the bot schema (bot-decoupling spec, P0-5)."""
+    flows = schema["components"]["securitySchemes"][SCHEME_NAME]["flows"]
+
+    assert set(flows) == {"clientCredentials", "password"}
+    for name, flow in flows.items():
+        assert flow["scopes"], name
+        assert not [scope for scope in flow["scopes"] if scope.startswith("bot:")], name
+
+
 def test_every_secured_operation_references_only_that_scheme(schema: dict[str, Any]):
     secured = {operation: security for operation, security in _security_requirements(schema).items() if security}
 

@@ -8,7 +8,10 @@ ROLE_SCOPES_OF_A_STUDENT = frozenset({"account:self", "crm:read:own"})
 
 
 def test_no_scope_requested_gets_every_granted_scope_in_canonical_form():
-    assert resolve_token_scopes(requested=frozenset(), granted={"bot:read", "crm:read"}) == {"bot:read", "crm:read"}
+    assert resolve_token_scopes(requested=frozenset(), granted={"auth:clients:manage", "crm:read"}) == {
+        "auth:clients:manage",
+        "crm:read",
+    }
 
 
 def test_a_client_granted_crm_read_may_request_crm_read_own():
@@ -55,7 +58,9 @@ def test_a_canonical_ceiling_admits_a_request_of_the_own_form():
 def test_grants_outside_the_ceiling_are_invalid_scope():
     """The client holds grants, only none within the ceiling - the audit detail must not claim it has none."""
     with pytest.raises(InvalidClientScopeError, match="Client grants and ceilings have no scope in common"):
-        resolve_token_scopes(requested=frozenset(), granted={"bot:read"}, ceilings=[ROLE_SCOPES_OF_A_STUDENT])
+        resolve_token_scopes(
+            requested=frozenset(), granted={"auth:clients:manage"}, ceilings=[ROLE_SCOPES_OF_A_STUDENT]
+        )
 
 
 def test_every_ceiling_narrows_further():

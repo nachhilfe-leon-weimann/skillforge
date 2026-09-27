@@ -49,9 +49,12 @@ ENDPOINTS = {
     "create_secret": Endpoint("POST", "/x/secrets", "create_application_client_secret", json={}),
     "revoke_secret": Endpoint("DELETE", f"/x/secrets/{ID}", "revoke_application_client_secret"),
     "grant_scopes": Endpoint(
-        "POST", "/x/scopes", "grant_application_client_scopes", json={"scopes": ["bot:read"], "mode": "application"}
+        "POST",
+        "/x/scopes",
+        "grant_application_client_scopes",
+        json={"scopes": ["auth:clients:manage"], "mode": "application"},
     ),
-    "revoke_scope": Endpoint("DELETE", "/x/scopes/application/bot:read", "revoke_application_client_scope"),
+    "revoke_scope": Endpoint("DELETE", "/x/scopes/application/auth:clients:manage", "revoke_application_client_scope"),
 }
 
 # (endpoint, raised error, status, detail, code)
@@ -128,7 +131,7 @@ def _template(path: str) -> str:
         path
         .replace("/x", "/{client_id}", 1)
         .replace(ID, "{secret_id}")
-        .replace("application/bot:read", "{mode}/{scope_key}")
+        .replace("application/auth:clients:manage", "{mode}/{scope_key}")
     )
 
 
