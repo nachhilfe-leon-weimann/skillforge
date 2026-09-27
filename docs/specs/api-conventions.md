@@ -16,7 +16,7 @@ Today each endpoint re-declares that behavior by hand, so it drifts:
   typed response.
 - **Errors are wired three times per endpoint:** the service exception, a `try/except` raising
   `HTTPException`, and `responses={404: error_response(...)}` (`complete_job_endpoint` in
-  [`jobs.py`](../../app/api/v1/bot/jobs.py)). 422 has two body shapes (see ADR 0006).
+  `app/api/v1/bot/jobs.py`). 422 has two body shapes (see ADR 0006).
 - **Operation IDs are unusable as client names:** `list_jobs_endpoint_api_v1_bot_jobs_get`. Per
   [ADR 0001](../decisions/0001-openapi-as-contract.md) these become the function names of the generated client.
 - **List parameters are re-invented per endpoint** (`LimitQuery` in [`parties.py`](../../app/api/v1/crm/parties.py),
@@ -299,7 +299,7 @@ surfaces `str(exc)` today. Then delete the per-endpoint `try/except`, `transitio
 the CRM one (CRM owns parties).
 - [x] `git diff openapi.json` shows no status-code change; every `detail` string observable today is unchanged
       (pinned per endpoint and error by
-      [`test_bot_error_contract.py`](../../tests/api/test_bot_error_contract.py)). *One deliberate exception,
+      [`test_bot_error_contract.py`](https://github.com/Nachhilfe-Leon-Weimann/skillforge/blob/v0.5.0/tests/api/test_bot_error_contract.py)). *One deliberate exception,
       approved 2026-09-18:* `PrincipalNotFoundError` surfaced as three endpoint-specific strings ("Discord
       principal not found", "Discord user not found", "Actor principal not found"); one class has one `code` and
       now one `detail`, "Discord principal not found".

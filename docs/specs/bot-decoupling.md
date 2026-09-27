@@ -702,13 +702,13 @@ the published client loses `api.bot`.
   ("What is SkillForge?", layers, "The bot as a consumer" becomes "Frontends pull"); the README's "on its way out"
   sentence.
 - _Acceptance criteria:_
-  - [ ] No `/api/v1/bot` path, no `bot` tag, no bot schema in `openapi.json`; every operation ID matches
+  - [x] No `/api/v1/bot` path, no `bot` tag, no bot schema in `openapi.json`; every operation ID matches
         `(auth|crm|system)_...`.
-  - [ ] `git grep -nE "services\.bot|api\.v1\.bot|/api/v1/bot" -- app tests` is empty; `just --list` shows no
+  - [x] `git grep -nE "services\.bot|api\.v1\.bot|/api/v1/bot" -- app tests` is empty; `just --list` shows no
         `dead-jobs` or `requeue`.
-  - [ ] The allow-list test passes and its self-test rejects auth, system and worker imports.
-  - [ ] `test_error_envelope.py` runs its 11 items against `/api/v1/auth/users`; no bare-array 2xx remains.
-  - [ ] The exact reach is asserted, `TUTOR_OF` lending none.
+  - [x] The allow-list test passes and its self-test rejects auth, system and worker imports.
+  - [x] `test_error_envelope.py` runs its 11 items against `/api/v1/auth/users`; no bare-array 2xx remains.
+  - [x] The exact reach is asserted, `TUTOR_OF` lending none.
   - [ ] skillbot's handover docs are merged and reference `v0.5.0`.
 
 **P0-5 - Drop the bot schema, retire the bot scopes.** PR `feat(db): drop the bot schema and retire the bot scopes`.
