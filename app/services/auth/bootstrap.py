@@ -30,28 +30,20 @@ async def bootstrap_application_client(
     *,
     client_id: str,
     scopes: Iterable[Scope | str],
-    name: str | None = None,
-    description: str | None = None,
     mode: GrantMode = GrantMode.APPLICATION,
 ) -> BootstrappedApplicationClient:
     """Ensure an active client ``client_id`` holding ``scopes`` in ``mode`` and a usable secret.
 
-    A missing client is created, named ``name`` or else after its ID. An existing one keeps its
-    grants and secrets; it is re-enabled, and takes ``name`` and ``description`` when they are
-    given - ``None`` keeps what it has. A change to the client writes one
-    ``application_client.updated`` entry, a run that changes nothing writes none.
+    A missing client is created and named after its ID. An existing one keeps its name, description,
+    grants and secrets; a disabled one is re-enabled, which writes one ``application_client.updated``
+    entry - a run that changes nothing writes none.
     """
     await seed_default_scopes(session)
 
     client = await find_application_client(session, client_id)
     created_client = False
     if client is None:
-        client = ApplicationClient(
-            client_id=client_id,
-            name=client_id if name is None else name,
-            description=description,
-            status=ApplicationClientStatus.ACTIVE,
-        )
+        client = ApplicationClient(client_id=client_id, name=client_id, status=ApplicationClientStatus.ACTIVE)
         session.add(client)
         await session.flush()
         created_client = True
@@ -64,7 +56,7 @@ async def bootstrap_application_client(
             detail=f"Created application client {client.client_id}",
         )
     else:
-        await _ensure_active(session, client, name=name, description=description)
+        await _ensure_active(session, client)
 
     requested_scope_keys = parse_scopes(scopes)
     await grant_client_scopes(session, client=client, scope_keys=requested_scope_keys, mode=mode)
@@ -86,19 +78,12 @@ async def bootstrap_application_client(
     )
 
 
-async def _ensure_active(
-    session: AsyncSession, client: ApplicationClient, *, name: str | None, description: str | None
-) -> None:
-    """Re-enable ``client`` and set the ``name`` and ``description`` given; record a change in one audit entry."""
-    before = (client.name, client.description, client.status)
-    if name is not None:
-        client.name = name
-    if description is not None:
-        client.description = description
-    client.status = ApplicationClientStatus.ACTIVE
-    if (client.name, client.description, client.status) == before:
+async def _ensure_active(session: AsyncSession, client: ApplicationClient) -> None:
+    """Re-enable a disabled ``client`` and record it in one audit entry; an active one is left alone."""
+    if client.status is ApplicationClientStatus.ACTIVE:
         return
 
+    client.status = ApplicationClientStatus.ACTIVE
     await write_auth_audit_log(
         session,
         principal_type="application",

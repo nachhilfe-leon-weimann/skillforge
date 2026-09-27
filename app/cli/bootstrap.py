@@ -1,5 +1,4 @@
-"""Operator commands that seed the auth state: `just bootstrap-skillbot`, `just bootstrap-client` and
-`just bootstrap-admin`.
+"""Operator commands that seed the auth state: `just bootstrap-client` and `just bootstrap-admin`.
 
 They print a client secret or a one-time token they created to stdout and nowhere else: the operator
 reads it from the terminal and passes it on. It must never go through the logger.
@@ -15,7 +14,7 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth.inputs import LoginEmail
-from app.core.auth.scopes import Scope, format_scopes, parse_scopes
+from app.core.auth.scopes import format_scopes, parse_scopes
 from app.core.config import get_settings
 from app.core.db import Database
 from app.core.db.models import GrantMode
@@ -25,21 +24,6 @@ from app.services.auth.bootstrap import bootstrap_admin_account, bootstrap_appli
 from app.services.auth.results import BootstrappedApplicationClient, CreatedClientSecret
 
 _LOGIN_EMAIL: TypeAdapter[str] = TypeAdapter(LoginEmail)
-
-
-async def bootstrap_skillbot() -> None:
-    async with _session() as session:
-        result = await bootstrap_application_client(
-            session,
-            client_id="skillbot",
-            name="SkillBot",
-            description="Discord Bot",
-            scopes=(Scope.BOT_READ, Scope.BOT_WRITE),
-        )
-
-    print(f"client_id={result.client.client_id}")
-    print(f"scopes={format_scopes(result.granted_scopes)}")
-    _print_secret(result.created_secret)
 
 
 async def bootstrap_client(client_id: str, *, application: frozenset[str], delegated: frozenset[str]) -> None:
@@ -90,7 +74,6 @@ async def bootstrap_admin(*, party_id: uuid.UUID, email: str) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli.bootstrap", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("skillbot", help="Seed the SkillBot application client and print its secret.")
     client = commands.add_parser("client", help="Seed an application client with grants in both modes.")
     client.add_argument("client_id", type=_client_id, help="Client ID of the application client.")
     client.add_argument(
@@ -116,8 +99,6 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     arguments = build_parser().parse_args()
     match arguments.command:
-        case "skillbot":
-            asyncio.run(bootstrap_skillbot())
         case "client":
             asyncio.run(
                 bootstrap_client(arguments.client_id, application=arguments.application, delegated=arguments.delegated)

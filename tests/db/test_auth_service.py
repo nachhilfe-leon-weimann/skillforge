@@ -445,8 +445,6 @@ async def _bootstrap_skillbot_client(session, *, scopes: list[Scope] | None = No
     return await bootstrap_application_client(
         session,
         client_id="skillbot",
-        name="SkillBot",
-        description="Discord Bot",
         scopes=scopes or (Scope.BOT_READ, Scope.BOT_WRITE),
     )
 

@@ -113,9 +113,6 @@ worker-housekeeping:
 
 # --- Auth ---
 
-bootstrap-skillbot:
-    uv run python -m app.cli.bootstrap skillbot
-
 # Seed a client with grants in both modes: <client_id> --application "<scopes>" --delegated "<scopes>"
 [positional-arguments]
 bootstrap-client *args:
