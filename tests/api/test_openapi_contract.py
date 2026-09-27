@@ -69,7 +69,7 @@ def test_operation_ids_are_unique(schema: dict[str, Any]):
     ("method", "path", "expected"),
     [
         ("POST", "/api/v1/auth/token", "auth_create_token"),
-        ("GET", "/api/v1/bot/jobs", "bot_list_jobs"),
+        ("GET", "/api/v1/crm/parties", "crm_list_parties"),
         ("GET", "/health", "system_health_check"),
         ("GET", "/health/live", "system_liveness_check"),
         ("GET", "/", "system_root"),
@@ -124,9 +124,9 @@ def _documents_scope_403(responses: dict[str, Any]) -> bool:
 
 
 def test_forbidden_response_names_the_required_scope(schema: dict[str, Any]):
-    forbidden = schema["paths"]["/api/v1/bot/jobs"]["get"]["responses"]["403"]
+    forbidden = schema["paths"]["/api/v1/crm/subjects"]["get"]["responses"]["403"]
 
-    assert "bot:read" in forbidden["description"]
+    assert forbidden["description"] == "Missing required scope: crm:read"
 
 
 def test_framework_validation_schemas_are_not_part_of_the_contract(schema: dict[str, Any]):
@@ -159,6 +159,8 @@ PAGED_ENDPOINTS = {
     "/api/v1/auth/clients": ("Page_ApplicationClientResponse_", set()),
     "/api/v1/auth/users": ("Page_UserAccountListItem_", {"status", "party_id", "email"}),
     "/api/v1/auth/discord-links": ("Page_DiscordLink_", {"updated_since", "party_id", "active"}),
+    "/api/v1/crm/parties": ("Page_PartyListItem_", {"type", "role", "subject_id", "q", "updated_since"}),
+    "/api/v1/crm/subjects": ("Page_SubjectResponse_", set()),
 }
 
 
