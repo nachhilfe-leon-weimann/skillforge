@@ -1,5 +1,6 @@
 """The token endpoint's grants: ``client_credentials`` for a client itself, ``password`` and ``refresh_token``
-for a person on whose behalf a client acts (user-authentication spec, "Tokens").
+for a person on whose behalf a client acts (user-authentication spec, "Tokens"), and the Discord-user exchange
+for a person a client vouches for (bot-decoupling spec, "Token exchange").
 
 Every grant authenticates the client first. The person grants return a ``TokenDenial`` instead of raising
 (decision O): the failed-login counter, a revoked session and the audit entry of the denial must commit.
@@ -15,9 +16,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth.config import AuthSettings
 from app.core.auth.inputs import normalize_email
 from app.core.auth.passwords import verify_dummy_password
-from app.core.auth.principal import ApplicationPrincipal, PasswordLogin, PrincipalType, UserPrincipal
+from app.core.auth.principal import (
+    ApplicationPrincipal,
+    DiscordLogin,
+    Login,
+    PasswordLogin,
+    PrincipalType,
+    UserPrincipal,
+)
 from app.core.auth.roles import Role, scopes_for
-from app.core.auth.scopes import Scope, parse_scopes
+from app.core.auth.scopes import VOUCHED_SCOPES, Scope, parse_scopes
 from app.core.auth.secrets import digest, verify_and_update_async, verify_secret_async
 from app.core.auth.tokens import CreatedAccessToken, create_access_token, create_application_access_token
 from app.core.db.models import (
@@ -30,11 +38,16 @@ from app.core.db.models import (
     UserSession,
 )
 
-from .accounts import find_user_account_by_email, get_user_account, lock_user_account
+from .accounts import (
+    find_user_account_by_discord_user,
+    find_user_account_by_email,
+    get_user_account,
+    lock_user_account,
+)
 from .audit import AuditEventType, write_auth_audit_log
 from .clients import find_application_client
 from .errors import InvalidClientCredentialsError, InvalidClientScopeError, UserAccountNotFoundError
-from .results import IssuedUserToken, TokenDenial, UserTokenResult
+from .results import ExchangeResult, IssuedUserToken, TokenDenial, UserTokenResult
 from .roles import account_roles
 from .scopes import granted_active_scope_keys, resolve_token_scopes
 from .secrets import is_secret_usable, normalize_datetime
@@ -136,8 +149,8 @@ async def issue_user_token(
     although the login is denied.
     """
     issued_at = normalize_datetime(now or datetime.now(UTC))
-    authenticated = await _authenticate_login_client(
-        session, client_id=client_id, client_secret=client_secret, now=issued_at
+    authenticated = await _authenticate_client_for(
+        session, Scope.AUTH_USERS_LOGIN, client_id=client_id, client_secret=client_secret, now=issued_at
     )
     if isinstance(authenticated, TokenDenial):
         return authenticated
@@ -224,8 +237,8 @@ async def refresh_user_token(
     replay that ends the session. The login lock does not apply.
     """
     issued_at = normalize_datetime(now or datetime.now(UTC))
-    authenticated = await _authenticate_login_client(
-        session, client_id=client_id, client_secret=client_secret, now=issued_at
+    authenticated = await _authenticate_client_for(
+        session, Scope.AUTH_USERS_LOGIN, client_id=client_id, client_secret=client_secret, now=issued_at
     )
     if isinstance(authenticated, TokenDenial):
         return authenticated
@@ -294,6 +307,60 @@ async def refresh_user_token(
     )
 
 
+async def exchange_discord_user(
+    session: AsyncSession,
+    settings: AuthSettings,
+    *,
+    client_id: str,
+    client_secret: str,
+    discord_user_id: int,
+    requested_scopes: Iterable[str] | str | None = None,
+    now: datetime | None = None,
+) -> ExchangeResult:
+    """The Discord-user grant: a person's token for the Discord user a client vouches for (bot-decoupling spec,
+    "Token exchange").
+
+    Active link -> party -> account -> ``active`` (decision Q): no active link, no account and a disabled account
+    are one ``INVALID_GRANT``, whose ``token.denied`` entry names the Discord user. The login lock and
+    ``last_login_at`` are neither read nor written - no password is guessed here. The token opens no session,
+    carries no refresh token and only ``VOUCHED_SCOPES`` (decision R).
+    """
+    issued_at = normalize_datetime(now or datetime.now(UTC))
+    authenticated = await _authenticate_client_for(
+        session, Scope.AUTH_USERS_EXCHANGE, client_id=client_id, client_secret=client_secret, now=issued_at
+    )
+    if isinstance(authenticated, TokenDenial):
+        return authenticated
+
+    account = await find_user_account_by_discord_user(session, discord_user_id)
+    if account is None:
+        return await _deny_exchange(session, discord_user_id, None, "no linked account", TokenDenial.INVALID_GRANT)
+    if account.status is UserAccountStatus.DISABLED:
+        return await _deny_exchange(session, discord_user_id, account, "account disabled", TokenDenial.INVALID_GRANT)
+
+    roles = await account_roles(session, account)
+    try:
+        token_scopes = resolve_token_scopes(
+            requested=parse_scopes(requested_scopes),
+            granted=authenticated.granted(GrantMode.DELEGATED),
+            ceilings=[scopes_for(roles), VOUCHED_SCOPES],
+        )
+    except InvalidClientScopeError as exc:
+        return await _deny_exchange(session, discord_user_id, account, str(exc), TokenDenial.INVALID_SCOPE)
+
+    return await _mint_user_token(
+        session,
+        settings,
+        authenticated,
+        account=account,
+        roles=roles,
+        scopes=token_scopes,
+        login=DiscordLogin(),
+        now=issued_at,
+        detail=f"Exchanged Discord user {discord_user_id} through client {authenticated.client.client_id}.",
+    )
+
+
 async def _issue(
     session: AsyncSession,
     settings: AuthSettings,
@@ -307,7 +374,39 @@ async def _issue(
     now: datetime,
     detail: str,
 ) -> IssuedUserToken:
-    """Mint the person's access token for ``user_session`` and record it."""
+    """Mint the person's access token for ``user_session`` and hand it out with the session's refresh token."""
+    token = await _mint_user_token(
+        session,
+        settings,
+        authenticated,
+        account=account,
+        roles=roles,
+        scopes=scopes,
+        login=PasswordLogin(session_id=user_session.id),
+        now=now,
+        detail=detail,
+    )
+    return IssuedUserToken(
+        token=token,
+        refresh_token=refresh_token,
+        refresh_expires_in=int((user_session.expires_at - now).total_seconds()),
+    )
+
+
+async def _mint_user_token(
+    session: AsyncSession,
+    settings: AuthSettings,
+    authenticated: _AuthenticatedClient,
+    *,
+    account: UserAccount,
+    roles: frozenset[Role],
+    scopes: frozenset[str],
+    login: Login,
+    now: datetime,
+    detail: str,
+) -> CreatedAccessToken:
+    """Mint a person's access token through ``authenticated`` and record it: the one place every person grant
+    issues one - ``PasswordLogin`` for the password and refresh grants, ``DiscordLogin`` for the exchange."""
     authenticated.secret.last_used_at = now
     principal = UserPrincipal(
         principal_id=account.id,
@@ -315,7 +414,7 @@ async def _issue(
         scopes=scopes,
         party_id=account.party_id,
         roles=roles,
-        login=PasswordLogin(session_id=user_session.id),
+        login=login,
     )
     token = create_access_token(settings, principal, now=now)
     await write_auth_audit_log(
@@ -326,11 +425,7 @@ async def _issue(
         success=True,
         detail=detail,
     )
-    return IssuedUserToken(
-        token=token,
-        refresh_token=refresh_token,
-        refresh_expires_in=int((user_session.expires_at - now).total_seconds()),
-    )
+    return token
 
 
 async def _authenticate_client(
@@ -355,16 +450,16 @@ async def _authenticate_client(
     return None
 
 
-async def _authenticate_login_client(
-    session: AsyncSession, *, client_id: str, client_secret: str, now: datetime
+async def _authenticate_client_for(
+    session: AsyncSession, required: Scope, *, client_id: str, client_secret: str, now: datetime
 ) -> _AuthenticatedClient | TokenDenial:
-    """Steps 1 and 2 of both person grants: the client proves who it is and holds ``auth:users:login`` in
-    ``application`` mode."""
+    """Steps 1 and 2 of every grant for a person: the client proves who it is and holds ``required`` in
+    ``application`` mode - ``auth:users:login`` to log people in, ``auth:users:exchange`` to vouch for them."""
     authenticated = await _authenticate_client(session, client_id=client_id, client_secret=client_secret, now=now)
     if authenticated is None:
         return TokenDenial.INVALID_CLIENT
-    if Scope.AUTH_USERS_LOGIN not in authenticated.granted(GrantMode.APPLICATION):
-        await _deny_client(session, authenticated.client.id, "Client may not log people in")
+    if required not in authenticated.granted(GrantMode.APPLICATION):
+        await _deny_client(session, authenticated.client.id, f"Client lacks {required}")
         return TokenDenial.UNAUTHORIZED_CLIENT
 
     return authenticated
@@ -433,3 +528,11 @@ async def _deny_user(session: AsyncSession, user_id: uuid.UUID | None, detail: s
         detail=detail,
     )
     return denial
+
+
+async def _deny_exchange(
+    session: AsyncSession, discord_user_id: int, account: UserAccount | None, why: str, denial: TokenDenial
+) -> TokenDenial:
+    """Record a refused exchange against the account it matched, or ``None``; the detail names the Discord user."""
+    user_id = None if account is None else account.id
+    return await _deny_user(session, user_id, f"Discord user {discord_user_id}: {why}", denial)

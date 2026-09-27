@@ -240,7 +240,7 @@ async def test_a_client_without_auth_users_login_is_unauthorized_client_for_both
     # Step 2 is the client's own denial: recorded against the client, as `invalid_client` is.
     denials = await audit_rows(AuditEventType.TOKEN_DENIED)
     assert [(row.principal_type, row.principal_id, row.success, row.detail) for row in denials] == [
-        (PrincipalType.APPLICATION, str(outsider.id), False, "Client may not log people in")
+        (PrincipalType.APPLICATION, str(outsider.id), False, "Client lacks auth:users:login")
     ] * 2
 
 
