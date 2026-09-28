@@ -1,7 +1,8 @@
-"""Discord links: which Discord account speaks for which person party (bot-decoupling spec, P0-2).
+"""Discord links: which Discord account speaks for which person party (bot-decoupling spec, P0-2 and P1-1).
 
 Reads need `auth:discord-links:read`, writes `auth:users:manage`: a link is a login credential once the bot
-exchanges Discord users for tokens.
+exchanges Discord users for tokens. The one write without an admin is the redemption of a one-time link code, which
+the bot sends for the person who typed it (`auth:users:exchange`).
 """
 
 from typing import Annotated
@@ -13,16 +14,18 @@ from pydantic import Field
 from app.api.v1.common import DBSession, Page, PageParams, UpdatedSince, error_responses
 from app.core.auth import Scope
 from app.core.auth.dependencies import require_scopes
+from app.services.auth import discord_link_codes as discord_link_codes_service
 from app.services.auth import discord_links as discord_links_service
 from app.services.auth.errors import (
     DiscordAccountAlreadyLinkedError,
     DiscordLinkNotFoundError,
+    InvalidActionTokenError,
     LinkPartyNotAPersonError,
     UnknownLinkPartyError,
 )
 
-from .params import DiscordUserIdPath, ManageUsers
-from .schemas import DiscordLink, DiscordLinkRequest
+from .params import DiscordUserIdPath, ExchangeClient, ManageUsers
+from .schemas import DiscordLink, DiscordLinkRedeemRequest, DiscordLinkRequest
 
 router = APIRouter(prefix="/discord-links")
 
@@ -83,3 +86,20 @@ async def unlink_discord_account(
 ) -> None:
     """Unlink a Discord user; the row stays, inactive, in the feed. Unlinking an unlinked one changes nothing."""
     await discord_links_service.unlink_discord_account(session, discord_user_id=discord_user_id, actor=principal)
+
+
+@router.post("/redeem", responses=error_responses(InvalidActionTokenError, DiscordAccountAlreadyLinkedError))
+async def redeem_discord_link_code(
+    request: DiscordLinkRedeemRequest, session: DBSession, principal: ExchangeClient
+) -> DiscordLink:
+    """Link the Discord user who sent a one-time link code to the party of the code's account; spends the code.
+
+    The bot's route: `auth:users:exchange` in `application` mode, and a person's token is refused whatever it
+    carries. Send the Discord user who typed the code, never an ID from a command option. An unknown, used,
+    invalidated or expired code, and one whose account is disabled or gone, answer one and the same body. A Discord
+    user linked to another party is refused, and the code stays live.
+    """
+    link = await discord_link_codes_service.redeem_discord_link_code(
+        session, plaintext=request.token, discord_user_id=request.discord_user_id, actor=principal
+    )
+    return DiscordLink.from_model(link)

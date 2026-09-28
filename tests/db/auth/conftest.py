@@ -83,6 +83,13 @@ async def link_admin(session: AsyncSession) -> AsyncIterator[AsyncClient]:
         yield api_client
 
 
+@pytest.fixture
+async def link_bot(session: AsyncSession) -> AsyncIterator[AsyncClient]:
+    """An API client holding only `auth:users:exchange`: the bot, which redeems Discord link codes."""
+    async with _api_client(session, Scope.AUTH_USERS_EXCHANGE) as api_client:
+        yield api_client
+
+
 @asynccontextmanager
 async def _api_client(session: AsyncSession, *scopes: Scope) -> AsyncIterator[AsyncClient]:
     """An API client holding ``scopes`` whose requests run on ``session``.
