@@ -165,15 +165,15 @@ only widens (a client granted `crm:read` may now request `crm:read:own`).
 `Role` (`StrEnum`), `STORED_ROLES`, `BASE_USER_SCOPES`, `ROLE_SCOPES` and `scopes_for(roles)` live in
 `app/core/auth/roles.py`; the derivation that reads the CRM tables lives in `app/services/auth/roles.py`.
 
-| Role           | Source                                                       | Scopes                                                                          |
-| -------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| _(every user)_ | -                                                            | `account:self`, `crm:read:own`                                                  |
-| `student`      | the party's person has a `Student` row                       | -                                                                               |
-| `tutor`        | the party's person has a `Tutor` row                         | -                                                                               |
-| `guardian`     | the party has an outgoing `PARENT_OF` or `PAYS_FOR` relation | -                                                                               |
-| `admin`        | row in `auth.user_account_role`                              | `crm:read`, `crm:write`, `auth:users:manage`, `auth:clients:manage`, `bot:read` |
+| Role           | Source                                                       | Scopes                                                                                         |
+| -------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| _(every user)_ | -                                                            | `account:self`, `crm:read:own`                                                                 |
+| `student`      | the party's person has a `Student` row                       | -                                                                                              |
+| `tutor`        | the party's person has a `Tutor` row                         | -                                                                                              |
+| `guardian`     | the party has an outgoing `PARENT_OF` or `PAYS_FOR` relation | -                                                                                              |
+| `admin`        | row in `auth.user_account_role`                              | `crm:read`, `crm:write`, `auth:users:manage`, `auth:clients:manage`, `auth:discord-links:read` |
 
-`bot:read` leaves the `admin` row with P0-5 of [`bot-decoupling.md`](bot-decoupling.md); bot-decoupling's P0-2 adds
+`bot:read` left the `admin` row with P0-5 of [`bot-decoupling.md`](bot-decoupling.md), and bot-decoupling's P0-2 added
 `auth:discord-links:read`.
 
 The derived roles carry no scopes of their own yet; they tell `/auth/me` and the token's `roles` claim which views
