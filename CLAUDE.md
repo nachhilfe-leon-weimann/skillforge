@@ -33,8 +33,8 @@ app/
                      schemas); common/ (shared API vocabulary: error envelope + handlers, error_responses,
                      Page/PageParams, OpenAPI hooks; re-exports DBSession)
   services/auth/     accounts, users, clients, scopes (grants per mode), tokens (the grants), sessions,
-                     action_tokens, discord_links, housekeeping, secrets, roles, bootstrap, audit, results,
-                     errors
+                     action_tokens, discord_links, discord_link_codes, housekeeping, secrets, roles, bootstrap,
+                     audit, results, errors
   services/crm/      system of record: parties (PARTY_GRAPH, load_party, saved), persons, companies,
                      roles, contact_infos, relations, subjects, inputs, errors
   services/system/   health aggregation + worker heartbeats (backs /health)

@@ -194,7 +194,7 @@ auth.application_client_status = ('active', 'disabled')
 auth.grant_mode = ('application', 'delegated')
 auth.user_account_status = ('active', 'disabled')
 auth.user_account_role_name = ('admin')
-auth.user_action_token_purpose = ('invitation', 'password_reset')
+auth.user_action_token_purpose = ('invitation', 'password_reset', 'discord_link')
 
 -- auth.application_client
 id UUID PRIMARY KEY DEFAULT uuid4
@@ -268,14 +268,14 @@ created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 INDEX (user_account_id), INDEX (application_client_id)
 INDEX (expires_at)  -- ix_user_session_expires_at
 
--- auth.user_action_token  (one-time tokens for invitation and password reset)
+-- auth.user_action_token  (one-time tokens: invitation, password reset, Discord link code)
 id UUID PRIMARY KEY DEFAULT uuid4
 user_account_id UUID NOT NULL REFERENCES auth.user_account(id) ON DELETE CASCADE
 purpose user_action_token_purpose NOT NULL
 token_hash TEXT NOT NULL UNIQUE            -- SHA-256 hex; plaintext prefix sf_ua_
 expires_at TIMESTAMPTZ NOT NULL
 used_at TIMESTAMPTZ NULL                   -- NULL = unused
-invalidated_at TIMESTAMPTZ NULL            -- set when the token is replaced or the e-mail changes
+invalidated_at TIMESTAMPTZ NULL            -- set when the token is replaced; an invitation or reset also when the e-mail changes
 issued_by TEXT NOT NULL                    -- "<principal_type>:<principal_id>" of the issuer, or "cli"
 created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 INDEX (user_account_id)

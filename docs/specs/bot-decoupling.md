@@ -782,13 +782,13 @@ now removes its `TUTOR_OF`.
   route. It closes the epic and flips the rows "Bot state", "Bot permissions" and "Change signals" of the sketch's
   "Where we are".
 - _Acceptance criteria:_
-  - [ ] Issuing returns the code once (201), invalidates earlier unused codes and answers 409 for a disabled account.
-  - [ ] Redeeming with `auth:users:exchange` links the code's party and spends the code; a person's token gets 403;
+  - [x] Issuing returns the code once (201), invalidates earlier unused codes and answers 409 for a disabled account.
+  - [x] Redeeming with `auth:users:exchange` links the code's party and spends the code; a person's token gets 403;
         every refused code gets the same 422; after a 409 the code is still live.
-  - [ ] `/auth/password/redeem` with a link code answers 422 and sets no password; an invitation on a disabled
+  - [x] `/auth/password/redeem` with a link code answers 422 and sets no password; an invitation on a disabled
         account still answers 204 and leaves the status.
-  - [ ] Redeeming against `delete_party` does not deadlock, and of two concurrent redemptions exactly one wins.
-  - [ ] No plaintext code in a log or an audit row.
+  - [x] Redeeming against `delete_party` does not deadlock, and of two concurrent redemptions exactly one wins.
+  - [x] No plaintext code in a log or an audit row.
 
 ### Future considerations (P2)
 
