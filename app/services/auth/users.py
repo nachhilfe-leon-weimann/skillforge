@@ -19,7 +19,7 @@ from app.core.db.models import Party, PartyType, UserAccount, UserAccountRole, U
 from app.core.unset import UNSET, Unset
 
 from .accounts import find_user_account_by_party, get_user_account, lock_user_account
-from .action_tokens import invalidate_action_tokens
+from .action_tokens import PASSWORD_PURPOSES, invalidate_action_tokens
 from .audit import Actor, AuditEventType, write_user_account_audit_log
 from .errors import (
     AccountPartyNotAPersonError,
@@ -202,7 +202,7 @@ async def _change_email(session: AsyncSession, account: UserAccount, new_email: 
 
     async with _unique_email(session):
         account.email = new_email
-    await invalidate_action_tokens(session, account.id)
+    await invalidate_action_tokens(session, account.id, purposes=PASSWORD_PURPOSES)
     # Never the address itself: the entry names the account, and an address is personal data.
     change = "Removed" if new_email is None else "Changed"
     await write_user_account_audit_log(

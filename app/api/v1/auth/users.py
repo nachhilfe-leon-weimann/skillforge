@@ -163,6 +163,25 @@ async def issue_password_reset(
     return ActionTokenResponse.from_issued(issued)
 
 
+@router.post(
+    "/{user_id}/discord-link-code",
+    status_code=status.HTTP_201_CREATED,
+    responses=error_responses(UserAccountNotFoundError, UserAccountStateError),
+)
+async def issue_discord_link_code(
+    user_id: UserId, session: DBSession, settings: AuthConfig, principal: ManageUsers
+) -> ActionTokenResponse:
+    """Issue a one-time code that links the person's Discord account to their party; they redeem it in the bot.
+
+    Needs an `active` account; no e-mail address or password. Earlier unused codes stop working. The bot redeems the
+    code at `POST /discord-links/redeem` for the Discord user who sent it.
+    """
+    issued = await action_tokens_service.issue_action_token(
+        session, settings, user_id=user_id, purpose=UserActionTokenPurpose.DISCORD_LINK, actor=principal
+    )
+    return ActionTokenResponse.from_issued(issued)
+
+
 @router.delete(
     "/{user_id}/sessions",
     status_code=status.HTTP_204_NO_CONTENT,

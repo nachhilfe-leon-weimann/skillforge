@@ -265,7 +265,7 @@ def _list_item_fields(view: UserAccountWithRoles) -> dict[str, Any]:
 
 
 class ActionTokenResponse(ApiModel):
-    """A one-time token to hand to the person: an invitation or a password reset."""
+    """A one-time token to hand to the person: an invitation, a password reset or a Discord link code."""
 
     token: str
     """The token. SkillForge stores only its hash, so this is the one time it can be read."""

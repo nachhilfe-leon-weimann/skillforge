@@ -54,6 +54,8 @@ class AuditEventType(StrEnum):
     DISCORD_LINK_REACTIVATED = "discord_link.reactivated"
     DISCORD_LINK_MOVED = "discord_link.moved"
     DISCORD_LINK_REMOVED = "discord_link.removed"
+    DISCORD_LINK_CODE_ISSUED = "discord_link_code.issued"
+    DISCORD_LINK_CODE_REDEEMED = "discord_link_code.redeemed"
 
 
 async def write_auth_audit_log(
