@@ -34,7 +34,9 @@ async def redeem_discord_link_code(
     gone - is one ``InvalidActionTokenError``.
 
     The party is locked before the account, in the order of ``delete_party`` (the party, then its rows by cascade):
-    a redemption racing the party's deletion waits holding nothing the delete needs, and then finds the party gone.
+    a redemption racing the deletion of its own party waits holding nothing the delete needs, and then finds the
+    party gone. A delete of another party whose cascade removes a link row this redemption waits on can still
+    deadlock - the class ``_lock_pair`` in the CRM's ``relations.py`` documents; one of the two answers 500.
     Locked the other way round, each would wait for the other.
     """
     found = await find_live_action_token(session, plaintext, purposes=LINK_CODE_PURPOSES)

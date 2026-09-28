@@ -185,7 +185,8 @@ read nor written.
   arrives within `REFRESH_REUSE_GRACE`. Wrong passwords lock the login per account
   (`login_lockout_threshold`, `login_lockout_max_minutes`). Argon2 runs off the event loop.
 - **Discord links** (`app/services/auth/discord_links.py`, `/api/v1/auth/discord-links`): which Discord account
-  speaks for which person party. The one writer of `ext.discord_account`; admins write, the bot reads the feed.
+  speaks for which person party. The one writer of `ext.discord_account`; admins write (or the person, with a
+  one-time link code), the bot reads the feed.
   A person links their own Discord account with a one-time link code: an admin issues it
   (`POST /api/v1/auth/users/{user_id}/discord-link-code`), the bot redeems it for the Discord user who typed it
   (`POST /api/v1/auth/discord-links/redeem`, `auth:users:exchange`, `discord_link_codes.py`). The request log
