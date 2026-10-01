@@ -35,17 +35,18 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
 - **`app/api/v1/`** - `router.py` with prefix `/api/v1` aggregates two areas, which share the
   vocabulary in `common/` (see [API conventions](#api-conventions)):
   - `auth/` - `token.py` (OAuth2 token endpoint, four grants), `revoke.py` (logout), `password.py`
-    (redeem a one-time token), `users.py` (accounts), `clients.py` (client management), `me.py`, `params.py`
-    (shared parameter aliases).
+    (redeem a one-time token), `users.py` (accounts), `discord_links.py` (Discord links, their feed, redeeming
+    a link code), `clients.py` (client management), `me.py`, `params.py` (shared parameter aliases).
   - `crm/` - one module per resource: `parties.py` (list, detail, guarded delete), `persons.py` &
     `companies.py` (typed create and update), `roles.py`, `contact_infos.py`, `relations.py`,
     `subjects.py`. `params.py` holds the path and query vocabulary, `schemas.py` the read and write
     models with their `from_model` mappers (see [CRM](#crm)).
 - **`app/services/auth/`** - the auth services, same shape as the CRM's: `clients.py`, `scopes.py` (grants
   per mode, `resolve_token_scopes`), `secrets.py` (client secrets), `tokens.py` (the four grants),
-  `sessions.py`, `accounts.py`, `users.py`, `action_tokens.py` (invitations and resets), `housekeeping.py`
-  (deletes expired sessions and one-time tokens), `roles.py` (`derive_roles`), `bootstrap.py`, `audit.py`,
-  `results.py`, `errors.py`. Never imports the API or another domain.
+  `sessions.py`, `accounts.py`, `users.py`, `action_tokens.py` (invitations, resets and Discord link codes),
+  `discord_links.py` (the one writer of `ext.discord_account`), `discord_link_codes.py` (redeeming a link code),
+  `housekeeping.py` (deletes expired sessions and one-time tokens), `roles.py` (`derive_roles`), `bootstrap.py`,
+  `audit.py`, `results.py`, `errors.py`. Never imports the API or another domain.
 - **`app/services/crm/`** - the CRM services (function modules, `session` first, no commits, no
   `app.api` imports): `parties.py` (`PARTY_GRAPH`, `load_party`, `saved`, list, delete), `persons.py`,
   `companies.py`, `roles.py`, `contact_infos.py`, `relations.py`, `subjects.py`, `inputs.py` (enums,
@@ -184,9 +185,12 @@ read nor written.
   arrives within `REFRESH_REUSE_GRACE`. Wrong passwords lock the login per account
   (`login_lockout_threshold`, `login_lockout_max_minutes`). Argon2 runs off the event loop.
 - **Discord links** (`app/services/auth/discord_links.py`, `/api/v1/auth/discord-links`): which Discord account
-  speaks for which person party. The one writer of `ext.discord_account`; admins write, the bot reads the feed.
-  The request log redacts the Discord user ID in these paths (`REDACTED_PATH_SEGMENTS` in
-  `app/core/logging/middleware.py`).
+  speaks for which person party. The one writer of `ext.discord_account`; admins write (or the person, with a
+  one-time link code), the bot reads the feed.
+  A person links their own Discord account with a one-time link code: an admin issues it
+  (`POST /api/v1/auth/users/{user_id}/discord-link-code`), the bot redeems it for the Discord user who typed it
+  (`POST /api/v1/auth/discord-links/redeem`, `auth:users:exchange`, `discord_link_codes.py`). The request log
+  redacts the Discord user ID in these paths (`REDACTED_PATH_SEGMENTS` in `app/core/logging/middleware.py`).
 - **Never** in a log or an audit row: a password, a refresh or action token, an e-mail address. A Discord user ID
   appears in audit rows only - never in the request log, a token or an error.
 

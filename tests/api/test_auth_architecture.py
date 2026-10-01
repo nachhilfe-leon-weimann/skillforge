@@ -38,6 +38,20 @@ def test_the_auth_services_import_neither_the_api_nor_another_domain():
     _assert_no_violations(AUTH_SERVICES, FORBIDDEN_FOR_THE_SERVICES)
 
 
+def test_the_discord_link_service_imports_no_sibling_that_imports_it():
+    """``discord_links`` builds on ``audit`` and ``errors`` only: ``accounts`` imports it for the exchange's look-up,
+    and ``action_tokens`` imports ``accounts`` - which is why the link code's redemption lives in
+    ``discord_link_codes`` (bot-decoupling spec, P1-1)."""
+    source = (REPO_ROOT / AUTH_SERVICES / "discord_links.py").read_text()
+    siblings = {
+        module.split(".")[3]
+        for module in _imported_modules(source, package="app.services.auth")
+        if module.startswith("app.services.auth.")
+    }
+
+    assert siblings <= {"audit", "errors"}
+
+
 def test_the_check_catches_absolute_and_relative_imports():
     core = {"package": "app.core.auth", "forbidden": FORBIDDEN_FOR_THE_CORE}
     services = {"package": "app.services.auth", "forbidden": FORBIDDEN_FOR_THE_SERVICES}

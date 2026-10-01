@@ -22,12 +22,14 @@ ROUTE_MAP: dict[tuple[str, str], tuple[str, str, str]] = {
     ("DELETE", "/users/{user_id}/roles/{role}"): ("auth_remove_user_role", "204", "auth:users:manage"),
     ("POST", "/users/{user_id}/invitation"): ("auth_issue_invitation", "201", "auth:users:manage"),
     ("POST", "/users/{user_id}/password-reset"): ("auth_issue_password_reset", "201", "auth:users:manage"),
+    ("POST", "/users/{user_id}/discord-link-code"): ("auth_issue_discord_link_code", "201", "auth:users:manage"),
     ("DELETE", "/users/{user_id}/sessions"): ("auth_revoke_user_sessions", "204", "auth:users:manage"),
     ("POST", "/password/redeem"): ("auth_redeem_password", "204", "auth:users:login"),
     ("GET", "/discord-links"): ("auth_list_discord_links", "200", "auth:discord-links:read"),
     ("GET", "/discord-links/{discord_user_id}"): ("auth_get_discord_link", "200", "auth:discord-links:read"),
     ("PUT", "/discord-links/{discord_user_id}"): ("auth_link_discord_account", "200", "auth:users:manage"),
     ("DELETE", "/discord-links/{discord_user_id}"): ("auth_unlink_discord_account", "204", "auth:users:manage"),
+    ("POST", "/discord-links/redeem"): ("auth_redeem_discord_link_code", "200", "auth:users:exchange"),
 }
 # The error codes each operation declares next to the derived 401/403 and the validation 422.
 DECLARED_CODES: dict[str, set[str]] = {
@@ -44,12 +46,14 @@ DECLARED_CODES: dict[str, set[str]] = {
     "auth_remove_user_role": {"user_account_not_found", "user_role_not_found"},
     "auth_issue_invitation": {"user_account_not_found", "user_account_state"},
     "auth_issue_password_reset": {"user_account_not_found", "user_account_state"},
+    "auth_issue_discord_link_code": {"user_account_not_found", "user_account_state"},
     "auth_revoke_user_sessions": {"user_account_not_found"},
     "auth_redeem_password": {"invalid_action_token", "weak_password"},
     "auth_list_discord_links": set(),
     "auth_get_discord_link": {"discord_link_not_found"},
     "auth_link_discord_account": {"unknown_link_party", "link_party_not_a_person", "discord_account_already_linked"},
     "auth_unlink_discord_account": {"discord_link_not_found"},
+    "auth_redeem_discord_link_code": {"invalid_action_token", "discord_account_already_linked"},
 }
 
 
@@ -119,7 +123,13 @@ def test_every_property_and_parameter_of_the_new_operations_is_described(schema:
         pending |= _refs(component) - seen - {"ErrorResponse", "FieldError"}
 
     parameters = [parameter for operation in operations for parameter in operation.get("parameters", [])]
-    assert {"UserAccountCreateRequest", "UserAccountDetail", "ActionTokenResponse", "PasswordRedeemRequest"} <= seen
+    assert {
+        "UserAccountCreateRequest",
+        "UserAccountDetail",
+        "ActionTokenResponse",
+        "PasswordRedeemRequest",
+        "DiscordLinkRedeemRequest",
+    } <= seen
     assert parameters
     assert all(parameter["description"] for parameter in parameters)
 

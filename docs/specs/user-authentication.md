@@ -214,8 +214,9 @@ reach cannot drift apart. `TUTOR_OF` is absent on purpose: tutoring does not mak
   not change: an `active` account stays active, a `disabled` one stays disabled.
 - **Update.** `PATCH` with the `MISSING`-based model of the CRM: `email` (a new address, or `null` to remove it)
   and `status`. Disabling revokes all sessions; enabling is always allowed. Changing or removing the e-mail
-  invalidates the account's unused action tokens; removing the e-mail of an account that has a password is
-  `user_account_state` (the password login needs it). A request that changes nothing records nothing.
+  invalidates the account's unused invitations and resets - not its Discord link codes (P1-1 of
+  [`bot-decoupling.md`](bot-decoupling.md)), which no e-mail carries; removing the e-mail of an account that has a
+  password is `user_account_state` (the password login needs it). A request that changes nothing records nothing.
 - **Stored roles.** `PUT` / `DELETE /auth/users/{user_id}/roles/{role}`, row-locked like v1. `PUT` is idempotent:
   a role the account already holds answers `200` and records nothing.
 - **Sessions.** `DELETE /auth/users/{user_id}/sessions` revokes every live session.
@@ -717,7 +718,8 @@ exchange, Discord links, the retirement of the grant engine and the change signa
   - [x] A password of 7 or 129 characters is `weak_password`; 8 and 128 are accepted.
   - [x] Disabling revokes the sessions; enabling an account without a password succeeds; changing or removing the
         e-mail invalidates unused action tokens; removing the e-mail of an account with a password is
-        `user_account_state`; a `PATCH` that changes nothing records nothing.
+        `user_account_state`; a `PATCH` that changes nothing records nothing. _(Amended by P1-1 of
+        [bot-decoupling.md](bot-decoupling.md): the e-mail change invalidates unused invitations and resets only.)_
   - [x] `roles` lists `student` for a party with a `Student` row, `guardian` for an outgoing `PAYS_FOR`, and
         `admin` + `tutor` for a tutor holding the stored role; `TUTOR_OF` does not make a tutor a guardian.
   - [x] Every account route is `403` for a token without `auth:users:manage`; the redeem route is `403` for a

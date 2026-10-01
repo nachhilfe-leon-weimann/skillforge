@@ -51,7 +51,7 @@ def _account_operations() -> list[tuple[str, str]]:
 
 
 def test_the_operation_table_covers_the_whole_account_surface():
-    assert len(_account_operations()) == 9
+    assert len(_account_operations()) == 10
 
 
 @pytest.mark.parametrize(("method", "path"), _account_operations())

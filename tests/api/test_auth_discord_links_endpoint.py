@@ -1,4 +1,4 @@
-"""The Discord link routes over their service seam: status mapping, the wire type, the actor (no database)."""
+"""The Discord link routes over their service seams: status mapping, the wire type, the actor (no database)."""
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -14,10 +14,12 @@ from app.core.auth.dependencies import get_auth_settings
 from app.core.db.dependencies import get_db_session
 from app.core.db.models import DiscordAccount
 from app.main import app
+from app.services.auth import discord_link_codes as discord_link_codes_service
 from app.services.auth import discord_links as discord_links_service
 from app.services.auth.errors import (
     DiscordAccountAlreadyLinkedError,
     DiscordLinkNotFoundError,
+    InvalidActionTokenError,
     LinkPartyNotAPersonError,
     UnknownLinkPartyError,
 )
@@ -27,6 +29,8 @@ SNOWFLAKE = 123456789012345678
 PATH = f"/api/v1/auth/discord-links/{SNOWFLAKE}"
 PARTY_ID = UUID("11111111-1111-1111-1111-111111111111")
 STAMP = datetime(2026, 9, 25, 8, 0, tzinfo=UTC)
+REDEEM_PATH = "/api/v1/auth/discord-links/redeem"
+CODE = "sf_ua_the-link-code"
 
 
 def _link() -> DiscordAccount:
@@ -115,6 +119,69 @@ async def test_a_malformed_discord_user_id_is_422_and_never_reaches_the_service(
         )
 
     assert (response.status_code, response.json()["code"]) == (422, "validation_error")
+
+
+async def test_redeem_passes_the_code_the_id_and_the_actor_and_answers_the_link(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    async def fake(session: object, **kwargs: object) -> DiscordAccount:
+        calls.append(kwargs)
+        return _link()
+
+    monkeypatch.setattr(discord_link_codes_service, "redeem_discord_link_code", fake)
+    async with _client() as client:
+        response = await client.post(
+            REDEEM_PATH,
+            json={"token": CODE, "discord_user_id": str(SNOWFLAKE)},
+            headers=_headers(Scope.AUTH_USERS_EXCHANGE),
+        )
+
+    assert (response.status_code, response.json()["discord_user_id"]) == (200, str(SNOWFLAKE))
+    assert (calls[0]["plaintext"], calls[0]["discord_user_id"]) == (CODE, SNOWFLAKE)
+    assert getattr(calls[0]["actor"], "client_id") == "operator"  # noqa: B009 (ty: `actor` is typed `object`)
+
+
+@pytest.mark.parametrize(
+    ("error", "status", "code"),
+    [
+        (InvalidActionTokenError(), 422, "invalid_action_token"),
+        (DiscordAccountAlreadyLinkedError(), 409, "discord_account_already_linked"),
+    ],
+)
+async def test_redeem_maps_the_code_errors(monkeypatch, error: Exception, status: int, code: str):
+    async def fake(session: object, **kwargs: object) -> DiscordAccount:
+        raise error
+
+    monkeypatch.setattr(discord_link_codes_service, "redeem_discord_link_code", fake)
+    async with _client() as client:
+        response = await client.post(
+            REDEEM_PATH,
+            json={"token": CODE, "discord_user_id": str(SNOWFLAKE)},
+            headers=_headers(Scope.AUTH_USERS_EXCHANGE),
+        )
+
+    assert (response.status_code, response.json()["code"]) == (status, code)
+
+
+@pytest.mark.parametrize(
+    "discord_user_id", [SNOWFLAKE, 123456789012345680.0, 42, "-1", "+5", str(2**63), "1e3", "", None]
+)
+async def test_redeem_refuses_a_discord_user_id_that_is_no_decimal_string(monkeypatch, discord_user_id: object):
+    """A JSON number is refused, never rounded: JavaScript may already have turned the snowflake into another user."""
+
+    async def fake(session: object, **kwargs: object) -> DiscordAccount:
+        raise AssertionError("the service must not run")
+
+    monkeypatch.setattr(discord_link_codes_service, "redeem_discord_link_code", fake)
+    async with _client() as client:
+        response = await client.post(
+            REDEEM_PATH,
+            json={"token": CODE, "discord_user_id": discord_user_id},
+            headers=_headers(Scope.AUTH_USERS_EXCHANGE),
+        )
+
+    assert (response.status_code, response.json()["code"]) == (422, "validation_error")
+    assert [error["loc"] for error in response.json()["errors"]] == [["body", "discord_user_id"]]
 
 
 async def _no_db_session() -> AsyncIterator[object]:

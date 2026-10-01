@@ -78,7 +78,11 @@ async def test_auth_user_model_metadata():
     assert UserSession.__table__.c.previous_refresh_token_hash.unique is True
 
     assert UserActionToken.__table__.c.token_hash.unique is True
-    assert getattr(UserActionToken.__table__.c.purpose.type, "enums", None) == ["invitation", "password_reset"]
+    assert getattr(UserActionToken.__table__.c.purpose.type, "enums", None) == [
+        "invitation",
+        "password_reset",
+        "discord_link",
+    ]
 
     for model in (UserAccount, UserAccountRole, UserSession, UserActionToken):
         assert {key.ondelete for key in model.__table__.foreign_keys} == {"CASCADE"}

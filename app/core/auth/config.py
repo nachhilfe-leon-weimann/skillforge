@@ -13,6 +13,7 @@ class AuthSettings(CoreSettings):
     access_token_expire_minutes: int = 15
     invitation_expire_hours: PositiveInt = 168
     password_reset_expire_hours: PositiveInt = 24
+    discord_link_code_expire_hours: PositiveInt = 24
     refresh_token_expire_days: PositiveInt = 30
     login_lockout_threshold: PositiveInt = 5
     login_lockout_max_minutes: PositiveInt = 15

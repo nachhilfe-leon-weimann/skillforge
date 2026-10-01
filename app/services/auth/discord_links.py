@@ -2,8 +2,9 @@
 
 A link is identity, not CRM data: it lives in ``ext.discord_account`` beside the party, and this module is its only
 writer. Once the token exchange exists a link is a login credential, so every change is audited and only an admin
-(``auth:users:manage``) writes one. This module imports models, ``audit`` and ``errors`` only; the exchange and the
-link code build on it, never the other way round.
+(``auth:users:manage``) writes one, or the bot redeeming a person's one-time link code (``discord_link_codes``).
+This module imports models, ``audit`` and ``errors`` only; the exchange and the link code build on it, never the
+other way round.
 """
 
 import uuid

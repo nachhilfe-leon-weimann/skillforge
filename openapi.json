@@ -59,7 +59,7 @@
         "type": "object"
       },
       "ActionTokenResponse": {
-        "description": "A one-time token to hand to the person: an invitation or a password reset.",
+        "description": "A one-time token to hand to the person: an invitation, a password reset or a Discord link code.",
         "properties": {
           "expires_at": {
             "description": "When the token stops working. Issuing another of the same purpose invalidates it earlier.",
@@ -760,10 +760,10 @@
         "type": "string"
       },
       "DiscordLink": {
-        "description": "Which Discord account speaks for which person party - identity, written by admins only.",
+        "description": "Which Discord account speaks for which person party - identity, written by an admin or by the person with a\none-time link code.",
         "properties": {
           "active": {
-            "description": "`false` once unlinked. The row stays as history, and a `PUT` links it again.",
+            "description": "`false` once unlinked. The row stays as history; a `PUT` or a redeemed link code links it again.",
             "title": "Active",
             "type": "boolean"
           },
@@ -800,6 +800,34 @@
           "updated_at"
         ],
         "title": "DiscordLink",
+        "type": "object"
+      },
+      "DiscordLinkRedeemRequest": {
+        "description": "Body of `POST /discord-links/redeem`: a one-time link code and the Discord user who sent it.",
+        "properties": {
+          "discord_user_id": {
+            "description": "The snowflake of the Discord user who sent the code, as a decimal string; a JSON number is refused. Always the\nsender, never an ID from a command option.",
+            "examples": [
+              "123456789012345678"
+            ],
+            "pattern": "^[0-9]{1,19}$",
+            "title": "Discord User Id",
+            "type": "string"
+          },
+          "token": {
+            "description": "The Discord link code the person typed into the bot.",
+            "examples": [
+              "sf_ua_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            ],
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "discord_user_id"
+        ],
+        "title": "DiscordLinkRedeemRequest",
         "type": "object"
       },
       "DiscordLinkRequest": {
@@ -3392,6 +3420,139 @@
         ]
       }
     },
+    "/api/v1/auth/discord-links/redeem": {
+      "post": {
+        "description": "Link the Discord user who sent a one-time link code to the party of the code's account; spends the code.\n\nThe bot's route: `auth:users:exchange` in `application` mode, and a person's token is refused whatever it\ncarries. Send the Discord user who typed the code, never an ID from a command option. An unknown, used,\ninvalidated or expired code, and one whose account is disabled or gone, answer one and the same body. A Discord\nuser linked to another party is refused, and the code stays live.",
+        "operationId": "auth_redeem_discord_link_code",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscordLinkRedeemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordLink"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: auth:users:exchange"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "discord_account_already_linked": {
+                    "value": {
+                      "code": "discord_account_already_linked",
+                      "detail": "The Discord account is linked to another party"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The Discord account is linked to another party"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_action_token": {
+                    "value": {
+                      "code": "invalid_action_token",
+                      "detail": "Invalid or expired token"
+                    }
+                  },
+                  "validation_error": {
+                    "value": {
+                      "code": "validation_error",
+                      "detail": "Request validation failed",
+                      "errors": [
+                        {
+                          "loc": [
+                            "query",
+                            "limit"
+                          ],
+                          "message": "Input should be less than or equal to 100",
+                          "type": "less_than_equal"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid or expired token"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "auth:users:exchange"
+            ]
+          }
+        ],
+        "summary": "Redeem Discord Link Code",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/discord-links/{discord_user_id}": {
       "delete": {
         "description": "Unlink a Discord user; the row stays, inactive, in the feed. Unlinking an unlinked one changes nothing.",
@@ -4780,6 +4941,154 @@
           }
         ],
         "summary": "Update User",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/users/{user_id}/discord-link-code": {
+      "post": {
+        "description": "Issue a one-time code that links the person's Discord account to their party; they redeem it in the bot.\n\nNeeds an `active` account; no e-mail address or password. Earlier unused codes stop working. The bot redeems the\ncode at `POST /discord-links/redeem` for the Discord user who sent it.",
+        "operationId": "auth_issue_discord_link_code",
+        "parameters": [
+          {
+            "description": "ID of the user account.",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "description": "ID of the user account.",
+              "examples": [
+                "3f2b8c1e-5a4d-4e6f-8a9b-0c1d2e3f4a5b"
+              ],
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionTokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: auth:users:manage"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "user_account_not_found": {
+                    "value": {
+                      "code": "user_account_not_found",
+                      "detail": "User account not found"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "User account not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "user_account_state": {
+                    "value": {
+                      "code": "user_account_state",
+                      "detail": "The state of the user account does not allow this"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The state of the user account does not allow this"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "auth:users:manage"
+            ]
+          }
+        ],
+        "summary": "Issue Discord Link Code",
         "tags": [
           "auth"
         ]

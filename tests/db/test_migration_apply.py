@@ -432,3 +432,42 @@ def test_an_unknown_object_in_the_bot_schema_fails_the_upgrade_and_changes_nothi
     assert asyncio.run(_rows(migration_db_url, _SCOPES)) == _ALL_SEEDED_SCOPES
     assert asyncio.run(_rows(migration_db_url, _AUDIT)) == []
     assert asyncio.run(_rows(migration_db_url, "SELECT count(*) FROM bot.job")) == [(1,)]
+
+
+_REVISION_0013 = "0013_retire_bot"
+_REVISION_0014 = "0014_link_code_purpose"
+_PURPOSES_WITH_LINK_CODES = ["invitation", "password_reset", "discord_link"]
+_PURPOSES_WITHOUT_LINK_CODES = _PURPOSES_WITH_LINK_CODES[:2]
+
+# An account holding a token of every purpose: the downgrade removes the link code and keeps the other two.
+_SEED_ONE_TOKEN_PER_PURPOSE = f"""
+INSERT INTO core.party (id, type) VALUES ('{_PARTY_ID}', 'PERSON');
+INSERT INTO auth.user_account (id, party_id) VALUES ('{_ACCOUNT_ID}', '{_PARTY_ID}');
+INSERT INTO auth.user_action_token (id, user_account_id, purpose, token_hash, expires_at, issued_by) VALUES
+    (gen_random_uuid(), '{_ACCOUNT_ID}', 'invitation', 'invitation-hash', now() + interval '7 days', 'cli'),
+    (gen_random_uuid(), '{_ACCOUNT_ID}', 'password_reset', 'reset-hash', now() + interval '1 day', 'cli'),
+    (gen_random_uuid(), '{_ACCOUNT_ID}', 'discord_link', 'link-code-hash', now() + interval '1 day', 'cli');
+"""
+
+
+def _token_purposes(url: str) -> list[str]:
+    return asyncio.run(_enum_labels(url, "public", "user_action_token_purpose"))
+
+
+def test_the_link_code_purpose_migration_is_reversible(migration_db_url: str) -> None:
+    # `alembic check` is blind to enum labels, so assert them - and the tokens on either side: the downgrade deletes
+    # the link codes and recreates the type without the label; the other tokens survive the recast.
+    _alembic(migration_db_url, "upgrade", _REVISION_0014)
+    assert _token_purposes(migration_db_url) == _PURPOSES_WITH_LINK_CODES
+    asyncio.run(_run_on_server(migration_db_url, _SEED_ONE_TOKEN_PER_PURPOSE))
+
+    _alembic(migration_db_url, "downgrade", _REVISION_0013)
+    assert _token_purposes(migration_db_url) == _PURPOSES_WITHOUT_LINK_CODES
+    tokens = "SELECT purpose::text, token_hash FROM auth.user_action_token ORDER BY token_hash"
+    assert asyncio.run(_rows(migration_db_url, tokens)) == [
+        ("invitation", "invitation-hash"),
+        ("password_reset", "reset-hash"),
+    ]
+
+    _alembic(migration_db_url, "upgrade", _REVISION_0014)
+    assert _token_purposes(migration_db_url) == _PURPOSES_WITH_LINK_CODES

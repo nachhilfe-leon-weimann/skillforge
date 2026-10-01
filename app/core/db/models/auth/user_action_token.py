@@ -16,11 +16,12 @@ if TYPE_CHECKING:
 class UserActionTokenPurpose(enum.StrEnum):
     INVITATION = "invitation"
     PASSWORD_RESET = "password_reset"
+    DISCORD_LINK = "discord_link"
 
 
 class UserActionToken(CreatedAtMixin, AuthBase):
-    """A one-time token for invitation or password reset. Stored as a SHA-256 hash only; the
-    plaintext (prefix ``sf_ua_``) exists once, in the response that issues it."""
+    """A one-time token: an invitation, a password reset or a Discord link code. Stored as a SHA-256 hash
+    only; the plaintext (prefix ``sf_ua_``) exists once, in the response that issues it."""
 
     __tablename__ = "user_action_token"
     __table_args__ = AuthBase.extend_table_args(

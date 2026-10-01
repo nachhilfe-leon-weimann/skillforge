@@ -44,6 +44,7 @@ MAX_BIGINT = 2**63 - 1
 """The largest value of the ``BIGINT`` column a Discord user ID is stored in."""
 
 _DECIMAL = re.compile(r"[0-9]{1,19}")
+_DISCORD_USER_ID_SCHEMA = {"type": "string", "pattern": "^[0-9]{1,19}$"}
 
 
 def _parse_discord_user_id(value: object) -> int:
@@ -57,14 +58,34 @@ def _parse_discord_user_id(value: object) -> int:
     raise ValueError("a Discord user ID is a decimal string of 0 to 2^63 - 1")
 
 
+def _parse_discord_user_id_text(value: object) -> int:
+    """Accept a decimal string only - what a JSON body has to send - within ``0 .. MAX_BIGINT``."""
+    if not isinstance(value, str):
+        raise ValueError("a Discord user ID is a decimal string, not a number")
+    return _parse_discord_user_id(value)
+
+
 DiscordUserId = Annotated[
     int,
     PlainValidator(_parse_discord_user_id),
     PlainSerializer(str, return_type=str),
-    WithJsonSchema({"type": "string", "pattern": "^[0-9]{1,19}$"}),
+    WithJsonSchema(_DISCORD_USER_ID_SCHEMA),
 ]
 """A Discord user's snowflake: an ``int`` in Python, a decimal string on the wire (bot-decoupling spec, decision I).
 
 Snowflakes exceed 2^53, so JavaScript - the portal, release-please's rewrite of ``openapi.json`` - would round a
 JSON number; Discord's own API sends strings for the same reason. A plain assignment, like ``LoginEmail``.
+"""
+
+StrictDiscordUserId = Annotated[
+    int,
+    PlainValidator(_parse_discord_user_id_text),
+    PlainSerializer(str, return_type=str),
+    WithJsonSchema(_DISCORD_USER_ID_SCHEMA),
+]
+"""``DiscordUserId`` for a request body: only a decimal string validates, a JSON number is a ``422``.
+
+FastAPI validates a JSON body in Python mode, where a number arrives as an ``int`` - which ``DiscordUserId`` takes
+from Python code. A client that sends a snowflake as a number may have rounded it already (JavaScript), and the
+rounded value names another Discord user. Paths, queries and forms carry strings anyway and use ``DiscordUserId``.
 """

@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.experimental.missing_sentinel import MISSING
 
 from app.api.v1.common import ApiModel
-from app.core.auth.inputs import DiscordUserId, LoginEmail
+from app.core.auth.inputs import DiscordUserId, LoginEmail, StrictDiscordUserId
 from app.core.auth.principal import Principal, UserPrincipal
 from app.core.auth.roles import Role
 from app.core.auth.tokens import CreatedAccessToken
@@ -265,7 +265,7 @@ def _list_item_fields(view: UserAccountWithRoles) -> dict[str, Any]:
 
 
 class ActionTokenResponse(ApiModel):
-    """A one-time token to hand to the person: an invitation or a password reset."""
+    """A one-time token to hand to the person: an invitation, a password reset or a Discord link code."""
 
     token: str
     """The token. SkillForge stores only its hash, so this is the one time it can be read."""
@@ -301,15 +301,26 @@ class DiscordLinkRequest(ApiModel):
     """ID of the person party the Discord account speaks for. A company is refused; the party needs no user account."""
 
 
+class DiscordLinkRedeemRequest(ApiModel):
+    """Body of `POST /discord-links/redeem`: a one-time link code and the Discord user who sent it."""
+
+    token: str = Field(examples=["sf_ua_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"])
+    """The Discord link code the person typed into the bot."""
+    discord_user_id: StrictDiscordUserId = Field(examples=["123456789012345678"])
+    """The snowflake of the Discord user who sent the code, as a decimal string; a JSON number is refused. Always the
+    sender, never an ID from a command option."""
+
+
 class DiscordLink(ApiModel):
-    """Which Discord account speaks for which person party - identity, written by admins only."""
+    """Which Discord account speaks for which person party - identity, written by an admin or by the person with a
+    one-time link code."""
 
     discord_user_id: DiscordUserId
     """The Discord user's snowflake, as a decimal string."""
     party_id: UUID
     """ID of the person party the Discord account speaks for."""
     active: bool
-    """`false` once unlinked. The row stays as history, and a `PUT` links it again."""
+    """`false` once unlinked. The row stays as history; a `PUT` or a redeemed link code links it again."""
     created_at: datetime
     """When the Discord account was first linked; a move to another party keeps it."""
     updated_at: datetime
