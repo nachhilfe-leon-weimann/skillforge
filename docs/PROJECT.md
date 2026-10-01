@@ -133,12 +133,12 @@ Coarse on purpose; the details live in the GitHub project.
 1. **Auth core** - done (2026-09, [spec](specs/user-authentication.md)). User accounts, client
    grants with modes, portal login (e-mail and password, refresh, logout) and "own data" on the
    party read routes. The portal can start.
-2. **Bot arc** ([spec](specs/bot-decoupling.md), [ADR 0009](decisions/0009-bot-owns-its-discord-workflows.md)).
-   The bot takes over its Discord workflows - today's two-phase transitions and job queue (ADRs
-   [0003](decisions/0003-two-phase-transitions.md) and [0004](decisions/0004-forge-first-job-queue.md), superseded
-   by ADR 0009) - and keeps their state in its own database. It learns about changes by pulling. Bot
-   commands run on the person's token (Discord as a way to log in), Discord links become identity, and the bot's
-   own grant system retires. More a rebuild of the bot's workflows than a move of tables.
+2. **Bot arc** - SkillForge's part done (2026-10, [spec](specs/bot-decoupling.md),
+   [ADR 0009](decisions/0009-bot-owns-its-discord-workflows.md)). SkillForge gave up the two-phase transitions and
+   the job queue (ADRs [0003](decisions/0003-two-phase-transitions.md) and
+   [0004](decisions/0004-forge-first-job-queue.md)); Discord links are identity, frontends pull what changed, and
+   bot commands run on the person's token (Discord as a way to log in). The bot's rebuild - its workflows and their
+   state in its own database, its grant system retired - continues in skillbot.
 3. **Reach arc.** Tutors reach their students, with rules for what a tutor may see - who pays for a student is none
    of the tutor's business - and people see and edit their own relations and subjects (#160, #161).
 4. **Portal arc** in skillsite: its backend and the first views. Can run alongside the bot arc.

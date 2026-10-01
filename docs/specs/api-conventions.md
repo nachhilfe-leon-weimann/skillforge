@@ -16,7 +16,8 @@ Today each endpoint re-declares that behavior by hand, so it drifts:
   typed response.
 - **Errors are wired three times per endpoint:** the service exception, a `try/except` raising
   `HTTPException`, and `responses={404: error_response(...)}` (`complete_job_endpoint` in
-  `app/api/v1/bot/jobs.py`). 422 has two body shapes (see ADR 0006).
+  [`jobs.py`](https://github.com/Nachhilfe-Leon-Weimann/skillforge/blob/v0.5.0/app/api/v1/bot/jobs.py)). 422 has two
+  body shapes (see ADR 0006).
 - **Operation IDs are unusable as client names:** `list_jobs_endpoint_api_v1_bot_jobs_get`. Per
   [ADR 0001](../decisions/0001-openapi-as-contract.md) these become the function names of the generated client.
 - **List parameters are re-invented per endpoint** (`LimitQuery` in [`parties.py`](../../app/api/v1/crm/parties.py),
