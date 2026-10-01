@@ -503,7 +503,8 @@ rest in P0-4.
 
 - After the release that carries P0-2: grant the `operator` client `auth:discord-links:read` in `delegated` mode; its
   documented line in `user-authentication.md` becomes `--delegated "account:self crm:read crm:write auth:users:manage
-auth:clients:manage auth:discord-links:read"`. Admins log in again.
+auth:clients:manage auth:discord-links:read"`. Admins log in again. _(Done on 2026-10-01 after `v0.6.0`, recorded
+  in #166.)_
 - When skillbot's pull loop is ready: rotate its secret (`POST /auth/clients/skillbot/secrets`, then delete the old
   ones) and grant `application` `crm:read auth:discord-links:read`.
 - After the release that carries P0-7 and the link review: add `application` `auth:users:exchange` and `delegated`
