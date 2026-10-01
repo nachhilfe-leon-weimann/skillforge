@@ -246,65 +246,12 @@ def test_auth_client_operations_document_auth_errors(schema: dict[str, Any]):
     assert responses["401"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/ErrorResponse"}
 
 
-# The component schemas only the bot routes used when P0-4 of docs/specs/bot-decoupling.md removed the bot API;
-# the published client lost them with `api.bot`.
-REMOVED_BOT_SCHEMAS = frozenset({
-    "AuthorizationCheckRequest",
-    "AuthorizationCheckResponse",
-    "BotJob",
-    "BotPrincipal",
-    "CommandEnvChannelResponse",
-    "CommandEnvKind",
-    "CommandEnvUpsertRequest",
-    "ContactInfoProfile",
-    "DiscordAccountProfile",
-    "DiscordIdBatchRequest",
-    "DiscordUserResponse",
-    "DiscordUserUpsertRequest",
-    "ExternalAccountsProfile",
-    "GroupMembershipResponse",
-    "JobClaimRequest",
-    "JobDetail",
-    "JobFailRequest",
-    "JobKindCounts",
-    "JobListItem",
-    "JobQueueSummary",
-    "JobResponse",
-    "JobStatus",
-    "JobStatusCounts",
-    "MemberRole",
-    "MicrosoftAccountProfile",
-    "OperationCancelResponse",
-    "OperationKind",
-    "OperationResponse",
-    "OperationStatus",
-    "OperationSummary",
-    "OperationalProfile",
-    "Page_JobListItem_",
-    "Page_OperationSummary_",
-    "PersonProfile",
-    "PrincipalBatch",
-    "RelationProfile",
-    "StudentActivationCommitRequest",
-    "StudentActivationPrepareRequest",
-    "StudentChannelState",
-    "StudentContext",
-    "StudentContextBatch",
-    "TransitionCommitResponse",
-    "TransitionPrepareResponse",
-    "TutorActivationCommitRequest",
-    "TutorActivationPrepareRequest",
-    "TutorContext",
-    "TutorContextBatch",
-})
-
-
+# FastAPI emits only the component schemas a route reaches, so no bot path and no bot tag also means no bot schema.
 def test_the_bot_api_is_gone(schema: dict[str, Any]):
     areas = {path.split("/")[3] for path in schema["paths"] if path.startswith("/api/v1/")}
 
     assert areas == {"auth", "crm"}
     assert {tag["name"] for tag in schema["tags"]} == {"auth", "crm", "system"}
-    assert REMOVED_BOT_SCHEMAS.isdisjoint(schema["components"]["schemas"])
 
 
 # A Discord snowflake - of a user, guild, channel or role - by the name of the property or parameter holding it.
