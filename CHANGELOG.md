@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/nachhilfe-leon-weimann/skillforge/compare/v0.5.0...v0.6.0) (2026-10-01)
+
+
+### Features
+
+* **api:** remove the bot API ([#172](https://github.com/nachhilfe-leon-weimann/skillforge/issues/172)) ([7108790](https://github.com/nachhilfe-leon-weimann/skillforge/commit/710879030af85de2ae9b1a5223e8083f1a51d971))
+* **auth:** exchange a Discord user for a person token ([#175](https://github.com/nachhilfe-leon-weimann/skillforge/issues/175)) ([f4f731d](https://github.com/nachhilfe-leon-weimann/skillforge/commit/f4f731d8b8728d8d0e194e323caaea7c2e71b545))
+* **auth:** link a Discord account with a one-time code ([#177](https://github.com/nachhilfe-leon-weimann/skillforge/issues/177)) ([8670512](https://github.com/nachhilfe-leon-weimann/skillforge/commit/867051213e0d37da8b7632f39520c7a654615d3d))
+* **auth:** manage Discord links as identities ([#168](https://github.com/nachhilfe-leon-weimann/skillforge/issues/168)) ([e8e3fa8](https://github.com/nachhilfe-leon-weimann/skillforge/commit/e8e3fa858e8567027cb35938d6fcd4f2ce86eaf0))
+* **crm:** signal changes for pulling frontends ([#174](https://github.com/nachhilfe-leon-weimann/skillforge/issues/174)) ([cd8f19a](https://github.com/nachhilfe-leon-weimann/skillforge/commit/cd8f19ac5837cc6b280867b16a9049a462b5a6ce))
+* **db:** drop the bot schema and retire the bot scopes ([#173](https://github.com/nachhilfe-leon-weimann/skillforge/issues/173)) ([b5e85e7](https://github.com/nachhilfe-leon-weimann/skillforge/commit/b5e85e7a574bb9923348e2ae1a5beddd75ee0a64))
+* **workers:** delete expired sessions and one-time tokens in a housekeeping worker ([#170](https://github.com/nachhilfe-leon-weimann/skillforge/issues/170)) ([889b2c5](https://github.com/nachhilfe-leon-weimann/skillforge/commit/889b2c54ec30398e488e4fd5d8f38f1f85eb9e6f))
+
 ## [0.5.0](https://github.com/Nachhilfe-Leon-Weimann/skillforge/compare/v0.4.0...v0.5.0) (2026-09-25)
 
 
