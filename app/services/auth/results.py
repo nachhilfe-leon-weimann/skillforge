@@ -88,3 +88,6 @@ class TokenDenial(StrEnum):
 
 type UserTokenResult = IssuedUserToken | TokenDenial
 """The outcome of ``issue_user_token`` and ``refresh_user_token``."""
+
+type ExchangeResult = CreatedAccessToken | TokenDenial
+"""The outcome of ``exchange_discord_user``: a person's access token - no refresh token, no session - or the denial."""

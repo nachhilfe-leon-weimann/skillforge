@@ -122,3 +122,10 @@ def test_every_property_and_parameter_of_the_new_operations_is_described(schema:
     assert {"UserAccountCreateRequest", "UserAccountDetail", "ActionTokenResponse", "PasswordRedeemRequest"} <= seen
     assert parameters
     assert all(parameter["description"] for parameter in parameters)
+
+
+def test_last_login_at_counts_password_logins_only(schema: dict[str, Any]):
+    """A Discord-user exchange is no login: it leaves `last_login_at` alone (bot-decoupling spec, decision Q)."""
+    description = schema["components"]["schemas"]["UserAccountListItem"]["properties"]["last_login_at"]["description"]
+
+    assert description.startswith("When the person last logged in with their password")

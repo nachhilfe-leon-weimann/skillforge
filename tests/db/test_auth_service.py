@@ -44,6 +44,7 @@ async def test_seed_default_scopes_is_idempotent(session):
     expected = {
         "auth:clients:manage",
         "auth:discord-links:read",
+        "auth:users:exchange",
         "auth:users:login",
         "auth:users:manage",
         "account:self",

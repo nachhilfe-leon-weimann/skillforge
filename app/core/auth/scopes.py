@@ -26,6 +26,11 @@ class Scope(StrEnum):
         "Log people in on their behalf (password / refresh_token grants, redeem, revoke). Client-only: never part "
         "of a person's token.",
     )
+    AUTH_USERS_EXCHANGE = (
+        "auth:users:exchange",
+        "Obtain a person's token for the Discord user they linked, and redeem Discord link codes; the client's secret "
+        "speaks for every linked person up to its delegated ceiling. Client-only: never part of a person's token.",
+    )
     AUTH_DISCORD_LINKS_READ = (
         "auth:discord-links:read",
         "Read Discord links - which Discord account belongs to which person party - including unlinked ones.",
@@ -36,8 +41,17 @@ class Scope(StrEnum):
     ACCOUNT_SELF = "account:self", "Manage the caller's own account."
 
 
-CLIENT_ONLY_SCOPES: frozenset[Scope] = frozenset({Scope.AUTH_USERS_LOGIN})
+CLIENT_ONLY_SCOPES: frozenset[Scope] = frozenset({Scope.AUTH_USERS_LOGIN, Scope.AUTH_USERS_EXCHANGE})
 """Scopes that only make sense for a client: grantable in ``application`` mode only, in no role's scopes."""
+
+VOUCHED_SCOPES: frozenset[Scope] = frozenset({Scope.CRM_READ, Scope.CRM_READ_OWN, Scope.CRM_WRITE})
+"""The only scopes a token obtained without a password carries: a client vouched for the person (bot-decoupling spec,
+decision R).
+
+Every other scope - ``account:self``, every ``auth:*`` and every scope added later - needs a password login until it
+is added here on purpose. The exchange takes this set as a ceiling, and a token with ``amr: ["discord"]`` that
+carries another scope is invalid.
+"""
 
 OWN_VARIANT: dict[Scope, Scope] = {
     Scope.CRM_READ: Scope.CRM_READ_OWN,

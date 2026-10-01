@@ -597,17 +597,17 @@ Before P0-4 merges, skillbot has a `docs/` (specs and decisions) that records, w
 
 **Standing criteria - they hold for every slice and are ticked with P0-7.**
 
-- [ ] `just check-all` is green; `openapi.json` is regenerated with `just openapi`, never edited.
-- [ ] Nothing under `app/services/crm` or `app/api/v1/crm` imports anything but `app.core`, the shared API vocabulary
+- [x] `just check-all` is green; `openapi.json` is regenerated with `just openapi`, never edited.
+- [x] Nothing under `app/services/crm` or `app/api/v1/crm` imports anything but `app.core`, the shared API vocabulary
       and the CRM itself; nothing under `app/services/auth` imports `app.api`, `app.services.crm` or
       `app.services.system`.
-- [ ] `ext.discord_account` has exactly one writer in `app/` at every commit.
+- [x] `ext.discord_account` has exactly one writer in `app/` at every commit.
 - [ ] `/health` stays `ok` across every release; `WorkerName` is never empty.
-- [ ] No plaintext secret in a log, an audit `detail` or an error `detail`; no Discord user ID in the request log or
+- [x] No plaintext secret in a log, an audit `detail` or an error `detail`; no Discord user ID in the request log or
       in claims.
-- [ ] Every new schema property and every new path and query parameter is described; new schemas derive from
+- [x] Every new schema property and every new path and query parameter is described; new schemas derive from
       `ApiModel`; operation IDs are derived; no Discord ID appears as a JSON integer in `openapi.json`.
-- [ ] Commit and PR titles are conventional without `!` (decision U); a spec's boxes are ticked in the PR that
+- [x] Commit and PR titles are conventional without `!` (decision U); a spec's boxes are ticked in the PR that
       fulfils them.
 
 **P0-1 - Spec and ADR.** _Docs only._ PR `docs: decide that the bot owns its Discord workflows`.
@@ -764,13 +764,13 @@ now removes its `TUTOR_OF`.
   mixed or unknown `amr` are invalid); `test_scopes.py` (`CLIENT_ONLY_SCOPES` has two members, `VOUCHED_SCOPES` is
   pinned); the mechanical `UserPrincipal(...)` edits.
 - _Acceptance criteria:_
-  - [ ] With `application` `auth:users:exchange`, an active link to an active account answers 200 with exactly four
+  - [x] With `application` `auth:users:exchange`, an active link to an active account answers 200 with exactly four
         keys and opens no session; the token has `amr ["discord"]`, no `sid`, and validates to `DiscordLogin`.
-  - [ ] Password and refresh tokens are byte-identical to before.
-  - [ ] Every broken link answers the same `invalid_grant`; a locked account exchanges and no login field changes.
-  - [ ] With `delegated` `crm:read` a non-admin gets `crm:read:own`, an admin `crm:read`; no Discord token carries a
+  - [x] Password and refresh tokens are byte-identical to before.
+  - [x] Every broken link answers the same `invalid_grant`; a locked account exchanges and no login field changes.
+  - [x] With `delegated` `crm:read` a non-admin gets `crm:read:own`, an admin `crm:read`; no Discord token carries a
         scope outside `VOUCHED_SCOPES`.
-  - [ ] A client without the scope is `unauthorized_client`; the scope cannot be granted in `delegated` mode or beside
+  - [x] A client without the scope is `unauthorized_client`; the scope cannot be granted in `delegated` mode or beside
         `auth:users:login`.
   - [ ] The link review is recorded in the epic before the grant; all standing criteria are ticked.
 

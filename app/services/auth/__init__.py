@@ -15,10 +15,17 @@ from .errors import (
     InvalidClientCredentialsError,
     InvalidClientScopeError,
 )
-from .results import BootstrappedApplicationClient, CreatedClientSecret, IssuedUserToken, TokenDenial, UserTokenResult
+from .results import (
+    BootstrappedApplicationClient,
+    CreatedClientSecret,
+    ExchangeResult,
+    IssuedUserToken,
+    TokenDenial,
+    UserTokenResult,
+)
 from .scopes import grant_application_client_scopes, revoke_application_client_scope, seed_default_scopes
 from .secrets import create_application_client_secret, create_client_secret, revoke_application_client_secret
-from .tokens import issue_client_token, issue_user_token, refresh_user_token
+from .tokens import exchange_discord_user, issue_client_token, issue_user_token, refresh_user_token
 
 __all__ = [
     "ApplicationClientAlreadyExistsError",
@@ -29,6 +36,7 @@ __all__ = [
     "BootstrappedApplicationClient",
     "ClientCredentialsError",
     "CreatedClientSecret",
+    "ExchangeResult",
     "InvalidClientCredentialsError",
     "InvalidClientScopeError",
     "IssuedUserToken",
@@ -38,6 +46,7 @@ __all__ = [
     "create_application_client",
     "create_application_client_secret",
     "create_client_secret",
+    "exchange_discord_user",
     "get_application_client",
     "grant_application_client_scopes",
     "issue_client_token",

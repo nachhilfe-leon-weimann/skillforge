@@ -67,7 +67,7 @@ class MeResponse(ApiModel):
     principal_type: str
     """Kind of principal the token was issued to: `application` for an application client, `user` for a person."""
     client_id: str | None
-    """Client ID of the application client, or for a person the client that logged them in."""
+    """Client ID of the application client, or for a person the client that logged them in or vouched for them."""
     scopes: list[str]
     """Scopes the token grants, sorted and canonical: an unqualified scope implies its `:own` form."""
     user_id: UUID | None
@@ -226,7 +226,7 @@ class UserAccountListItem(ApiModel):
     roles: list[Role]
     """Every role the account holds, stored (`admin`) and derived from the CRM, sorted."""
     last_login_at: datetime | None
-    """When the person last logged in; `null` until the first login."""
+    """When the person last logged in with their password; `null` until then - a Discord-user exchange is no login."""
     created_at: datetime
     """When the account was created."""
 

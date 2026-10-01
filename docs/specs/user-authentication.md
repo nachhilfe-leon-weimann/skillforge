@@ -44,7 +44,8 @@ skillsite; the bot's use of person tokens follows in the bot arc (see
 6. **The account is the door.** An account belongs to exactly one person party, only admins or a client they
    entrust with it create it, and it is separate from the ways a person logs in.
 7. **Ready for the bot.** The model takes the token exchange, Discord as a way to log in and tutor reach. The one
-   planned widening: `sid` becomes optional for exchanged tokens, which open no session.
+   planned widening: `sid` becomes optional for exchanged tokens, which open no session - made by P0-7 of
+   [`bot-decoupling.md`](bot-decoupling.md) as `UserPrincipal.login: PasswordLogin | DiscordLogin`.
 
 ## Non-goals
 
@@ -81,7 +82,7 @@ skillsite; the bot's use of person tokens follows in the bot arc (see
 | **N - Deleting a party**                 | `user_account.party_id` is `ON DELETE CASCADE`; `delete_party` and its `EXTERNAL_LINKS` guard are not touched.                                                                                                                                            | The CRM stays unaware of accounts (ADR 0007).                                                                                                                                                                         |
 | **O - Denials are returned, not raised** | Every denial that writes state (audit entry, failed-login counter, session revocation) is returned as a response.                                                                                                                                         | Raising rolls the session back and would undo the counter - the pattern `create_token` already follows.                                                                                                               |
 | **P - First client and first admin**     | `just bootstrap-client` seeds a client with grants in both modes. `just bootstrap-admin --party-id <uuid> --email <address>` ensures an enabled admin account and prints an invitation, or a reset token once a password exists: the break-glass command. | Creating clients needs `auth:clients:manage` and creating accounts an admin: neither first one can be created through the API, and the only admin cannot reset, re-enable or re-promote themselves.                   |
-| **Q - How a token was obtained**         | A person's token carries `amr` (RFC 8176): `["pwd"]` in this arc, `["discord"]` from the bot arc.                                                                                                                                                         | The two ways differ in strength; password-only actions (P1-2) can demand `pwd`.                                                                                                                                       |
+| **Q - How a token was obtained**         | A person's token carries `amr` (RFC 8176): `["pwd"]` from a password login, `["discord"]` from the token exchange of [`bot-decoupling.md`](bot-decoupling.md), which opens no session and carries only `VOUCHED_SCOPES`.                                  | The two ways differ in strength; password-only actions (P1-2) can demand `pwd`.                                                                                                                                       |
 
 **Open:** whether `admin` also carries `bot:write`. It starts without it; adding it is one line in `ROLE_SCOPES`. _(Superseded by [bot-decoupling.md](bot-decoupling.md).)_
 
@@ -319,21 +320,24 @@ principal_id    "<user_account.id>"
 azp             "<client_id of the client that logged the person in>"
 scope           canonical, space-separated
 party_id        "<core.party.id>"
-sid             "<user_session.id>"
+sid             "<user_session.id>"       only with amr ["pwd"]: an exchanged token opens no session
 roles           ["admin", "tutor"]        sorted; informational
-amr             ["pwd"]                   how the person was authenticated (decision Q)
+amr             ["pwd"] or ["discord"]    how the person was authenticated (decision Q)
 ```
 
 `Principal` in [`principal.py`](../../app/core/auth/principal.py) is the abstract base of two frozen dataclasses,
-`ApplicationPrincipal` and `UserPrincipal`; the latter adds `party_id`, `session_id`, `roles: frozenset[Role]`
-and `auth_methods: frozenset[AuthMethod]` (`StrEnum`, `PASSWORD = "pwd"`). `principal_type` (`PrincipalType`, a
-`StrEnum` that replaces `PRINCIPAL_TYPE_APPLICATION` in `tokens.py`) is a class constant and `subject` is derived;
-`client_id` stays on the base - the client itself, or for a person `azp`, the client that logged them in.
+`ApplicationPrincipal` and `UserPrincipal`; the latter adds `party_id`, `roles: frozenset[Role]` and
+`login: PasswordLogin | DiscordLogin` - the typed form of `amr` (`AuthMethod`, a `StrEnum`: `PASSWORD = "pwd"`,
+`DISCORD = "discord"`) and `sid` (decision S of [`bot-decoupling.md`](bot-decoupling.md)). `principal_type`
+(`PrincipalType`, a `StrEnum` that replaces `PRINCIPAL_TYPE_APPLICATION` in `tokens.py`) is a class constant and
+`subject` is derived; `client_id` stays on the base - the client itself, or for a person `azp`, the client that
+logged them in.
 `create_access_token(settings, principal)` writes a principal and `validate_access_token` reads it back, both
 through one pydantic declaration of the claims - a discriminated union on `principal_type`.
 `create_application_access_token` stays as the application token's shorthand. A person's token without
-`party_id`, `sid` or `amr`, with an unknown role or method, or whose `sub` is not the canonical
-`user:<principal_id>`, is invalid.
+`party_id` or `amr`, with an unknown role or method, whose `amr` and `sid` name no login (`["pwd"]` needs a `sid`,
+`["discord"]` has none, `sid: null` is never written), with `["discord"]` and a scope outside `VOUCHED_SCOPES`, or
+whose `sub` is not the canonical `user:<principal_id>`, is invalid.
 
 The security scheme in [`security.py`](../../app/core/auth/security.py) declares a `password` flow next to
 `clientCredentials`, so Swagger UI's "Authorize" dialog logs a person in. The class is renamed to `OAuth2Bearer`
@@ -676,8 +680,11 @@ exchange, Discord links, the retirement of the grant engine and the change signa
         slice - P0-7 does so for `crm_list_parties` and `crm_get_party`.
   - [x] A person's token round-trips into a `UserPrincipal` with `party_id`, `session_id`, `roles` and
         `auth_methods`; an application token round-trips exactly as before (claims asserted against a fixture).
+        _(Amended by P0-7 of [bot-decoupling.md](bot-decoupling.md): `login: PasswordLogin | DiscordLogin` replaces
+        `session_id` and `auth_methods`.)_
   - [x] A person's token missing `party_id`, `sid` or `amr`, with an unknown role or method, or whose `sub` is not
-        `user:<principal_id>`, is a `401` in the error envelope.
+        `user:<principal_id>`, is a `401` in the error envelope. _(Amended by P0-7 of
+        [bot-decoupling.md](bot-decoupling.md): `sid` is required with `amr` `["pwd"]` and absent with `["discord"]`.)_
   - [x] `GET /auth/me` answers both principal types without a database session.
   - [x] `require_application` rejects a person's token; the request log identifies the person behind a request.
 

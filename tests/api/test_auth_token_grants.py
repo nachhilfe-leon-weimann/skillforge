@@ -1,5 +1,5 @@
 """The token endpoint's person grants without a database: parsing the form, dispatching on the grant, and turning
-a denial into its OAuth2 answer (user-authentication spec, P0-8)."""
+a denial into its OAuth2 answer (user-authentication spec, P0-8; the Discord-user grant: bot-decoupling spec, P0-7)."""
 
 import inspect
 import re
@@ -8,11 +8,13 @@ from typing import Any
 import httpx
 import pytest
 
-from app.api.v1.auth.token import create_token, get_issue_user_token, get_refresh_user_token
+from app.api.v1.auth.token import create_token, get_exchange_discord_user, get_issue_user_token, get_refresh_user_token
 from app.api.v1.common import DBSession
 from app.core.auth import Scope
+from app.core.auth.inputs import MAX_BIGINT
 from app.core.auth.scopes import CLIENT_ONLY_SCOPES
 from app.core.db.dependencies import get_db_session
+from app.core.logging import LogFormat, LoggingSettings, LogLevel, configure_logging
 from app.main import app
 from app.services.auth import IssuedUserToken, TokenDenial
 from tests.api.test_auth_endpoint import _overrides, _token
@@ -21,10 +23,14 @@ from tests.api.test_auth_endpoint import _post as _post_to
 ISSUED = IssuedUserToken(
     token=_token(scope="account:self crm:read:own"), refresh_token="sf_rt_refresh", refresh_expires_in=2592000
 )
+DISCORD_USER_GRANT = "urn:skillforge:params:oauth:grant-type:discord-user"
+SNOWFLAKE = 123456789012345678
+"""A Discord user ID above 2**53: a float or a JavaScript number would round it."""
+EXCHANGED = _token(scope="crm:read:own")
 
 
 class _Fakes(_overrides):
-    """``_overrides`` with all three grant seams faked: each records its keyword arguments and answers ``result``."""
+    """``_overrides`` with all four grant seams faked: each records its keyword arguments and answers ``result``."""
 
     def __init__(self, result: object) -> None:
         self.result = result
@@ -44,11 +50,25 @@ class _Fakes(_overrides):
         super().__enter__()
         app.dependency_overrides[get_issue_user_token] = lambda: self._fake("password")
         app.dependency_overrides[get_refresh_user_token] = lambda: self._fake("refresh_token")
+        app.dependency_overrides[get_exchange_discord_user] = lambda: self._fake("discord_user")
         return self
 
 
 async def _post(data: dict[str, str], **kwargs: Any) -> httpx.Response:
     return await _post_to("/api/v1/auth/token", data=data, **kwargs)
+
+
+def _exchange_form(discord_user_id: str | None = str(SNOWFLAKE), **fields: str) -> dict[str, str]:
+    """The form of the Discord-user grant; ``discord_user_id=None`` leaves the field out."""
+    form = {"grant_type": DISCORD_USER_GRANT, **fields}
+    return form if discord_user_id is None else form | {"discord_user_id": discord_user_id}
+
+
+@pytest.fixture
+def restore_logging():
+    """Put the logging configuration back, so the turned-up level ends with the test."""
+    yield
+    configure_logging(LoggingSettings())
 
 
 async def test_the_password_grant_calls_its_seam_and_answers_with_the_refresh_token():
@@ -117,6 +137,7 @@ async def test_the_refresh_token_grant_calls_its_seam():
     [
         {"grant_type": "password", "username": "anna@example.org", "password": "pw"},
         {"grant_type": "refresh_token", "refresh_token": "sf_rt_old"},
+        {"grant_type": DISCORD_USER_GRANT, "discord_user_id": str(SNOWFLAKE)},
     ],
 )
 async def test_every_denial_is_answered_with_its_oauth2_error(
@@ -188,6 +209,87 @@ async def test_an_over_long_username_or_password_is_invalid_request_before_any_l
     assert len(fakes.calls) == int(accepted)
     if not accepted:
         assert response.json() == {"detail": "A required parameter is missing", "code": "invalid_request"}
+
+
+async def test_the_discord_user_grant_calls_its_seam_and_answers_without_a_refresh_token():
+    with _Fakes(EXCHANGED) as fakes:
+        response = await _post(_exchange_form(scope="crm:read:own"), auth=("bot", "secret"))
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "access_token": "encoded-token",
+        "token_type": "bearer",
+        "expires_in": 900,
+        "scope": "crm:read:own",
+    }
+    assert fakes.calls == [
+        (
+            "discord_user",
+            {
+                "client_id": "bot",
+                "client_secret": "secret",
+                "discord_user_id": SNOWFLAKE,
+                "requested_scopes": "crm:read:own",
+            },
+        )
+    ]
+
+
+@pytest.mark.parametrize("discord_user_id", ["0", str(MAX_BIGINT)])
+async def test_the_smallest_and_the_largest_discord_user_id_reach_the_seam_as_ints(discord_user_id: str):
+    with _Fakes(EXCHANGED) as fakes:
+        response = await _post(_exchange_form(discord_user_id), auth=("bot", "secret"))
+
+    assert response.status_code == 200
+    assert [kwargs["discord_user_id"] for _, kwargs in fakes.calls] == [int(discord_user_id)]
+
+
+@pytest.mark.parametrize(
+    "discord_user_id",
+    [None, "", "-1", "+5", " 7", "1e3", "0x10", "12.0", "\uff11\uff12", str(MAX_BIGINT + 1), "0" * 20],
+)
+async def test_a_missing_or_malformed_discord_user_id_is_invalid_request_before_any_look_up(
+    discord_user_id: str | None,
+):
+    with _Fakes(AssertionError("no seam is called")) as fakes:
+        response = await _post(_exchange_form(discord_user_id), auth=("bot", "secret"))
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "A required parameter is missing", "code": "invalid_request"}
+    assert fakes.calls == []
+
+
+async def test_the_request_log_names_no_discord_user_id(restore_logging, capsys):
+    """Discord user IDs appear in audit rows only, never in the request log (bot-decoupling spec, "Security rules")."""
+    configure_logging(LoggingSettings(level=LogLevel.DEBUG, format=LogFormat.JSON))
+    capsys.readouterr()
+
+    with _Fakes(TokenDenial.INVALID_GRANT):
+        denied = await _post(_exchange_form(), auth=("bot", "secret"))
+        malformed = await _post(_exchange_form(f"{SNOWFLAKE}x"), auth=("bot", "secret"))
+
+    output = capsys.readouterr().out
+    assert (denied.status_code, malformed.status_code) == (400, 422)
+    assert output.count("http_request_") >= 2, "the requests were logged"
+    assert str(SNOWFLAKE) not in output
+
+
+def test_the_token_form_and_the_operation_document_the_discord_user_grant():
+    schema = app.openapi()
+    form = schema["components"]["schemas"]["Body_auth_create_token"]["properties"]
+    description = schema["paths"]["/api/v1/auth/token"]["post"]["description"]
+
+    assert DISCORD_USER_GRANT in form["grant_type"]["description"]
+    assert [variant["type"] for variant in form["discord_user_id"]["anyOf"]] == ["string", "null"]
+    for phrase in (DISCORD_USER_GRANT, "auth:users:exchange", "No refresh token", "try it with curl"):
+        assert phrase in description, phrase
+
+
+def test_the_exchange_scope_is_offered_to_clients_only():
+    [scheme] = app.openapi()["components"]["securitySchemes"].values()
+
+    assert "auth:users:exchange" in scheme["flows"]["clientCredentials"]["scopes"]
+    assert "auth:users:exchange" not in scheme["flows"]["password"]["scopes"]
 
 
 def test_swagger_uis_authorize_dialog_offers_the_password_flow():

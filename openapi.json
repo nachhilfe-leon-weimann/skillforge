@@ -395,8 +395,20 @@
             "description": "The client's secret, unless it authenticates with HTTP Basic.",
             "title": "Client Secret"
           },
+          "discord_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`urn:skillforge:params:oauth:grant-type:discord-user` grant only, required there: the Discord user who sent the command, as a decimal string.",
+            "title": "Discord User Id"
+          },
           "grant_type": {
-            "description": "`client_credentials`, `password` (a person's login) or `refresh_token`.",
+            "description": "`client_credentials`, `password` (a person's login), `refresh_token` or `urn:skillforge:params:oauth:grant-type:discord-user` (a person's token for a linked Discord user).",
             "title": "Grant Type",
             "type": "string"
           },
@@ -923,7 +935,7 @@
                 "type": "null"
               }
             ],
-            "description": "Client ID of the application client, or for a person the client that logged them in.",
+            "description": "Client ID of the application client, or for a person the client that logged them in or vouched for them.",
             "title": "Client Id"
           },
           "party_id": {
@@ -1850,7 +1862,7 @@
                 "type": "null"
               }
             ],
-            "description": "When the person last logged in; `null` until the first login.",
+            "description": "When the person last logged in with their password; `null` until then - a Discord-user exchange is no login.",
             "title": "Last Login At"
           },
           "locked_until": {
@@ -1948,7 +1960,7 @@
                 "type": "null"
               }
             ],
-            "description": "When the person last logged in; `null` until the first login.",
+            "description": "When the person last logged in with their password; `null` until then - a Discord-user exchange is no login.",
             "title": "Last Login At"
           },
           "party_id": {
@@ -2079,6 +2091,7 @@
               "account:self": "Manage the caller's own account.",
               "auth:clients:manage": "Manage application clients.",
               "auth:discord-links:read": "Read Discord links - which Discord account belongs to which person party - including unlinked ones.",
+              "auth:users:exchange": "Obtain a person's token for the Discord user they linked, and redeem Discord link codes; the client's secret speaks for every linked person up to its delegated ceiling. Client-only: never part of a person's token.",
               "auth:users:login": "Log people in on their behalf (password / refresh_token grants, redeem, revoke). Client-only: never part of a person's token.",
               "auth:users:manage": "Create, disable and reset user accounts; assign stored roles.",
               "crm:read": "Read parties, relations and subjects.",
@@ -4037,7 +4050,7 @@
     },
     "/api/v1/auth/token": {
       "post": {
-        "description": "Issue an access token.\n\nThe client authenticates for every grant, with HTTP Basic or `client_id` / `client_secret` in the form.\n`client_credentials` issues a token of the client's own. `password` logs a person in and opens a session;\n`refresh_token` renews it and replaces its refresh token. Both need `auth:users:login` granted to the client\nin `application` mode. Every failure of the person's credentials or refresh token is the same\n`invalid_grant`.",
+        "description": "Issue an access token.\n\nThe client authenticates for every grant, with HTTP Basic or `client_id` / `client_secret` in the form.\n`client_credentials` issues a token of the client's own. `password` logs a person in and opens a session;\n`refresh_token` renews it and replaces its refresh token. Both need `auth:users:login` granted to the client\nin `application` mode. Every failure of the person's credentials or refresh token is the same\n`invalid_grant`.\n\n`urn:skillforge:params:oauth:grant-type:discord-user` exchanges the Discord user in `discord_user_id` - the one\nwho sent a command, never one named in it - for a token of the person party it is actively linked to. It needs\n`auth:users:exchange` granted to the client in `application` mode. The token carries `amr: [\"discord\"]` and at\nmost `crm:read`, `crm:read:own` and `crm:write`, within the client's `delegated` grants and the person's roles.\nNo refresh token and no session: exchange again when it expires. No active link, no account and a disabled\naccount are the same `invalid_grant`. Swagger UI's Authorize dialog cannot use this grant; try it with curl.",
         "operationId": "auth_create_token",
         "requestBody": {
           "content": {
@@ -8772,7 +8785,7 @@
   },
   "tags": [
     {
-      "description": "OAuth2 token issuance - client credentials for applications, password and refresh-token logins for people through a client - plus logout, user accounts and application client management.",
+      "description": "OAuth2 token issuance - client credentials for applications, password and refresh-token logins for people through a client, and the Discord-user exchange for a person's linked Discord user - plus logout, user accounts, Discord links and application client management.",
       "name": "auth"
     },
     {

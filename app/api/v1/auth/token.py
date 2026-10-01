@@ -1,8 +1,9 @@
 """The OAuth2 token endpoint: form-encoded, OAuth2 error codes (RFC 6749, section 5.2).
 
-Three grants, each behind its own dependency seam: ``client_credentials`` for a client itself, ``password``
-and ``refresh_token`` for a person the client logs in. The form is parsed into one of three grant types at
-the boundary; ``create_token`` dispatches on it and is the one place a denial becomes an error response.
+Four grants, each behind its own dependency seam: ``client_credentials`` for a client itself, ``password``
+and ``refresh_token`` for a person the client logs in, and the Discord-user exchange - an extension grant
+(RFC 6749, section 4.5) - for a person the client vouches for. The form is parsed into one of four grant types
+at the boundary; ``create_token`` dispatches on it and is the one place a denial becomes an error response.
 """
 
 import base64
@@ -15,18 +16,21 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import JSONResponse
 from fastapi.security.utils import get_authorization_scheme_param
+from pydantic import TypeAdapter, ValidationError
 
 from app.api.v1.common import ApiError, DBSession, error_responses
 from app.core.auth import CreatedAccessToken
 from app.core.auth.dependencies import AuthConfig
-from app.core.auth.inputs import MAX_EMAIL_LENGTH
+from app.core.auth.inputs import MAX_EMAIL_LENGTH, DiscordUserId
 from app.core.auth.passwords import MAX_PASSWORD_LENGTH
 from app.core.logging import bind_request_log_context
 from app.services.auth import (
+    ExchangeResult,
     InvalidClientCredentialsError,
     InvalidClientScopeError,
     TokenDenial,
     UserTokenResult,
+    exchange_discord_user,
     issue_client_token,
     issue_user_token,
     refresh_user_token,
@@ -47,7 +51,9 @@ router = APIRouter()
 
 IssueClientToken = Callable[..., Awaitable[CreatedAccessToken]]
 UserGrant = Callable[..., Awaitable[UserTokenResult]]
-"""The service behind a person's grant: ``issue_user_token`` or ``refresh_user_token``."""
+"""The service behind a person's login grant: ``issue_user_token`` or ``refresh_user_token``."""
+ExchangeDiscordUser = Callable[..., Awaitable[ExchangeResult]]
+"""The service behind the Discord-user grant: ``exchange_discord_user``."""
 
 
 class GrantType(StrEnum):
@@ -56,6 +62,7 @@ class GrantType(StrEnum):
     CLIENT_CREDENTIALS = "client_credentials"
     PASSWORD = "password"
     REFRESH_TOKEN = "refresh_token"
+    DISCORD_USER = "urn:skillforge:params:oauth:grant-type:discord-user"
 
 
 @dataclass(frozen=True)
@@ -78,7 +85,14 @@ class RefreshTokenGrant:
     refresh_token: str
 
 
-type Grant = ClientCredentialsGrant | PasswordGrant | RefreshTokenGrant
+@dataclass(frozen=True)
+class DiscordUserGrant:
+    """A client vouches for the person a Discord user is linked to and asks for that person's token."""
+
+    discord_user_id: int
+
+
+type Grant = ClientCredentialsGrant | PasswordGrant | RefreshTokenGrant | DiscordUserGrant
 
 
 @dataclass(frozen=True)
@@ -99,6 +113,9 @@ _DENIALS: dict[TokenDenial, tuple[ApiError, str]] = {
 }
 """The answer to each denial, whichever grant it ended, and the ``auth_reason`` the request log gives."""
 
+_DISCORD_USER_ID: TypeAdapter[int] = TypeAdapter(DiscordUserId)
+"""Parses the ``discord_user_id`` form field: a decimal string within the ``BIGINT`` range, nothing else."""
+
 
 def get_issue_client_token() -> IssueClientToken:
     return issue_client_token
@@ -112,10 +129,18 @@ def get_refresh_user_token() -> UserGrant:
     return refresh_user_token
 
 
+def get_exchange_discord_user() -> ExchangeDiscordUser:
+    return exchange_discord_user
+
+
 async def get_token_form(
     request: Request,
     grant_type: Annotated[
-        str, Form(description="`client_credentials`, `password` (a person's login) or `refresh_token`.")
+        str,
+        Form(
+            description="`client_credentials`, `password` (a person's login), `refresh_token` or "
+            "`urn:skillforge:params:oauth:grant-type:discord-user` (a person's token for a linked Discord user)."
+        ),
     ],
     client_id: Annotated[
         str | None, Form(description="The client's ID, unless it authenticates with HTTP Basic, which wins.")
@@ -141,6 +166,13 @@ async def get_token_form(
     refresh_token: Annotated[
         str | None, Form(description="`refresh_token` grant only, required there: the session's current refresh token.")
     ] = None,
+    discord_user_id: Annotated[
+        str | None,
+        Form(
+            description="`urn:skillforge:params:oauth:grant-type:discord-user` grant only, required there: the "
+            "Discord user who sent the command, as a decimal string."
+        ),
+    ] = None,
 ) -> TokenForm:
     try:
         parsed_grant_type = GrantType(grant_type)
@@ -153,7 +185,13 @@ async def get_token_form(
         bind_request_log_context(request, auth_reason="missing_client_credentials")
         raise INVALID_REQUEST.exception()
 
-    grant = _parse_grant(parsed_grant_type, username=username, password=password, refresh_token=refresh_token)
+    grant = _parse_grant(
+        parsed_grant_type,
+        username=username,
+        password=password,
+        refresh_token=refresh_token,
+        discord_user_id=discord_user_id,
+    )
     if grant is None:
         bind_request_log_context(
             request, auth_reason="invalid_grant_parameters", **_client_log_context(resolved_client_id)
@@ -164,12 +202,18 @@ async def get_token_form(
 
 
 def _parse_grant(
-    grant_type: GrantType, *, username: str | None, password: str | None, refresh_token: str | None
+    grant_type: GrantType,
+    *,
+    username: str | None,
+    password: str | None,
+    refresh_token: str | None,
+    discord_user_id: str | None,
 ) -> Grant | None:
-    """The grant with the parameters it needs, or ``None`` when one of them is missing or over-long.
+    """The grant with the parameters it needs, or ``None`` when one of them is missing, over-long or malformed.
 
     No login address is longer than ``MAX_EMAIL_LENGTH`` and no stored password longer than
     ``MAX_PASSWORD_LENGTH``: a longer value is refused before any look-up or hash, alike for every account.
+    A Discord user ID is a decimal string of at most ``2^63 - 1`` - anything else is refused before any look-up.
     """
     match grant_type:
         case GrantType.CLIENT_CREDENTIALS:
@@ -180,8 +224,21 @@ def _parse_grant(
             return PasswordGrant(username=username, password=password)
         case GrantType.REFRESH_TOKEN if refresh_token:
             return RefreshTokenGrant(refresh_token=refresh_token)
+        case GrantType.DISCORD_USER:
+            user_id = _parse_discord_user_id(discord_user_id)
+            return None if user_id is None else DiscordUserGrant(discord_user_id=user_id)
         case _:
             return None
+
+
+def _parse_discord_user_id(value: str | None) -> int | None:
+    """``value`` as a Discord user ID, or ``None`` when it is missing or no decimal string of ``0 .. 2^63 - 1``."""
+    if value is None:
+        return None
+    try:
+        return _DISCORD_USER_ID.validate_python(value)
+    except ValidationError:
+        return None
 
 
 def _get_basic_credentials(request: Request) -> tuple[str, str] | None:
@@ -217,6 +274,7 @@ async def create_token(
     issue_client: Annotated[IssueClientToken, Depends(get_issue_client_token)],
     issue_user: Annotated[UserGrant, Depends(get_issue_user_token)],
     refresh_user: Annotated[UserGrant, Depends(get_refresh_user_token)],
+    exchange: Annotated[ExchangeDiscordUser, Depends(get_exchange_discord_user)],
     form: Annotated[TokenForm, Depends(get_token_form)],
 ) -> AccessTokenResponse | JSONResponse:
     """Issue an access token.
@@ -226,6 +284,13 @@ async def create_token(
     `refresh_token` renews it and replaces its refresh token. Both need `auth:users:login` granted to the client
     in `application` mode. Every failure of the person's credentials or refresh token is the same
     `invalid_grant`.
+
+    `urn:skillforge:params:oauth:grant-type:discord-user` exchanges the Discord user in `discord_user_id` - the one
+    who sent a command, never one named in it - for a token of the person party it is actively linked to. It needs
+    `auth:users:exchange` granted to the client in `application` mode. The token carries `amr: ["discord"]` and at
+    most `crm:read`, `crm:read:own` and `crm:write`, within the client's `delegated` grants and the person's roles.
+    No refresh token and no session: exchange again when it expires. No active link, no account and a disabled
+    account are the same `invalid_grant`. Swagger UI's Authorize dialog cannot use this grant; try it with curl.
     """
     # Every denial is *returned*, not raised: the services have written its audit entry - and for a person
     # the failed-login counter or a revoked session - and raising would roll the session back.
@@ -244,6 +309,18 @@ async def create_token(
             except InvalidClientScopeError:
                 return _deny(request, TokenDenial.INVALID_SCOPE, form.client_id)
             return AccessTokenResponse.from_created_token(token)
+        case DiscordUserGrant(discord_user_id=discord_user_id):
+            exchanged = await exchange(
+                session,
+                settings,
+                client_id=form.client_id,
+                client_secret=form.client_secret,
+                discord_user_id=discord_user_id,
+                requested_scopes=form.scope,
+            )
+            if isinstance(exchanged, TokenDenial):
+                return _deny(request, exchanged, form.client_id)
+            return AccessTokenResponse.from_created_token(exchanged)
         case PasswordGrant(username=username, password=password):
             result = await issue_user(
                 session,

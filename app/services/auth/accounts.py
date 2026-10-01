@@ -1,7 +1,8 @@
 """Reading and locking user account rows - the base the other user-account services build on.
 
 ``users``, ``action_tokens`` and ``sessions`` all need an account by its ID, and ``users`` needs the
-other two; with the look-ups here, none of them imports another for them.
+other two; with the look-ups here, none of them imports another for them. The token exchange finds an
+account by an active Discord link.
 """
 
 import uuid
@@ -12,6 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.db.models import UserAccount
 
+from .discord_links import active_link_party_id
 from .errors import UserAccountNotFoundError
 
 
@@ -37,6 +39,16 @@ async def find_user_account_by_email(session: AsyncSession, email: str) -> UserA
     locks the row, so attempts on one account do not queue behind each other's hash.
     """
     return await _read(session, _account(UserAccount.email == email))
+
+
+async def find_user_account_by_discord_user(session: AsyncSession, discord_user_id: int) -> UserAccount | None:
+    """Return the account of the person party ``discord_user_id`` is actively linked to, as the database says now,
+    or ``None`` - alike for an unknown Discord user, an unlinked one and a party without an account.
+
+    The exchange's look-up (bot-decoupling spec, decision Q), deliberately without a lock: the exchange writes
+    nothing on the account.
+    """
+    return await _read(session, _account(UserAccount.party_id == active_link_party_id(discord_user_id)))
 
 
 async def find_user_account_by_party(session: AsyncSession, party_id: uuid.UUID) -> UserAccount | None:

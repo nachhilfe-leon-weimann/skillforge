@@ -18,7 +18,8 @@ OPENAPI_TAGS: list[dict[str, Any]] = [
         "name": "auth",
         "description": (
             "OAuth2 token issuance - client credentials for applications, password and refresh-token logins for "
-            "people through a client - plus logout, user accounts and application client management."
+            "people through a client, and the Discord-user exchange for a person's linked Discord user - plus "
+            "logout, user accounts, Discord links and application client management."
         ),
     },
     {

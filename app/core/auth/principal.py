@@ -15,9 +15,32 @@ class PrincipalType(StrEnum):
 
 
 class AuthMethod(StrEnum):
-    """How a person proved who they are - a value of the token's ``amr`` claim (RFC 8176)."""
+    """How a person's token was obtained - a value of its ``amr`` claim (RFC 8176).
+
+    ``pwd``: the person logged in with their password. ``discord``: a client holding ``auth:users:exchange``
+    vouched for the person by their linked Discord user - no proof by the person themselves.
+    """
 
     PASSWORD = "pwd"
+    DISCORD = "discord"
+
+
+@dataclass(frozen=True)
+class PasswordLogin:
+    """The person logged in with their password; ``session_id`` is the session that login opened (``sid``)."""
+
+    session_id: uuid.UUID
+
+
+@dataclass(frozen=True)
+class DiscordLogin:
+    """A client vouched for the person by their linked Discord user: no password, no session, and only
+    ``VOUCHED_SCOPES`` (bot-decoupling spec, decisions P to S)."""
+
+
+type Login = PasswordLogin | DiscordLogin
+"""How a person's token was obtained: the typed form of its ``amr`` and ``sid`` claims. An action that needs a
+password matches ``PasswordLogin``."""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -33,7 +56,8 @@ class Principal(ABC):
 
     principal_id: uuid.UUID
     client_id: str
-    """The client the token was issued to; for a person, the client that logged them in (``azp``)."""
+    """The client the token was issued to; for a person, the client that logged them in or vouched for them
+    (``azp``)."""
     scopes: frozenset[str]
 
     @property
@@ -55,16 +79,16 @@ class ApplicationPrincipal(Principal):
 
 @dataclass(frozen=True, kw_only=True)
 class UserPrincipal(Principal):
-    """A person, acting through the client that logged them in; ``principal_id`` is their user account."""
+    """A person, acting through the client that logged them in or vouched for them; ``principal_id`` is their user
+    account."""
 
     principal_type = PrincipalType.USER
 
     party_id: uuid.UUID
-    session_id: uuid.UUID
     roles: frozenset[Role]
     """Which views to offer. Informational only: SkillForge authorizes by scope and never branches on a role."""
-    auth_methods: frozenset[AuthMethod]
-    """How the person was authenticated, never empty; an action that needs a password can demand ``PASSWORD``."""
+    login: Login
+    """How the token was obtained: a password login with its session, or a Discord user a client vouched for."""
 
     @property
     def subject(self) -> str:

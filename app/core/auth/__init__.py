@@ -1,6 +1,15 @@
 from .config import AuthSettings
 from .dependencies import get_current_principal, require_access, require_application, require_scopes
-from .principal import ApplicationPrincipal, AuthMethod, Principal, PrincipalType, UserPrincipal
+from .principal import (
+    ApplicationPrincipal,
+    AuthMethod,
+    DiscordLogin,
+    Login,
+    PasswordLogin,
+    Principal,
+    PrincipalType,
+    UserPrincipal,
+)
 from .reach import Access, ReachBasis
 from .scopes import Scope
 from .tokens import (
@@ -17,6 +26,9 @@ __all__ = [
     "AuthMethod",
     "AuthSettings",
     "CreatedAccessToken",
+    "DiscordLogin",
+    "Login",
+    "PasswordLogin",
     "Principal",
     "PrincipalType",
     "ReachBasis",

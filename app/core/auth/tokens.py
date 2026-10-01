@@ -27,9 +27,18 @@ from pydantic import (
 )
 
 from .config import AuthSettings
-from .principal import ApplicationPrincipal, AuthMethod, Principal, PrincipalType, UserPrincipal
+from .principal import (
+    ApplicationPrincipal,
+    AuthMethod,
+    DiscordLogin,
+    Login,
+    PasswordLogin,
+    Principal,
+    PrincipalType,
+    UserPrincipal,
+)
 from .roles import Role
-from .scopes import CLIENT_ONLY_SCOPES, canonical, format_scopes, parse_scopes
+from .scopes import CLIENT_ONLY_SCOPES, VOUCHED_SCOPES, canonical, format_scopes, parse_scopes
 
 TOKEN_TYPE_BEARER = "bearer"
 
@@ -120,9 +129,19 @@ class _ApplicationClaims(_Claims):
 class _UserClaims(_Claims):
     principal_type: Literal[PrincipalType.USER]
     party_id: uuid.UUID
-    sid: uuid.UUID
+    # Only a password login opens a session: a token obtained without one leaves ``sid`` out.
+    sid: uuid.UUID | None = None
     roles: _RolesClaim
     amr: _AuthMethodsClaim
+
+    @field_validator("sid", mode="before")
+    @classmethod
+    def _sid_is_left_out_never_null(cls, sid: object) -> object:
+        # SkillForge leaves out the ``sid`` of a token without a session; a ``null`` was not written here.
+        if sid is None:
+            raise ValueError("sid is left out, never null")
+
+        return sid
 
     @field_validator("scope")
     @classmethod
@@ -133,15 +152,34 @@ class _UserClaims(_Claims):
 
         return scope
 
+    @model_validator(mode="after")
+    def _carries_only_vouched_scopes_without_a_password(self) -> Self:
+        # ``login`` refuses an ``amr`` and ``sid`` that name no way to log in. A token obtained without a password
+        # carries nothing that needs one (bot-decoupling spec, decision R).
+        if isinstance(self.login, DiscordLogin) and not self.scope <= VOUCHED_SCOPES:
+            raise ValueError("a token obtained without a password carries vouched scopes only")
+
+        return self
+
+    @property
+    def login(self) -> Login:
+        """``amr`` and ``sid`` as one ``Login``: ``[pwd]`` with a session, ``[discord]`` without one - nothing else."""
+        match sorted(self.amr), self.sid:
+            case [AuthMethod.PASSWORD], uuid.UUID() as session_id:
+                return PasswordLogin(session_id=session_id)
+            case [AuthMethod.DISCORD], None:
+                return DiscordLogin()
+            case _:
+                raise ValueError("amr and sid name no way to log in")
+
     def to_principal(self) -> UserPrincipal:
         return UserPrincipal(
             principal_id=self.principal_id,
             client_id=self.azp,
             scopes=self.scope,
             party_id=self.party_id,
-            session_id=self.sid,
             roles=self.roles,
-            auth_methods=self.amr,
+            login=self.login,
         )
 
 
@@ -160,7 +198,7 @@ def create_access_token(
 
     The scope claim is canonical: a token never carries both a scope and its ``:own`` variant
     (ADR 0008). An empty scope is refused - every token grants something - and so is a client-only
-    scope for a person.
+    scope for a person, and any scope outside ``VOUCHED_SCOPES`` for a person without a password login.
     """
     issued_at = _normalize_datetime(now or datetime.now(UTC))
     expires_at = issued_at + timedelta(minutes=settings.access_token_expire_minutes)
@@ -231,14 +269,19 @@ def _claims_of(principal: Principal) -> dict[str, Any]:
         "scope": format_scopes(principal.scopes),
     }
     if isinstance(principal, UserPrincipal):
-        claims |= {
-            "party_id": principal.party_id,
-            "sid": principal.session_id,
-            "roles": principal.roles,
-            "amr": principal.auth_methods,
-        }
+        claims |= {"party_id": principal.party_id, "roles": principal.roles, **_login_claims(principal.login)}
 
-    return _ACCESS_CLAIMS.dump_python(_ACCESS_CLAIMS.validate_python(claims), mode="json")
+    # ``exclude_none``: a token without a session leaves ``sid`` out instead of writing ``null``.
+    return _ACCESS_CLAIMS.dump_python(_ACCESS_CLAIMS.validate_python(claims), mode="json", exclude_none=True)
+
+
+def _login_claims(login: Login) -> dict[str, object]:
+    """``login`` as the ``amr`` and ``sid`` claims: only a password login names its session."""
+    match login:
+        case PasswordLogin(session_id=session_id):
+            return {"amr": [AuthMethod.PASSWORD], "sid": session_id}
+        case DiscordLogin():
+            return {"amr": [AuthMethod.DISCORD]}
 
 
 def _normalize_datetime(value: datetime) -> datetime:

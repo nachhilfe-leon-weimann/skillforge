@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import AuthSettings, UserPrincipal, validate_access_token
-from app.core.auth.principal import AuthMethod, PrincipalType
+from app.core.auth.principal import PasswordLogin, PrincipalType
 from app.core.auth.scopes import Scope, canonical, format_scopes
 from app.core.auth.secrets import digest
 from app.core.db.models import AuthAuditLog, UserAccount, UserAccountRoleName, UserAccountStatus, UserSession
@@ -182,12 +182,8 @@ async def test_both_the_login_and_the_refresh_carry_amr_pwd_and_the_session_id(
     user_session = await _session_of(session, refreshed["refresh_token"])
     for body in (login, refreshed):
         person = _person(auth_settings, body)
-        assert person.auth_methods == {AuthMethod.PASSWORD}
-        assert (person.principal_id, person.party_id, person.session_id) == (
-            account.id,
-            account.party_id,
-            user_session.id,
-        )
+        assert person.login == PasswordLogin(session_id=user_session.id)
+        assert (person.principal_id, person.party_id) == (account.id, account.party_id)
         assert person.client_id == login_client.client_id
 
 
@@ -244,7 +240,7 @@ async def test_a_client_without_auth_users_login_is_unauthorized_client_for_both
     # Step 2 is the client's own denial: recorded against the client, as `invalid_client` is.
     denials = await audit_rows(AuditEventType.TOKEN_DENIED)
     assert [(row.principal_type, row.principal_id, row.success, row.detail) for row in denials] == [
-        (PrincipalType.APPLICATION, str(outsider.id), False, "Client may not log people in")
+        (PrincipalType.APPLICATION, str(outsider.id), False, "Client lacks auth:users:login")
     ] * 2
 
 

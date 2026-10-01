@@ -3,18 +3,29 @@
 from collections import Counter
 
 import pytest
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db.models import GrantMode
+from app.core.db import Database
+from app.core.db.models import (
+    ApplicationClient,
+    ApplicationClientScopeGrant,
+    AuthAuditLog,
+    GrantMode,
+    PermissionScope,
+)
 from app.services.auth import (
     ApplicationClientScopeGrantNotFoundError,
     InvalidClientScopeError,
     create_application_client,
     create_application_client_secret,
+    get_application_client,
     grant_application_client_scopes,
     issue_client_token,
     revoke_application_client_scope,
+    seed_default_scopes,
 )
+from tests.db.auth.overlap import overlapping
 
 APPLICATION, DELEGATED = GrantMode.APPLICATION, GrantMode.DELEGATED
 
@@ -117,6 +128,44 @@ async def test_a_client_with_delegated_grants_only_gets_no_client_credentials_to
 
     with pytest.raises(InvalidClientScopeError):
         await issue_client_token(session, auth_settings, client_id="portal", client_secret=secret)
+
+
+@pytest.mark.db
+async def test_two_overlapping_grants_of_the_exclusive_scopes_leave_one_client_holding_one(db: Database):
+    """Decision T's client row lock: a grant of `auth:users:login` overlapping a grant of `auth:users:exchange` on
+    the same client cannot both pass, even though neither transaction sees the other's grant when it checks."""
+    async with db.session() as setup:
+        # Seed the permission scopes up front: both grants would otherwise race to insert them themselves,
+        # which is a separate, unlocked race that has nothing to do with the client row lock under test.
+        known_scopes = set(await setup.scalars(select(PermissionScope.key)))
+        await seed_default_scopes(setup)
+        await create_application_client(setup, client_id="race-client", name="Race Client")
+
+    async def grant_login(session: AsyncSession) -> ApplicationClient:
+        return await grant_application_client_scopes(session, client_id="race-client", scopes=["auth:users:login"])
+
+    async def grant_exchange(session: AsyncSession) -> ApplicationClient:
+        return await grant_application_client_scopes(session, client_id="race-client", scopes=["auth:users:exchange"])
+
+    try:
+        second = await overlapping(db, grant_login, grant_exchange)
+
+        assert isinstance(second.exception(), InvalidClientScopeError)
+        async with db.session() as check:
+            client = await get_application_client(check, client_id="race-client")
+            granted = {grant.scope_key for grant in client.scope_grants if grant.mode == APPLICATION}
+        assert granted == {"auth:users:login"}
+    finally:
+        async with db.session() as cleanup:
+            client = await get_application_client(cleanup, client_id="race-client")
+            await cleanup.execute(
+                delete(ApplicationClientScopeGrant).where(
+                    ApplicationClientScopeGrant.application_client_id == client.id
+                )
+            )
+            await cleanup.execute(delete(AuthAuditLog).where(AuthAuditLog.principal_id == str(client.id)))
+            await cleanup.execute(delete(ApplicationClient).where(ApplicationClient.id == client.id))
+            await cleanup.execute(delete(PermissionScope).where(PermissionScope.key.not_in(known_scopes)))
 
 
 async def _client_with_secret(session: AsyncSession) -> str:
