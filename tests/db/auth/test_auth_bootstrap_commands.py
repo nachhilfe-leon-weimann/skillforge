@@ -1,4 +1,4 @@
-"""`just bootstrap-skillbot` and `just bootstrap-client` against the test database."""
+"""`just bootstrap-client` against the test database."""
 
 import re
 from collections import Counter
@@ -27,20 +27,6 @@ pytestmark = pytest.mark.usefixtures("command_session")
 
 OPERATOR_APPLICATION = frozenset({"auth:users:login", "crm:write"})
 OPERATOR_DELEGATED = frozenset({"account:self", "crm:read", "crm:write"})
-
-
-@pytest.mark.db
-async def test_bootstrap_skillbot_prints_what_it_printed_before(session: AsyncSession, auth_settings, grants, capsys):
-    await bootstrap.bootstrap_skillbot()
-    first = capsys.readouterr().out.splitlines()
-    await bootstrap.bootstrap_skillbot()
-    second = capsys.readouterr().out.splitlines()
-
-    assert first[:2] == second[:2] == ["client_id=skillbot", "scopes=bot:read bot:write"]
-    assert second[2:] == [RETAINED_SECRET]
-    [secret_line] = first[2:]
-    assert await _token_scope(session, auth_settings, "skillbot", secret_line) == "bot:read bot:write"
-    assert await grants() == {("bot:read", GrantMode.APPLICATION), ("bot:write", GrantMode.APPLICATION)}
 
 
 @pytest.mark.db
@@ -106,7 +92,7 @@ async def test_a_refused_rerun_leaves_the_client_as_it_was(grants):
 
     with pytest.raises(SystemExit) as exit_code:
         await bootstrap.bootstrap_client(
-            "operator", application=frozenset({"bot:write"}), delegated=frozenset({"auth:users:login"})
+            "operator", application=frozenset({"auth:users:manage"}), delegated=frozenset({"auth:users:login"})
         )
 
     assert exit_code.value.code == "invalid_scope: --delegated: Client-only scopes cannot be granted in delegated mode"
@@ -162,16 +148,6 @@ async def test_bootstrap_client_re_enables_a_disabled_client_and_records_it_once
     assert disabled.json()["status"] == "disabled"
     assert await _client_row(session, "operator") == ("Operator Console", None, ApplicationClientStatus.ACTIVE)
     assert await _client_updates(session) == Counter(["Updated application client operator."])
-
-
-@pytest.mark.db
-async def test_bootstrap_skillbot_renames_a_skillbot_client_and_records_it(session: AsyncSession, client: AsyncClient):
-    await client.post("/clients", json={"client_id": "skillbot", "name": "Bot"})
-
-    await bootstrap.bootstrap_skillbot()
-
-    assert await _client_row(session, "skillbot") == ("SkillBot", "Discord Bot", ApplicationClientStatus.ACTIVE)
-    assert await _client_updates(session) == Counter(["Updated application client skillbot."])
 
 
 async def _bootstrap_operator() -> None:

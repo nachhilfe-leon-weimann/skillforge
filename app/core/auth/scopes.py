@@ -19,8 +19,6 @@ class Scope(StrEnum):
         member.description = description
         return member
 
-    BOT_READ = "bot:read", "Read bot API surface."
-    BOT_WRITE = "bot:write", "Write bot API surface."
     AUTH_CLIENTS_MANAGE = "auth:clients:manage", "Manage application clients."
     AUTH_USERS_MANAGE = "auth:users:manage", "Create, disable and reset user accounts; assign stored roles."
     AUTH_USERS_LOGIN = (

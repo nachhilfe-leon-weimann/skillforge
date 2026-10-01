@@ -62,7 +62,7 @@ async def test_list_clients_rejects_unknown_query_parameters():
 
 async def test_list_clients_requires_the_manage_scope():
     async with _client() as client:
-        response = await client.get("/api/v1/auth/clients", headers=_auth_headers(Scope.BOT_READ))
+        response = await client.get("/api/v1/auth/clients", headers=_auth_headers(Scope.AUTH_USERS_MANAGE))
 
     assert response.status_code == 403
 

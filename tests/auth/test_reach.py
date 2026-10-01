@@ -61,7 +61,7 @@ def test_require_access_declares_the_reach_qualified_scope_on_its_marker():
     assert require_access(Scope.CRM_READ).scopes == ["crm:read:own"]
 
 
-@pytest.mark.parametrize("scope", [Scope.CRM_WRITE, Scope.CRM_READ_OWN, Scope.BOT_READ])
+@pytest.mark.parametrize("scope", [Scope.CRM_WRITE, Scope.CRM_READ_OWN, Scope.AUTH_CLIENTS_MANAGE])
 def test_require_access_refuses_a_scope_without_a_reach_qualified_variant(scope: Scope):
     with pytest.raises(ValueError, match="reach-qualified variant"):
         require_access(scope)

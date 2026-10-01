@@ -31,8 +31,12 @@ docker run -d --name skillforge-pg -p 5432:5432 \
   postgres:17
 cp .env.example .env
 uv run alembic upgrade head
-just bootstrap-skillbot
+just bootstrap-client operator --application "auth:users:login crm:write" \
+  --delegated "account:self crm:read crm:write auth:users:manage auth:clients:manage auth:discord-links:read"
 ```
+
+The last command prints the operator client's secret once;
+[Operating without a portal](docs/specs/user-authentication.md#operating-without-a-portal) goes on to the first admin.
 
 `GET /health` shows whether the database and the background workers are fine.
 

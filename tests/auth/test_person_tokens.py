@@ -39,8 +39,8 @@ def test_application_access_token_claims_match_the_fixture():
     created = create_application_access_token(
         settings,
         principal_id=APPLICATION_ID,
-        client_id="skillbot",
-        scopes=["bot:write", "bot:read"],
+        client_id="integration",
+        scopes=["auth:users:manage", "auth:clients:manage"],
         now=ISSUED_AT,
     )
 
@@ -49,11 +49,11 @@ def test_application_access_token_claims_match_the_fixture():
     assert claims == {
         "iss": "skillforge",
         "aud": "skillforge-api",
-        "sub": "app:skillbot",
+        "sub": "app:integration",
         "principal_type": "application",
         "principal_id": str(APPLICATION_ID),
-        "azp": "skillbot",
-        "scope": "bot:read bot:write",
+        "azp": "integration",
+        "scope": "auth:clients:manage auth:users:manage",
         "iat": int(ISSUED_AT.timestamp()),
         "exp": int(EXPIRES_AT.timestamp()),
     }
@@ -64,16 +64,16 @@ def test_an_application_token_validates_back_into_the_application_principal_it_w
     created = create_application_access_token(
         settings,
         principal_id=APPLICATION_ID,
-        client_id="skillbot",
-        scopes=["bot:read"],
+        client_id="integration",
+        scopes=["auth:clients:manage"],
     )
 
     principal = validate_access_token(created.access_token, settings)
 
     assert principal == ApplicationPrincipal(
-        principal_id=APPLICATION_ID, client_id="skillbot", scopes=frozenset({"bot:read"})
+        principal_id=APPLICATION_ID, client_id="integration", scopes=frozenset({"auth:clients:manage"})
     )
-    assert principal.subject == "app:skillbot"
+    assert principal.subject == "app:integration"
 
 
 def test_person_access_token_claims_match_the_fixture():

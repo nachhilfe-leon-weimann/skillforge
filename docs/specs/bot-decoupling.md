@@ -725,14 +725,14 @@ the published client loses `api.bot`.
   refusal test (`CREATE TABLE bot.stray` makes the upgrade fail and change nothing). The sample-scope swap; the
   skillbot bootstrap tests go.
 - _Acceptance criteria:_
-  - [ ] `alembic upgrade head` from an empty database works without `models/bot/`, also with a leftover
+  - [x] `alembic upgrade head` from an empty database works without `models/bot/`, also with a leftover
         `bot/__pycache__/`.
-  - [ ] Upgrading a 0011 database leaves no `bot` namespace, no `bot:*` scope row or grant, one audit row per
+  - [x] Upgrading a 0011 database leaves no `bot` namespace, no `bot:*` scope row or grant, one audit row per
         deleted grant and every other grant untouched; an unknown object in `bot` fails the upgrade and changes
         nothing; the downgrade restores the 0011 catalog and the scope rows, no grants.
-  - [ ] `Scope` has no `bot:` member; the admin role is exactly the five scopes; neither OAuth2 flow lists `bot:`.
-  - [ ] `git grep -nE "bot:(read|write)|BOT_(READ|WRITE)|bootstrap.skillbot" -- app tests justfile README.md CLAUDE.md ':!tests/db/test_migration_apply.py'` is empty.
-  - [ ] `Party` has no relationship to `DiscordAccount`.
+  - [x] `Scope` has no `bot:` member; the admin role is exactly the five scopes; neither OAuth2 flow lists `bot:`.
+  - [x] `git grep -nE "bot:(read|write)|BOT_(READ|WRITE)|bootstrap.skillbot" -- app tests justfile README.md CLAUDE.md ':!tests/db/test_migration_apply.py'` is empty.
+  - [x] `Party` has no relationship to `DiscordAccount`.
   - [ ] The pre-flight's queries and the rehearsal are recorded in the epic before the release PR merges.
 
 **P0-6 - Pull signals.** PR `feat(crm): signal changes for pulling frontends`; the body states that removing a role

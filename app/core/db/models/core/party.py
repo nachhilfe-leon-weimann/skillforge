@@ -13,7 +13,6 @@ from .base import CoreBase
 if TYPE_CHECKING:
     from ..ext.clockodo_customer import ClockodoCustomer
     from ..ext.clockodo_project import ClockodoProject
-    from ..ext.discord_account import DiscordAccount
     from ..ext.microsoft_account import MicrosoftAccount
     from ..ext.microsoft_contact import MicrosoftContact
     from ..ext.sevdesk_contact import SevdeskContact
@@ -76,14 +75,6 @@ class Party(TimestampMixin, CoreBase):
         back_populates="to_party",
         cascade="all, delete-orphan",
         foreign_keys="PartyRelation.to_party_id",
-    )
-
-    # A party may have several Discord accounts, at most one of them primary and active.
-    discord_accounts: Mapped[list[DiscordAccount]] = relationship(
-        "DiscordAccount",
-        back_populates="party",
-        cascade="all, delete-orphan",
-        order_by="(DiscordAccount.is_primary.desc(), DiscordAccount.discord_id)",
     )
 
     sevdesk_contact: Mapped[SevdeskContact | None] = relationship(

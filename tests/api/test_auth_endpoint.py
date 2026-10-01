@@ -32,16 +32,16 @@ async def test_auth_token_endpoint_returns_access_token():
             "client_secret": client_secret,
             "requested_scopes": requested_scopes,
         })
-        return _token(scope="bot:read")
+        return _token(scope="auth:clients:manage")
 
     with _overrides(fake_create_token):
         response = await _post(
             "/api/v1/auth/token",
             data={
                 "grant_type": "client_credentials",
-                "client_id": "skillbot",
+                "client_id": "integration",
                 "client_secret": "secret",
-                "scope": "bot:read",
+                "scope": "auth:clients:manage",
             },
         )
 
@@ -50,12 +50,12 @@ async def test_auth_token_endpoint_returns_access_token():
         "access_token": "encoded-token",
         "token_type": "bearer",
         "expires_in": 900,
-        "scope": "bot:read",
+        "scope": "auth:clients:manage",
     }
     assert captured["session"] == "session"
-    assert captured["client_id"] == "skillbot"
+    assert captured["client_id"] == "integration"
     assert captured["client_secret"] == "secret"
-    assert captured["requested_scopes"] == "bot:read"
+    assert captured["requested_scopes"] == "auth:clients:manage"
 
 
 async def test_auth_token_endpoint_accepts_basic_client_credentials():
@@ -74,23 +74,23 @@ async def test_auth_token_endpoint_accepts_basic_client_credentials():
             "client_secret": client_secret,
             "requested_scopes": requested_scopes,
         })
-        return _token(scope="bot:read bot:write")
+        return _token(scope="auth:clients:manage auth:users:manage")
 
     with _overrides(fake_create_token):
         response = await _post(
             "/api/v1/auth/token",
-            auth=("skillbot", "secret"),
+            auth=("integration", "secret"),
             data={
                 "grant_type": "client_credentials",
-                "scope": "bot:read bot:write",
+                "scope": "auth:clients:manage auth:users:manage",
             },
         )
 
     assert response.status_code == 200
     assert captured == {
-        "client_id": "skillbot",
+        "client_id": "integration",
         "client_secret": "secret",
-        "requested_scopes": "bot:read bot:write",
+        "requested_scopes": "auth:clients:manage auth:users:manage",
     }
 
 
@@ -103,7 +103,7 @@ async def test_auth_token_endpoint_rejects_unsupported_grant_type():
             "/api/v1/auth/token",
             data={
                 "grant_type": "authorization_code",
-                "client_id": "skillbot",
+                "client_id": "integration",
                 "client_secret": "secret",
             },
         )
@@ -121,7 +121,7 @@ async def test_auth_token_endpoint_rejects_invalid_client_credentials():
             "/api/v1/auth/token",
             data={
                 "grant_type": "client_credentials",
-                "client_id": "skillbot",
+                "client_id": "integration",
                 "client_secret": "wrong",
             },
         )
@@ -140,7 +140,7 @@ async def test_auth_token_endpoint_rejects_invalid_scope():
             "/api/v1/auth/token",
             data={
                 "grant_type": "client_credentials",
-                "client_id": "skillbot",
+                "client_id": "integration",
                 "client_secret": "secret",
                 "scope": "users:write",
             },
@@ -171,7 +171,7 @@ async def test_auth_token_denial_commits_the_session_so_the_audit_entry_survives
         app.dependency_overrides[get_db_session] = tracked_session
         response = await _post(
             "/api/v1/auth/token",
-            data={"grant_type": "client_credentials", "client_id": "skillbot", "client_secret": "wrong"},
+            data={"grant_type": "client_credentials", "client_id": "integration", "client_secret": "wrong"},
         )
 
     assert response.status_code in {400, 401}

@@ -136,7 +136,7 @@ async def test_http_exception_keeps_status_detail_and_headers():
     response = await _request("GET", "/http/unauthorized")
 
     assert response.status_code == 401
-    assert response.headers["www-authenticate"] == 'Bearer scope="bot:read"'
+    assert response.headers["www-authenticate"] == 'Bearer scope="auth:clients:manage"'
     assert response.json() == {"detail": "Not authenticated", "code": "unauthorized"}
 
 
@@ -246,7 +246,7 @@ def _app() -> FastAPI:
         raise HTTPException(
             status_code=401,
             detail="Not authenticated",
-            headers={"WWW-Authenticate": 'Bearer scope="bot:read"'},
+            headers={"WWW-Authenticate": 'Bearer scope="auth:clients:manage"'},
         )
 
     @app.get("/http/structured")

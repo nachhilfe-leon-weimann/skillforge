@@ -1,19 +1,30 @@
 import pytest
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 
 @pytest.mark.db
-async def test_ext_relationships(session):
+async def test_a_discord_account_names_its_party_by_id(session):
     from app.core.db.models import DiscordAccount, Party, PartyType
 
     party = Party(type=PartyType.PERSON)
-    discord_account = DiscordAccount(discord_id=123456789, party=party)
-
-    session.add_all([party, discord_account])
+    session.add(party)
+    await session.flush()
+    discord_account = DiscordAccount(discord_id=123456789012345678, party_id=party.id)
+    session.add(discord_account)
     await session.flush()
 
+    assert await session.get(DiscordAccount, 123456789012345678) is discord_account
     assert discord_account.party_id == party.id
-    assert party.discord_accounts == [discord_account]
+
+
+def test_party_and_discord_account_know_nothing_of_each_other():
+    """A Discord link is identity, written only through auth (ADR 0009); like a user account, it is no part of the
+    party's ORM graph (ADR 0008)."""
+    from app.core.db.models import DiscordAccount, Party
+
+    assert [rel.key for rel in inspect(Party).relationships if rel.mapper.class_ is DiscordAccount] == []
+    assert list(inspect(DiscordAccount).relationships) == []
 
 
 def test_discord_account_indexes():

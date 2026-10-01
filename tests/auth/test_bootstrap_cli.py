@@ -11,8 +11,13 @@ from app.cli.bootstrap import build_parser
 JUSTFILE = Path(__file__).resolve().parents[2] / "justfile"
 
 
-def test_the_skillbot_command_takes_no_arguments():
-    assert build_parser().parse_args(["skillbot"]).command == "skillbot"
+def test_there_is_no_skillbot_command(capsys):
+    """skillbot's client is set up with the client command like any other (bot-decoupling spec, P0-5)."""
+    with pytest.raises(SystemExit) as exit_code:
+        build_parser().parse_args(["skillbot"])
+
+    assert exit_code.value.code == 2
+    assert "invalid choice: 'skillbot'" in capsys.readouterr().err
 
 
 def test_the_client_command_takes_a_client_id_and_a_scope_list_per_mode():
@@ -80,28 +85,11 @@ def test_main_runs_the_client_command_with_the_scope_list_of_each_mode(monkeypat
     assert calls == [("client", "op", {"application": frozenset({"crm:write"}), "delegated": frozenset({"crm:read"})})]
 
 
-def test_main_runs_the_skillbot_command(monkeypatch):
-    calls = []
-
-    async def bootstrap_skillbot() -> None:
-        calls.append("skillbot")
-
-    monkeypatch.setattr(bootstrap, "bootstrap_skillbot", bootstrap_skillbot)
-    monkeypatch.setattr("sys.argv", ["bootstrap", "skillbot"])
-
-    bootstrap.main()
-
-    assert calls == ["skillbot"]
-
-
-def test_the_just_recipes_run_the_subcommands():
+def test_the_just_recipe_runs_the_client_subcommand():
     """`bootstrap-client` hands its arguments on as they were quoted: `{{ args }}` would split a scope list."""
-    justfile = JUSTFILE.read_text()
-
-    assert "bootstrap-skillbot:\n    uv run python -m app.cli.bootstrap skillbot\n" in justfile
     assert (
         '[positional-arguments]\nbootstrap-client *args:\n    uv run python -m app.cli.bootstrap client "$@"\n'
-        in justfile
+        in JUSTFILE.read_text()
     )
 
 

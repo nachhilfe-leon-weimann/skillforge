@@ -89,7 +89,7 @@ async def test_an_unknown_scope_refuses_the_whole_request(session, grants):
     await create_application_client(session, client_id="portal", name="Portal")
 
     with pytest.raises(InvalidClientScopeError):
-        await grant_application_client_scopes(session, client_id="portal", scopes=["bot:read", "nope:scope"])
+        await grant_application_client_scopes(session, client_id="portal", scopes=["auth:clients:manage", "nope:scope"])
 
     assert await grants() == set()
 
@@ -97,12 +97,12 @@ async def test_an_unknown_scope_refuses_the_whole_request(session, grants):
 @pytest.mark.db
 async def test_client_credentials_draws_on_application_grants_only(session, auth_settings):
     secret = await _client_with_secret(session)
-    await grant_application_client_scopes(session, client_id="portal", scopes=["bot:read"], mode=APPLICATION)
+    await grant_application_client_scopes(session, client_id="portal", scopes=["auth:clients:manage"], mode=APPLICATION)
     await grant_application_client_scopes(session, client_id="portal", scopes=["crm:read"], mode=DELEGATED)
 
     token = await issue_client_token(session, auth_settings, client_id="portal", client_secret=secret)
 
-    assert token.scope == "bot:read"
+    assert token.scope == "auth:clients:manage"
     for requested in ("crm:read", "crm:read:own"):
         with pytest.raises(InvalidClientScopeError):
             await issue_client_token(

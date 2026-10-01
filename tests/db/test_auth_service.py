@@ -47,8 +47,6 @@ async def test_seed_default_scopes_is_idempotent(session):
         "auth:users:login",
         "auth:users:manage",
         "account:self",
-        "bot:read",
-        "bot:write",
         "crm:read",
         "crm:read:own",
         "crm:write",
@@ -60,18 +58,18 @@ async def test_seed_default_scopes_is_idempotent(session):
 
 
 @pytest.mark.db
-async def test_bootstrap_skillbot_client_creates_client_secret_and_grants(session):
-    result = await _bootstrap_skillbot_client(session)
+async def test_bootstrap_application_client_creates_client_secret_and_grants(session):
+    result = await _bootstrap_integration_client(session)
     audit_logs = (await session.execute(select(AuthAuditLog))).scalars().all()
     grants = (await session.execute(select(ApplicationClientScopeGrant))).scalars().all()
 
     assert result.created_client is True
     assert result.created_secret is not None
     assert result.created_secret.plaintext not in result.created_secret.secret.secret_hash
-    assert result.client.client_id == "skillbot"
+    assert result.client.client_id == "integration"
     assert result.client.status == ApplicationClientStatus.ACTIVE
-    assert result.granted_scopes == frozenset({"bot:read", "bot:write"})
-    assert sorted(grant.scope_key for grant in grants) == ["bot:read", "bot:write"]
+    assert result.granted_scopes == frozenset({"auth:clients:manage", "auth:users:manage"})
+    assert sorted(grant.scope_key for grant in grants) == ["auth:clients:manage", "auth:users:manage"]
     assert [log.event_type for log in audit_logs] == [
         "application_client.created",
         "scope_grant.added",
@@ -81,9 +79,9 @@ async def test_bootstrap_skillbot_client_creates_client_secret_and_grants(sessio
 
 
 @pytest.mark.db
-async def test_bootstrap_skillbot_client_is_idempotent_when_usable_secret_exists(session):
-    first_result = await _bootstrap_skillbot_client(session)
-    second_result = await _bootstrap_skillbot_client(session)
+async def test_bootstrap_application_client_is_idempotent_when_usable_secret_exists(session):
+    first_result = await _bootstrap_integration_client(session)
+    second_result = await _bootstrap_integration_client(session)
     clients = (await session.execute(select(ApplicationClient))).scalars().all()
     secrets = (await session.execute(select(ApplicationClientSecret))).scalars().all()
     grants = (await session.execute(select(ApplicationClientScopeGrant))).scalars().all()
@@ -97,13 +95,13 @@ async def test_bootstrap_skillbot_client_is_idempotent_when_usable_secret_exists
 
 
 @pytest.mark.db
-async def test_bootstrap_skillbot_client_creates_new_secret_when_existing_is_revoked(session):
-    first_result = await _bootstrap_skillbot_client(session)
+async def test_bootstrap_application_client_creates_new_secret_when_existing_is_revoked(session):
+    first_result = await _bootstrap_integration_client(session)
     assert first_result.created_secret is not None
     first_result.created_secret.secret.revoked_at = datetime.now(UTC)
     await session.flush()
 
-    second_result = await _bootstrap_skillbot_client(session)
+    second_result = await _bootstrap_integration_client(session)
     secrets = (await session.execute(select(ApplicationClientSecret))).scalars().all()
 
     assert second_result.created_secret is not None
@@ -111,12 +109,12 @@ async def test_bootstrap_skillbot_client_creates_new_secret_when_existing_is_rev
 
 
 @pytest.mark.db
-async def test_bootstrap_skillbot_client_can_bootstrap_custom_scopes(session):
-    result = await _bootstrap_skillbot_client(session, scopes=[Scope.BOT_READ])
+async def test_bootstrap_application_client_can_bootstrap_custom_scopes(session):
+    result = await _bootstrap_integration_client(session, scopes=[Scope.AUTH_CLIENTS_MANAGE])
     grants = (await session.execute(select(ApplicationClientScopeGrant))).scalars().all()
 
-    assert result.granted_scopes == frozenset({"bot:read"})
-    assert [grant.scope_key for grant in grants] == ["bot:read"]
+    assert result.granted_scopes == frozenset({"auth:clients:manage"})
+    assert [grant.scope_key for grant in grants] == ["auth:clients:manage"]
 
 
 @pytest.mark.db
@@ -216,14 +214,14 @@ async def test_grant_and_revoke_application_client_scopes(session):
     client = await grant_application_client_scopes(
         session,
         client_id="integration",
-        scopes=[Scope.BOT_READ, Scope.BOT_WRITE],
+        scopes=[Scope.AUTH_CLIENTS_MANAGE, Scope.AUTH_USERS_MANAGE],
     )
-    await revoke_application_client_scope(session, client_id="integration", scope_key=Scope.BOT_READ.value)
+    await revoke_application_client_scope(session, client_id="integration", scope_key=Scope.AUTH_CLIENTS_MANAGE.value)
     grants = (await session.execute(select(ApplicationClientScopeGrant))).scalars().all()
     audit_logs = (await session.execute(select(AuthAuditLog))).scalars().all()
 
-    assert sorted(grant.scope_key for grant in client.scope_grants) == ["bot:read", "bot:write"]
-    assert [grant.scope_key for grant in grants] == ["bot:write"]
+    assert sorted(grant.scope_key for grant in client.scope_grants) == ["auth:clients:manage", "auth:users:manage"]
+    assert [grant.scope_key for grant in grants] == ["auth:users:manage"]
     assert [log.event_type for log in audit_logs] == [
         "application_client.created",
         "scope_grant.added",
@@ -237,14 +235,14 @@ async def test_revoke_application_client_scope_rejects_unknown_grant(session):
     await create_application_client(session, client_id="integration", name="Integration")
 
     with pytest.raises(ApplicationClientScopeGrantNotFoundError):
-        await revoke_application_client_scope(session, client_id="integration", scope_key="bot:read")
+        await revoke_application_client_scope(session, client_id="integration", scope_key="auth:clients:manage")
 
 
 @pytest.mark.db
 async def test_issue_client_token_returns_token_for_valid_credentials(session):
     client, secret, plaintext_secret = await _create_client_with_secret_and_scopes(
         session,
-        scopes=["bot:read", "bot:write"],
+        scopes=["auth:clients:manage", "auth:users:manage"],
     )
 
     token = await issue_client_token(
@@ -252,16 +250,16 @@ async def test_issue_client_token_returns_token_for_valid_credentials(session):
         _settings(),
         client_id=client.client_id,
         client_secret=plaintext_secret,
-        requested_scopes=["bot:write"],
+        requested_scopes=["auth:users:manage"],
         now=datetime.now(UTC),
     )
     principal = validate_access_token(token.access_token, _settings())
     audit_logs = await _token_audit_logs(session)
 
-    assert token.scope == "bot:write"
+    assert token.scope == "auth:users:manage"
     assert principal.principal_id == client.id
     assert principal.client_id == client.client_id
-    assert principal.scopes == frozenset({"bot:write"})
+    assert principal.scopes == frozenset({"auth:users:manage"})
     assert secret.last_used_at is not None
     assert [(log.event_type, log.success) for log in audit_logs] == [("token.issued", True)]
 
@@ -270,7 +268,7 @@ async def test_issue_client_token_returns_token_for_valid_credentials(session):
 async def test_issue_client_token_uses_all_granted_active_scopes_when_none_requested(session):
     client, _secret, plaintext_secret = await _create_client_with_secret_and_scopes(
         session,
-        scopes=["bot:write", "bot:read"],
+        scopes=["auth:users:manage", "auth:clients:manage"],
     )
 
     token = await issue_client_token(
@@ -280,14 +278,14 @@ async def test_issue_client_token_uses_all_granted_active_scopes_when_none_reque
         client_secret=plaintext_secret,
     )
 
-    assert token.scope == "bot:read bot:write"
+    assert token.scope == "auth:clients:manage auth:users:manage"
 
 
 @pytest.mark.db
 async def test_issue_client_token_accepts_space_separated_requested_scopes(session):
     client, _secret, plaintext_secret = await _create_client_with_secret_and_scopes(
         session,
-        scopes=["bot:write", "bot:read"],
+        scopes=["auth:users:manage", "auth:clients:manage"],
     )
 
     token = await issue_client_token(
@@ -295,10 +293,10 @@ async def test_issue_client_token_accepts_space_separated_requested_scopes(sessi
         _settings(),
         client_id=client.client_id,
         client_secret=plaintext_secret,
-        requested_scopes="bot:write bot:read",
+        requested_scopes="auth:users:manage auth:clients:manage",
     )
 
-    assert token.scope == "bot:read bot:write"
+    assert token.scope == "auth:clients:manage auth:users:manage"
 
 
 @pytest.mark.db
@@ -319,7 +317,9 @@ async def test_issue_client_token_grants_the_own_variant_of_a_granted_scope(sess
 
 @pytest.mark.db
 async def test_issue_client_token_rejects_invalid_secret(session):
-    client, _secret, _plaintext_secret = await _create_client_with_secret_and_scopes(session, scopes=["bot:read"])
+    client, _secret, _plaintext_secret = await _create_client_with_secret_and_scopes(
+        session, scopes=["auth:clients:manage"]
+    )
 
     with pytest.raises(InvalidClientCredentialsError):
         await issue_client_token(
@@ -335,7 +335,9 @@ async def test_issue_client_token_rejects_invalid_secret(session):
 
 @pytest.mark.db
 async def test_issue_client_token_rejects_disabled_client(session):
-    client, _secret, plaintext_secret = await _create_client_with_secret_and_scopes(session, scopes=["bot:read"])
+    client, _secret, plaintext_secret = await _create_client_with_secret_and_scopes(
+        session, scopes=["auth:clients:manage"]
+    )
     client.status = ApplicationClientStatus.DISABLED
     await session.flush()
 
@@ -350,7 +352,9 @@ async def test_issue_client_token_rejects_disabled_client(session):
 
 @pytest.mark.db
 async def test_issue_client_token_rejects_revoked_secret(session):
-    client, secret, plaintext_secret = await _create_client_with_secret_and_scopes(session, scopes=["bot:read"])
+    client, secret, plaintext_secret = await _create_client_with_secret_and_scopes(
+        session, scopes=["auth:clients:manage"]
+    )
     secret.revoked_at = datetime.now(UTC)
     await session.flush()
 
@@ -367,7 +371,7 @@ async def test_issue_client_token_rejects_revoked_secret(session):
 async def test_issue_client_token_rejects_expired_secret(session):
     client, _secret, plaintext_secret = await _create_client_with_secret_and_scopes(
         session,
-        scopes=["bot:read"],
+        scopes=["auth:clients:manage"],
         expires_at=datetime.now(UTC) - timedelta(minutes=1),
     )
 
@@ -382,7 +386,9 @@ async def test_issue_client_token_rejects_expired_secret(session):
 
 @pytest.mark.db
 async def test_issue_client_token_rejects_ungranted_scope(session):
-    client, _secret, plaintext_secret = await _create_client_with_secret_and_scopes(session, scopes=["bot:read"])
+    client, _secret, plaintext_secret = await _create_client_with_secret_and_scopes(
+        session, scopes=["auth:clients:manage"]
+    )
 
     with pytest.raises(InvalidClientScopeError):
         await issue_client_token(
@@ -390,7 +396,7 @@ async def test_issue_client_token_rejects_ungranted_scope(session):
             _settings(),
             client_id=client.client_id,
             client_secret=plaintext_secret,
-            requested_scopes=["bot:write"],
+            requested_scopes=["auth:users:manage"],
         )
 
 
@@ -398,7 +404,7 @@ async def test_issue_client_token_rejects_ungranted_scope(session):
 async def test_issue_client_token_ignores_inactive_grants(session):
     client, _secret, plaintext_secret = await _create_client_with_secret_and_scopes(
         session,
-        scopes=["bot:read"],
+        scopes=["auth:clients:manage"],
         active=False,
     )
 
@@ -418,7 +424,7 @@ async def _create_client_with_secret_and_scopes(
     active: bool = True,
     expires_at: datetime | None = None,
 ) -> tuple[ApplicationClient, ApplicationClientSecret, str]:
-    client = ApplicationClient(client_id="skillbot", name="SkillBot")
+    client = ApplicationClient(client_id="integration", name="Integration")
     session.add(client)
     await session.flush()
 
@@ -441,13 +447,11 @@ async def _create_client_with_secret_and_scopes(
     return client, created_secret.secret, created_secret.plaintext
 
 
-async def _bootstrap_skillbot_client(session, *, scopes: list[Scope] | None = None) -> BootstrappedApplicationClient:
+async def _bootstrap_integration_client(session, *, scopes: list[Scope] | None = None) -> BootstrappedApplicationClient:
     return await bootstrap_application_client(
         session,
-        client_id="skillbot",
-        name="SkillBot",
-        description="Discord Bot",
-        scopes=scopes or (Scope.BOT_READ, Scope.BOT_WRITE),
+        client_id="integration",
+        scopes=scopes or (Scope.AUTH_CLIENTS_MANAGE, Scope.AUTH_USERS_MANAGE),
     )
 
 
