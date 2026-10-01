@@ -10,7 +10,7 @@
 The `core` schema models the business (parties, persons, companies, the `student` / `tutor` roles, contact infos,
 party relations, subjects), but **nothing in the codebase creates any of it**. Every real student, parent or tutor
 is an out-of-band SQL operation today. The bot can only link a Discord account to a party that already exists
-(`link_discord_account` in [`provisioning.py`](../../app/services/bot/provisioning.py)), so without a CRM API the
+(`link_discord_account` in [`provisioning.py`](https://github.com/Nachhilfe-Leon-Weimann/skillforge/blob/v0.5.0/app/services/bot/provisioning.py)), so without a CRM API the
 platform cannot be filled with real data.
 
 The first consumer is **the operator working in Swagger UI**: entering people by hand, copying UUIDs between calls,
@@ -384,7 +384,7 @@ criteria of P0-5 in `api-conventions.md`, which this spec supersedes.
   - [x] An architecture test asserts that nothing under `app/services/crm` or `app/api/v1/crm` imports
         `app.services.bot` or `app.api.v1.bot` (ADR 0007).
   - [x] An error-contract test pins status, `code` and `detail` of every catalog row for the subject routes,
-        following [`test_bot_error_contract.py`](../../tests/api/test_bot_error_contract.py). Every later slice
+        following [`test_bot_error_contract.py`](https://github.com/Nachhilfe-Leon-Weimann/skillforge/blob/v0.5.0/tests/api/test_bot_error_contract.py). Every later slice
         extends it with its own rows.
   - [x] At runtime a CRM route answers 401 without a token and 403 with a token that lacks the scope, both in the
         error envelope.
@@ -412,7 +412,7 @@ criteria of P0-5 in `api-conventions.md`, which this spec supersedes.
   `PATCH /companies/{party_id}`. `POST` answers 201 with `Location: /api/v1/crm/parties/{id}`. The `student` and
   `tutor` fields of `PersonCreateRequest` arrive with P0-4; until then the detail shows both roles as `null`.
 - _Technique:_ `PartyNotFoundError` is defined in `app/services/crm/errors.py`; the bot's own class is deleted and
-  [`errors.py`](../../app/services/bot/errors.py) imports the CRM one. The class thereby loses `BotServiceError` as a
+  [`errors.py`](https://github.com/Nachhilfe-Leon-Weimann/skillforge/blob/v0.5.0/app/services/bot/errors.py) imports the CRM one. The class thereby loses `BotServiceError` as a
   base, which nothing relies on: the only `except BotServiceError` is `requeue` in the dead-letter CLI, which
   never sees it. Status, `code` and `detail` ("Party not found") stay identical, so the bot's contract test keeps
   passing unchanged. This closes the open checkbox of P1-1 in
@@ -626,11 +626,11 @@ untouched, and the dependency keeps its direction: the bot reads the CRM, never 
   relationship answered with a warning and an arbitrary row. The link kind `"discord_account"` in `EXTERNAL_LINKS`
   names the table, is part of the `party_in_use` contract, and stays.
 - _Technique (b) - one party graph:_ `load_parties_for_discord_ids` in
-  [`profile.py`](../../app/services/bot/profile.py) applies `*PARTY_GRAPH` plus what only the bot's profile touches
+  [`profile.py`](https://github.com/Nachhilfe-Leon-Weimann/skillforge/blob/v0.5.0/app/services/bot/profile.py) applies `*PARTY_GRAPH` plus what only the bot's profile touches
   (both relation collections, `discord_accounts`, `microsoft_account`). `PARTY_GRAPH` itself is unchanged: no CRM
   mapper touches the extras.
 - _Technique (c) - `TUTOR_OF`:_ a helper `_require_tutor_of` in
-  [`transitions.py`](../../app/services/bot/transitions.py), called by `prepare_student_activation` with its other
+  [`transitions.py`](https://github.com/Nachhilfe-Leon-Weimann/skillforge/blob/v0.5.0/app/services/bot/transitions.py), called by `prepare_student_activation` with its other
   validations and therefore before the replay lookup. It resolves both Discord IDs to parties through **active**
   `ext.discord_account` rows (a deactivated link counts as unlinked; any active account of a party qualifies, primary
   or not) and requires a `tutor_of` relation from the tutor's party to the student's. Each failure is the existing
@@ -656,7 +656,7 @@ untouched, and the dependency keeps its direction: the bot reads the CRM, never 
   - [x] (c) A retried prepare after the relation was removed is the 422, not a replay; a commit after the relation
         was removed still succeeds.
   - [x] (c) The three messages are pinned over HTTP next to the existing rows of
-        [`test_bot_error_contract.py`](../../tests/api/test_bot_error_contract.py); the bot's error catalog does not
+        [`test_bot_error_contract.py`](https://github.com/Nachhilfe-Leon-Weimann/skillforge/blob/v0.5.0/tests/api/test_bot_error_contract.py); the bot's error catalog does not
         grow.
   - [x] The architecture test of P0-1 stays green: nothing under the CRM packages imports the bot.
 - _Deviations:_

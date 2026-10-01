@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,7 @@ from app.core.auth import Scope
 from app.main import app
 
 HTTP_METHODS = {"get", "put", "post", "delete", "patch", "head", "options", "trace"}
-OPERATION_ID_PATTERN = re.compile(r"(auth|bot|crm|system)_[a-z0-9_]+")
+OPERATION_ID_PATTERN = re.compile(r"(auth|crm|system)_[a-z0-9_]+")
 COMMITTED_OPENAPI_PATH = Path(__file__).resolve().parents[2] / "openapi.json"
 
 
@@ -69,7 +70,7 @@ def test_operation_ids_are_unique(schema: dict[str, Any]):
     ("method", "path", "expected"),
     [
         ("POST", "/api/v1/auth/token", "auth_create_token"),
-        ("GET", "/api/v1/bot/jobs", "bot_list_jobs"),
+        ("GET", "/api/v1/crm/parties", "crm_list_parties"),
         ("GET", "/health", "system_health_check"),
         ("GET", "/health/live", "system_liveness_check"),
         ("GET", "/", "system_root"),
@@ -124,9 +125,9 @@ def _documents_scope_403(responses: dict[str, Any]) -> bool:
 
 
 def test_forbidden_response_names_the_required_scope(schema: dict[str, Any]):
-    forbidden = schema["paths"]["/api/v1/bot/jobs"]["get"]["responses"]["403"]
+    forbidden = schema["paths"]["/api/v1/crm/subjects"]["get"]["responses"]["403"]
 
-    assert "bot:read" in forbidden["description"]
+    assert forbidden["description"] == "Missing required scope: crm:read"
 
 
 def test_framework_validation_schemas_are_not_part_of_the_contract(schema: dict[str, Any]):
@@ -154,11 +155,11 @@ def test_every_documented_error_body_is_the_envelope(schema: dict[str, Any]):
 
 
 PAGED_ENDPOINTS = {
-    "/api/v1/bot/jobs": ("Page_JobListItem_", {"status", "kind"}),
-    "/api/v1/bot/operations": ("Page_OperationSummary_", {"guild_id", "subject_discord_id", "status", "kind"}),
     "/api/v1/auth/clients": ("Page_ApplicationClientResponse_", set()),
     "/api/v1/auth/users": ("Page_UserAccountListItem_", {"status", "party_id", "email"}),
     "/api/v1/auth/discord-links": ("Page_DiscordLink_", {"updated_since", "party_id", "active"}),
+    "/api/v1/crm/parties": ("Page_PartyListItem_", {"type", "role", "subject_id", "q", "updated_since"}),
+    "/api/v1/crm/subjects": ("Page_SubjectResponse_", set()),
 }
 
 
@@ -171,8 +172,7 @@ def test_no_operation_returns_a_bare_array(schema: dict[str, Any]):
         and response.get("content", {}).get("application/json", {}).get("schema", {}).get("type") == "array"
     ]
 
-    # The job claim hands out a batch of work, not a page of a list.
-    assert bare == ["POST /api/v1/bot/jobs/claim"]
+    assert bare == []
 
 
 @pytest.mark.parametrize("path", PAGED_ENDPOINTS)
@@ -207,11 +207,6 @@ def test_paged_endpoint_returns_the_generic_page(schema: dict[str, Any], path: s
 
     assert response["content"]["application/json"]["schema"] == {"$ref": f"#/components/schemas/{page}"}
     assert schema["components"]["schemas"][page]["required"] == ["items", "total", "limit", "offset"]
-
-
-def test_domain_specific_page_schemas_are_gone(schema: dict[str, Any]):
-    assert "JobPage" not in schema["components"]["schemas"]
-    assert "OperationPage" not in schema["components"]["schemas"]
 
 
 def test_every_documented_error_example_is_a_valid_envelope(schema: dict[str, Any]):
@@ -249,3 +244,93 @@ def test_auth_client_operations_document_auth_errors(schema: dict[str, Any]):
 
     assert "auth:clients:manage" in responses["403"]["description"]
     assert responses["401"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/ErrorResponse"}
+
+
+# FastAPI emits only the component schemas a route reaches, so no bot path and no bot tag also means no bot schema.
+def test_the_bot_api_is_gone(schema: dict[str, Any]):
+    areas = {path.split("/")[3] for path in schema["paths"] if path.startswith("/api/v1/")}
+
+    assert areas == {"auth", "crm"}
+    assert {tag["name"] for tag in schema["tags"]} == {"auth", "crm", "system"}
+
+
+# A Discord snowflake - of a user, guild, channel or role - by the name of the property or parameter holding it.
+DISCORD_ID_NAME = re.compile(r"discord|guild|channel|snowflake")
+JAVASCRIPT_MAX_SAFE_INTEGER = 2**53 - 1
+
+
+def test_no_discord_id_is_a_json_number(schema: dict[str, Any]):
+    """Snowflakes exceed 2^53, so JavaScript - the portal, release-please's rewrite of `openapi.json` - would round
+    a JSON number: every Discord ID is a decimal string on the wire (bot-decoupling spec, decision I)."""
+    discord_ids = [(where, node) for where, name, node in _named_schemas(schema) if DISCORD_ID_NAME.search(name)]
+
+    assert discord_ids, "the contract names Discord IDs (`discord_user_id`), so the check must see some"
+    assert [where for where, node in discord_ids if _admits_a_number(node)] == []
+
+
+def test_the_discord_id_check_finds_a_number_anywhere():
+    document = {
+        "components": {
+            "schemas": {
+                "Probe": {
+                    "properties": {
+                        "guild_id": {"type": "integer"},
+                        "discord_ids": {"type": "array", "items": {"type": "integer"}},
+                        "channel_id": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+                        "discord_user_id": {"type": "string", "pattern": "^[0-9]{1,19}$"},
+                        "subject_id": {"type": "integer"},
+                    }
+                }
+            }
+        },
+        "paths": {
+            "/probe/{discord_id}": {
+                "get": {"parameters": [{"name": "discord_id", "in": "path", "schema": {"type": "integer"}}]}
+            }
+        },
+    }
+
+    numbers = sorted(
+        name for _, name, node in _named_schemas(document) if DISCORD_ID_NAME.search(name) and _admits_a_number(node)
+    )
+
+    assert numbers == ["channel_id", "discord_id", "discord_ids", "guild_id"]
+
+
+def test_the_committed_contract_holds_no_integer_javascript_would_round():
+    """An example or a bound above 2^53, written as a JSON number, comes back changed from JavaScript's JSON.parse."""
+    unsafe: list[str] = []
+
+    def parse_int(token: str) -> int:
+        if abs(int(token)) > JAVASCRIPT_MAX_SAFE_INTEGER:
+            unsafe.append(token)
+        return int(token)
+
+    json.loads(COMMITTED_OPENAPI_PATH.read_text(), parse_int=parse_int)
+
+    assert unsafe == []
+
+
+def _named_schemas(node: Any, where: str = "#") -> Iterator[tuple[str, str, Any]]:
+    """Every property and parameter of an OpenAPI document: where it sits, its name and its schema."""
+    if isinstance(node, dict):
+        properties = node.get("properties")
+        if isinstance(properties, dict):
+            for name, definition in properties.items():
+                yield f"{where}/properties/{name}", name, definition
+        if node.get("in") in ("path", "query", "header", "cookie") and isinstance(node.get("name"), str):
+            yield where, node["name"], node.get("schema", {})
+        for key, value in node.items():
+            yield from _named_schemas(value, f"{where}/{key}")
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            yield from _named_schemas(value, f"{where}/{index}")
+
+
+def _admits_a_number(node: Any) -> bool:
+    """Whether a schema, or anything nested in it (`items`, `anyOf`), admits a JSON number."""
+    if isinstance(node, dict):
+        return node.get("type") in ("integer", "number") or any(_admits_a_number(value) for value in node.values())
+    if isinstance(node, list):
+        return any(_admits_a_number(value) for value in node)
+    return False

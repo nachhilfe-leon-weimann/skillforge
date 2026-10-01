@@ -1,6 +1,7 @@
 """The Discord link service: the one writer of ``ext.discord_account`` (bot-decoupling spec, P0-2).
 
-Ports the link tests of ``tests/db/test_bot_provisioning_service.py`` and adds the rules of decisions D to H.
+Ports the link tests of ``tests/db/test_bot_provisioning_service.py`` at tag ``v0.5.0``
+and adds the rules of decisions D to H.
 """
 
 import uuid

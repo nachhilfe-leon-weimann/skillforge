@@ -179,9 +179,9 @@ only widens (a client granted `crm:read` may now request `crm:read:own`).
 The derived roles carry no scopes of their own yet; they tell `/auth/me` and the token's `roles` claim which views
 to offer. **SkillForge authorizes by scope only; it never branches on a role.**
 
-`DELEGATION_RELATION_TYPES` (`PARENT_OF`, `PAYS_FOR`) lives in `app/core/auth/reach.py`. The guardian derivation,
-the reach and [`authz.py`](../../app/services/bot/authz.py) all import it, so the bot's delegation set and the
-API's reach cannot drift apart.
+`DELEGATION_RELATION_TYPES` (`PARENT_OF`, `PAYS_FOR`) lives in `app/core/auth/reach.py`. The guardian derivation
+(`derive_roles_for` in `app/services/auth/roles.py`) and the reach both import it, so the guardian role and the
+reach cannot drift apart. `TUTOR_OF` is absent on purpose: tutoring does not make a guardian.
 
 ## Accounts
 
@@ -583,7 +583,7 @@ exchange, Discord links, the retirement of the grant engine and the change signa
 - _Technique:_ the four new `Scope` members, `CLIENT_ONLY_SCOPES`, `OWN_VARIANT`, `expand`, `canonical`,
   `parse_scopes`, `format_scopes` in `scopes.py`; `app/core/auth/roles.py`; `resolve_token_scopes` as specified;
   `get_current_principal` expands before comparing; `require_scopes` refuses a `:own` scope;
-  `DELEGATION_RELATION_TYPES` moves from [`authz.py`](../../app/services/bot/authz.py) to `app/core/auth/reach.py`
+  `DELEGATION_RELATION_TYPES` moves from [`authz.py`](https://github.com/Nachhilfe-Leon-Weimann/skillforge/blob/v0.5.0/app/services/bot/authz.py) to `app/core/auth/reach.py`
   and `authz.py` imports it. A test tying `STORED_ROLES` to `UserAccountRoleName` needs P0-3 and lands with P0-6.
 - _Tests that change:_ `test_seed_default_scopes_is_idempotent` (`tests/db/test_auth_service.py`): the seeded set
   grows by the four scopes.
@@ -761,6 +761,7 @@ exchange, Discord links, the retirement of the grant engine and the change signa
         every other CRM operation; the CRM endpoints still pass `test_the_crm_endpoints_carry_no_boilerplate`; no
         other existing test changes.
   - [x] `_allowed_target_parties` in `authz.py` and `resolve_reach` return the same set for the same party.
+        _(Superseded by [bot-decoupling.md](bot-decoupling.md): its P0-4 asserts the exact reach instead.)_
   - [x] The conventions in `CLAUDE.md` name `require_access`.
 
 **P0-8 - Login.**

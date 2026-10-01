@@ -17,6 +17,9 @@ from app.core.auth.dependencies import get_auth_settings
 from app.core.db.dependencies import get_db_session
 from app.core.errors import NotFoundError
 from app.main import app
+from app.services.auth import users as users_service
+
+USERS = "/api/v1/auth/users"
 
 
 class ProbeNotFoundError(NotFoundError):
@@ -35,26 +38,26 @@ class Case:
 
 CASES = {
     "mapped_domain_error": Case(
-        path=f"/api/v1/bot/jobs/{uuid4()}",
+        path=f"{USERS}/{uuid4()}",
         status=404,
         code="probe_not_found",
-        scopes=(Scope.BOT_READ,),
+        scopes=(Scope.AUTH_USERS_MANAGE,),
         raises=ProbeNotFoundError("probe 7f3a is gone"),
     ),
     "unknown_route": Case(path="/api/v1/nope", status=404, code="not_found"),
-    "missing_token": Case(path="/api/v1/bot/jobs", status=401, code="unauthorized"),
-    "missing_scope": Case(path="/api/v1/bot/jobs", status=403, code="forbidden", scopes=(Scope.BOT_WRITE,)),
+    "missing_token": Case(path=USERS, status=401, code="unauthorized"),
+    "missing_scope": Case(path=USERS, status=403, code="forbidden", scopes=(Scope.AUTH_CLIENTS_MANAGE,)),
     "malformed_path_parameter": Case(
-        path="/api/v1/bot/jobs/not-a-uuid",
+        path=f"{USERS}/not-a-uuid",
         status=422,
         code="validation_error",
-        scopes=(Scope.BOT_READ,),
+        scopes=(Scope.AUTH_USERS_MANAGE,),
     ),
     "malformed_query_parameter": Case(
-        path="/api/v1/bot/jobs",
+        path=USERS,
         status=422,
         code="validation_error",
-        scopes=(Scope.BOT_READ,),
+        scopes=(Scope.AUTH_USERS_MANAGE,),
         params={"limit": "0"},
     ),
 }
@@ -63,7 +66,7 @@ CASES = {
 @pytest.mark.parametrize("case", CASES.values(), ids=CASES.keys())
 async def test_error_body_is_the_envelope(case: Case, monkeypatch):
     if case.raises is not None:
-        monkeypatch.setattr("app.api.v1.bot.jobs.get_job", _raises(case.raises))
+        monkeypatch.setattr(users_service, "load_user_account", _raises(case.raises))
 
     async with _client() as client:
         response = await client.get(case.path, params=case.params, headers=_auth_headers(case.scopes))
@@ -81,17 +84,17 @@ async def test_error_body_is_the_envelope(case: Case, monkeypatch):
 
 async def test_missing_token_keeps_the_www_authenticate_challenge():
     async with _client() as client:
-        response = await client.get("/api/v1/bot/jobs")
+        response = await client.get(USERS)
 
     assert response.status_code == 401
-    assert response.headers["www-authenticate"] == 'Bearer scope="bot:read"'
+    assert response.headers["www-authenticate"] == 'Bearer scope="auth:users:manage"'
 
 
 async def test_unexpected_exception_is_a_500_envelope_without_internals(monkeypatch):
-    monkeypatch.setattr("app.api.v1.bot.jobs.get_job", _raises(RuntimeError("connection string leaked: 7f3a")))
+    monkeypatch.setattr(users_service, "load_user_account", _raises(RuntimeError("connection string leaked: 7f3a")))
 
     async with _client(raise_app_exceptions=False) as client:
-        response = await client.get(f"/api/v1/bot/jobs/{uuid4()}", headers=_auth_headers((Scope.BOT_READ,)))
+        response = await client.get(f"{USERS}/{uuid4()}", headers=_auth_headers((Scope.AUTH_USERS_MANAGE,)))
 
     assert response.status_code == 500
     assert response.json() == {"detail": "Internal server error", "code": "internal_error"}
@@ -103,13 +106,13 @@ async def test_documented_auth_error_examples_are_the_bodies_the_api_returns(fai
     headers = {
         "missing_token": {},
         "invalid_token": {"Authorization": "Bearer not-a-token"},
-        "missing_scope": _auth_headers((Scope.BOT_WRITE,)),
+        "missing_scope": _auth_headers((Scope.AUTH_CLIENTS_MANAGE,)),
     }[failure]
 
     async with _client() as client:
-        response = await client.get("/api/v1/bot/jobs", headers=headers)
+        response = await client.get(USERS, headers=headers)
 
-    assert response.json() == _documented_auth_example("/api/v1/bot/jobs", failure)
+    assert response.json() == _documented_auth_example(USERS, failure)
 
 
 def _documented_auth_example(path: str, failure: str) -> dict[str, str]:
@@ -147,10 +150,11 @@ def _auth_headers(scopes: tuple[Scope, ...] | None) -> dict[str, str]:
     if scopes is None:
         return {}
 
+    # An operator tool, not skillbot: the skillbot client never holds `auth:*` (bot-decoupling, "Security rules").
     token = create_application_access_token(
         _auth_settings(),
         principal_id=UUID("00000000-0000-0000-0000-000000000001"),
-        client_id="skillbot",
+        client_id="operator",
         scopes=[str(scope) for scope in scopes],
     )
     return {"Authorization": f"Bearer {token.access_token}"}

@@ -111,16 +111,6 @@ test-one test:
 worker-housekeeping:
     uv run python -m app.workers.housekeeping
 
-# --- Dead-letter queue ---
-
-# List dead-lettered (FAILED) jobs with kind, last_error, failed_at.
-dead-jobs:
-    uv run python -m app.cli.deadletters list
-
-# Requeue a dead-lettered job: reset it to PENDING (attempt 0) and make it claimable now.
-requeue job_id:
-    uv run python -m app.cli.deadletters requeue {{ job_id }}
-
 # --- Auth ---
 
 bootstrap-skillbot:

@@ -30,21 +30,17 @@ app/
   main.py            FastAPI entry point (root route + app wiring)
   api/system/        health.py (/health + /health/live, /health/dependencies[/{name}], /health/workers[/{name}])
   api/v1/            endpoints: auth/ (token, revoke, clients, me, users, password, discord_links, params),
-                     bot/ (runtime, jobs, operations, command_envs, students, tutors, users, authz), crm/ (parties,
-                     persons, companies, roles, contact_infos, relations, subjects; params + schemas); common/
-                     (shared API vocabulary: error envelope + handlers, error_responses, Page/PageParams, OpenAPI
-                     hooks; re-exports DBSession)
+                     crm/ (parties, persons, companies, roles, contact_infos, relations, subjects; params +
+                     schemas); common/ (shared API vocabulary: error envelope + handlers, error_responses,
+                     Page/PageParams, OpenAPI hooks; re-exports DBSession)
   services/auth/     accounts, users, clients, scopes (grants per mode), tokens (the grants), sessions,
                      action_tokens, discord_links, housekeeping, secrets, roles, bootstrap, audit, results,
                      errors
-  services/bot/      business logic: transitions, operations, jobs, principals, provisioning,
-                     authz, command_envs, contexts, profile, views, errors
   services/crm/      system of record: parties (PARTY_GRAPH, load_party, saved), persons, companies,
                      roles, contact_infos, relations, subjects, inputs, errors
   services/system/   health aggregation + worker heartbeats (backs /health)
   workers/           housekeeping.py (deletes auth sessions and one-time tokens 30 days past expiry; heartbeat)
-  cli/               deadletters.py (dead-letter list/requeue operator commands), bootstrap.py (behind the
-                     `just bootstrap-*` recipes)
+  cli/               bootstrap.py (behind the `just bootstrap-*` recipes)
   core/              auth/ (OAuth2 scheme, JWT, principals, scopes, roles, reach, guards), db/ (engine, DBSession,
                      models/<schema>/), logging/, config.py, errors.py (HTTP-agnostic error taxonomy),
                      unset.py (the services' UNSET sentinel)
@@ -84,9 +80,11 @@ DB schemas: `core`, `geo`, `ext`, `bot`, `auth`, `system` - see
   ([ADR 0008](docs/decisions/0008-user-authentication-and-reach.md)).
 - **The CRM is the system of record** ([spec](docs/specs/crm-api.md),
   [ADR 0007](docs/decisions/0007-crm-system-of-record.md)): nothing under `app/services/crm` or
-  `app/api/v1/crm` imports the bot domain, and no CRM write looks at Discord state. Every write
-  service ends with `saved(...)` and `load_party(...)`; a `from_model` mapper touches only what
-  `PARTY_GRAPH` loads - extend the graph, never add an ad-hoc load. The error catalog is closed.
+  `app/api/v1/crm` imports anything but `app.core`, the shared API vocabulary and the CRM itself
+  ([ADR 0009](docs/decisions/0009-bot-owns-its-discord-workflows.md)), and no CRM write looks at
+  Discord state. Every write service ends with `saved(...)` and `load_party(...)`; a `from_model`
+  mapper touches only what `PARTY_GRAPH` loads - extend the graph, never add an ad-hoc load. The
+  error catalog is closed.
 - **Frontends pull; SkillForge pushes nothing** ([ADR 0009](docs/decisions/0009-bot-owns-its-discord-workflows.md)):
   a feed item carries `updated_at`, consumers ask with `updated_since` minus an overlap and compare in full now and
   then. SkillForge keeps no frontend's state - the bot runs its Discord workflows in its own database. Never add a

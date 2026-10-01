@@ -1,11 +1,11 @@
-"""ADR 0007: the CRM is the system of record and never depends on the bot domain."""
+"""ADR 0009: the CRM depends on no other domain - it imports the core, the shared API vocabulary and itself."""
 
 import ast
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CRM_PACKAGES = ("app/services/crm", "app/api/v1/crm")
-FORBIDDEN = ("app.services.bot", "app.api.v1.bot")
+ALLOWED = ("app.core", "app.api.v1.common", "app.services.crm", "app.api.v1.crm")
 
 
 def _imported_modules(source: str, *, package: str) -> set[str]:
@@ -24,14 +24,16 @@ def _imported_modules(source: str, *, package: str) -> set[str]:
 
 
 def _violations(source: str, *, package: str) -> set[str]:
+    """Return the ``app`` modules a source file imports from outside ``ALLOWED``."""
     return {
         module
         for module in _imported_modules(source, package=package)
-        if any(module == forbidden or module.startswith(f"{forbidden}.") for forbidden in FORBIDDEN)
+        if (module == "app" or module.startswith("app."))
+        and not any(module == allowed or module.startswith(f"{allowed}.") for allowed in ALLOWED)
     }
 
 
-def test_the_crm_never_imports_the_bot_domain():
+def test_the_crm_imports_nothing_but_the_core_and_itself():
     files = [path for package in CRM_PACKAGES for path in (REPO_ROOT / package).rglob("*.py")]
 
     assert {path.parent.relative_to(REPO_ROOT).as_posix() for path in files} >= set(CRM_PACKAGES)
@@ -43,13 +45,16 @@ def test_the_crm_never_imports_the_bot_domain():
 def test_the_import_check_catches_every_import_form():
     package = "app.services.crm"
 
-    assert _violations("import app.services.bot.profile", package=package)
-    assert _violations("from app.services.bot import load_party_for_discord_id", package=package)
-    assert _violations("from app.services import bot", package=package)
-    assert _violations("from app.api.v1.bot.schemas import JobListItem", package=package)
-    assert _violations("from .. import bot", package=package)
-    assert _violations("from ..bot.errors import BotServiceError", package=package)
+    assert _violations("import app.services.auth.users", package=package)
+    assert _violations("from app.services.auth import users", package=package)
+    assert _violations("from app.services import system", package=package)
+    assert _violations("from app.api.v1.auth.schemas import DiscordLink", package=package)
+    assert _violations("from app.workers import housekeeping", package=package)
+    assert _violations("from .. import auth", package=package)
+    assert _violations("from ..system.health_service import check_health", package=package)
+    assert _violations("import app", package=package)
     assert _violations("from . import subjects\nfrom app.core.errors import NotFoundError", package=package) == set()
+    assert _violations("from app.api.v1.common import DBSession\nimport sqlalchemy", package=package) == set()
 
 
 # --- standing criteria of the CRM API spec: what an endpoint module must not contain ---

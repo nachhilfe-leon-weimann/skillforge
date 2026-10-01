@@ -25,8 +25,7 @@ def test_every_service_error_is_mapped_and_has_a_unique_code():
     error_modules = _import_error_modules()
     service_errors = [error for error in _subclasses(DomainError) if error.__module__.startswith("app.")]
 
-    assert "app.services.bot.errors" in error_modules
-    assert "app.services.crm.errors" in error_modules
+    assert {"app.services.auth.errors", "app.services.crm.errors"} <= set(error_modules)
     assert _violations(service_errors) == []
 
 
