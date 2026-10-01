@@ -5,7 +5,9 @@
 > to move the pin; P1-4 in #125; P1-2 and P1-3 dropped. P2 *Shared workflows* done: the deploy lives in
 > [`skill-platform-workflows`][workflows] since 2026-09-20 (#133).
 > Platform arc (skillforge first, then skillbot and skillsite): skillbot adopted the flow (skillbot#10) and
-> released `v0.1.0` through it on 2026-09-21.
+> released `v0.1.0` through it on 2026-09-21. **Amended 2026-10-01:** Dokploy ran a compose file it stores, never
+> the repo's; the deploy now stores the released `compose.yml` first ("Which compose does Dokploy run?",
+> [skill-platform-workflows#6][workflows-6]).
 > This spec is also the decision record (no separate ADR: *Decided defaults*, *Verified behavior* and
 > *Trade-offs accepted* carry the why). Written in skillforge because it is the first adopter; the **platform
 > contract** below is what the other repos copy. Every GitHub behavior this spec relies on was verified in a
@@ -77,7 +79,7 @@ Three mental models for one person is friction on every release. On top of that:
 | **E - Release PR author** | An org-wide **GitHub App**; release-please runs with its installation token. The App is **`skill-platform-release`** - the installed `skillsite-release-bot`, renamed (no `bot` in the name: GitHub appends `[bot]`, and it keeps clear of *skillbot*) and extended to the other repos. It started as releases only; since 2026-09-20 it is the platform's one automation App and also puts issues and PRs on the project board ([`project-intake.md`](project-intake.md)) - each workflow narrows its token to the permissions it needs. | PRs opened with `GITHUB_TOKEN` get no CI run, so the required check (G) would reject the release PR. Verified; see below. |
 | **F - Signatures** | Feature commits carry Leon's signature when they land via `git ship`, GitHub's when they are squash-merged. The one release commit per version is created through the GitHub API and carries GitHub's signature ("Verified"). Tags are lightweight and unsigned. | Satisfies the `required_signatures` rule; same trust level as today's bump PR. |
 | **G - Gate on `main`** | The `main` ruleset additionally requires the status check **`check`**. Every repo's CI exposes a job with exactly this name. | A fast-forward keeps the commit SHA, so the green check from the PR still counts on push (verified); a squash merge enforces the check itself. A tip without a green check - unpushed, still running or cancelled - is rejected, which is why `--auto` is the default way to merge. |
-| **H - Deploy transport** | Dokploy **API** (`x-api-key`): `compose.deploy`, then poll `deployment.allByCompose` until `done` / `error`, then verify the health endpoint. The deploy webhook is removed. | Authenticated, observable, fails loudly. Endpoints proven in `github-actions-playground`. |
+| **H - Deploy transport** | Dokploy **API** (`x-api-key`): `compose.update` with the released `compose.yml` (raw source, read back), then `compose.deploy`, then poll `deployment.allByCompose` until `done` / `error`, then verify the health endpoint. The deploy webhook is removed. | Authenticated, observable, fails loudly. Endpoints proven in `github-actions-playground`. Dokploy runs the compose it stores, not the repo's - without `compose.update`, decision I pins nothing. |
 | **I - Deployed version** | `compose.yml` pins `image: ...:vX.Y.Z`, rewritten by release-please in the release commit (P1-1; P0 deployed `:latest`). | One annotation per `image:` line; `main` then records what prod runs, and a restart cannot pull another version. |
 | **J - Health contract** | Every service with a public HTTP endpoint answers `GET /health` with at least `status` and `version`. Services without HTTP (skillbot) are verified by the Dokploy deployment status alone. | Lets the deploy job prove that the *new* version is the one answering. |
 | **K - Local hooks** | None. (Originally: lefthook calling `just` recipes; dropped on 2026-09-20 together with P1-2.) | CI is the gate; a hook can be skipped with `--no-verify` anyway. |
@@ -103,6 +105,7 @@ release cycles shipped with the real `git ship` alias.
 | ... and for the release PR opened with `GITHUB_TOKEN`? | **Rejected:** `Required status check "check" is expected`. The PR's CI run is created but never runs jobs. |
 | Workarounds without an App? | Closing and reopening the PR as a user starts CI, then shipping works (tested). Starting CI on the release branch via `workflow_dispatch` produced a green check that did **not** satisfy the rule (tested). Hence decision E. |
 | Does a workflow called from another repo get the caller's configuration? | **Yes** (live, `dry_run` dispatch after #133): inside `skill-platform-workflows`' `deploy.yml` the job's `environment: production` is this repo's environment - `secrets.DOKPLOY_API_KEY` (through `secrets: inherit`) and `vars.DOKPLOY_COMPOSE_ID` resolve, as does the org variable `DOKPLOY_BASE_URL`. `job.workflow_repository` / `job.workflow_sha` name the shared repo and the ref behind `@v1` (for an annotated tag the tag object's SHA, which `actions/checkout` resolves), so the script comes from the same ref as the workflow. The nesting `release.yml` -> `deploy.yml` -> shared `deploy.yml` with `secrets: inherit` on both levels is accepted. |
+| Which compose does Dokploy run? | **The one it stores, not the repo's** (found on 2026-10-01 with `v0.6.0`): `compose.deploy` restarts Dokploy's own copy, which still pinned `:latest` and started the worker as `app.workers.reaper`. The `v0.6.0` worker crashed, `/health` answered 503, the app never became healthy and Traefik answered 404. With `v0.5.0` the copy had passed unnoticed: `:latest` was the same image, and the version check cannot tell a pin from a coincidence. Since [skill-platform-workflows#6][workflows-6] the deploy stores the caller's `compose.yml` of the released commit through `compose.update` (`sourceType: raw`), reads it back and only then deploys; a `dry_run` reports whether Dokploy holds the released file. |
 | What if a step after the action fails in the release-please job? | The release already exists but build and deploy are skipped - a half-done release. Hence P0-3's "nothing after the action" rule and the manual deploy entry point. |
 
 ## Trade-offs accepted
@@ -145,7 +148,8 @@ feature branch -> PR (CI: job "check" green) -> gh pr merge -sd --auto -> main
                                                             |
                build image (:vX.Y.Z, :sha-..., :latest)  ->  repo-specific publish (forge: PyPI client)
                                                             |
-        deploy.yml: Dokploy API compose.deploy -> wait for done/error -> GET /health (status + version)
+        deploy.yml: Dokploy API compose.update (released compose.yml) -> compose.deploy
+                    -> wait for done/error -> GET /health (status + version)
 ```
 
 ## Platform contract
@@ -163,7 +167,8 @@ What is identical in every repo; everything else is repo-specific detail behind 
   out to every repo; a change callers have to follow is a `v2`. The README there has the callers to copy.
 - **Config:** `release-please-config.json` and `.release-please-manifest.json` in the repo root; tags `vX.Y.Z`.
   `compose.yml` pins the deployed image to that tag (`x-release-please-version` on every `image:` line, a
-  `generic` `extra-files` entry).
+  `generic` `extra-files` entry). Every deploy stores it in Dokploy: an edit in Dokploy's UI lasts only until
+  the next deploy.
 - **`just` entry points:** `just check` (everything that must be green before a push). CI's `check` job runs at
   least `just check`.
 - **Org-level:** variable `RELEASE_APP_CLIENT_ID`, secret `RELEASE_APP_PRIVATE_KEY` (the names skillsite already
@@ -233,7 +238,9 @@ What is identical in every repo; everything else is repo-specific detail behind 
   and `version` equals the released version, or time out (fail). No rollback. `workflow_dispatch` input:
   the version to expect - this is the manual re-run path. A second dispatch input, `dry_run`, only verifies API
   access. A failed deployment listing *while waiting* is retried until the deadline (one transient 502 must not fail a
-  deploy that is still running); the first listing and the `POST` stay fatal.
+  deploy that is still running); the first listing and the `POST` stay fatal. _(Amended 2026-10-01: before
+  `compose.deploy` the script stores the caller's `compose.yml` of the released commit with `compose.update` and
+  refuses one without an image tagged with the release - [skill-platform-workflows#6][workflows-6].)_
 - *Technique:* `SystemHealthCheckResponse` in [`schemas.py`](../../app/services/system/schemas.py) gains
   `version`, filled from the app's own version (`request.app.version`, which `main.py` sets from
   `get_project_version()`) and reported for every status; `just openapi` afterwards (decision J).
@@ -280,9 +287,10 @@ What is identical in every repo; everything else is repo-specific detail behind 
         runs - the PR itself deploys nothing)*
   - [x] release-please rewrites exactly those lines. *(see Verified behavior: its own `Generic` updater, run
         against the file)*
-  - [x] After a release, `compose.yml` on `main` names the released version and prod runs exactly that image.
-        *(`v0.5.0`, 2026-09-25: the release PR moved both `image:` lines, and the release run's deploy job went
-        green, which it only does once `/health` reports the released version)*
+  - [ ] After a release, `compose.yml` on `main` names the released version and prod runs exactly that image.
+        *(Ticked on 2026-09-25 for `v0.5.0` on a false proof: prod ran Dokploy's stored compose on `:latest`,
+        which was the same image - see "Which compose does Dokploy run?". Holds once `v0.6.0` deploys through
+        [skill-platform-workflows#6][workflows-6].)*
 
 **P1-2 - Local hooks.** *Dropped on 2026-09-20 - see Non-goals.* (Was: lefthook with `pre-commit`, `commit-msg`
 and `pre-push` hooks calling `just` recipes.)
@@ -400,3 +408,4 @@ environment and the Dokploy API key - these cannot be done from a PR.
 - Tick the acceptance checkboxes in this file in the PR that fulfils them and flip the status line when P0 is done.
 
 [workflows]: https://github.com/Nachhilfe-Leon-Weimann/skill-platform-workflows
+[workflows-6]: https://github.com/Nachhilfe-Leon-Weimann/skill-platform-workflows/pull/6

@@ -66,7 +66,7 @@ There is no automatic rollback. To go back to an earlier release:
 1. Restore the earlier tag's whole `compose.yml` (`git show vX.Y.Z:compose.yml > compose.yml`) in a PR
    titled `chore(deploy): roll back to vX.Y.Z` (a `chore` makes no release) and merge it. Restoring only
    the `image:` lines is not enough: an older image may lack the module the current `worker` command names.
-2. Dispatch `Deploy` with that version.
+2. Dispatch `Deploy` with that version. It stores the restored `compose.yml` in Dokploy before it deploys.
 
 Rolling forward reverts the rollback PR first, restoring the current `compose.yml`; the next release PR then
 only moves the tags forward. This rolls back the app, not the database: if a release in between shipped a
