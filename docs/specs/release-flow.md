@@ -165,7 +165,8 @@ What is identical in every repo; everything else is repo-specific detail behind 
   `compose.yml` pins the deployed image to that tag (`x-release-please-version` on every `image:` line, a
   `generic` `extra-files` entry).
 - **`just` entry points:** `just check` (everything that must be green before a push). CI's `check` job runs at
-  least `just check`.
+  least `just check` - unless the diff touches only docs (`docs/**`, Markdown): then it is skipped, and a skipped
+  job satisfies the required check.
 - **Org-level:** variable `RELEASE_APP_CLIENT_ID`, secret `RELEASE_APP_PRIVATE_KEY` (the names skillsite already
   uses), variable `DOKPLOY_BASE_URL`.
 - **Environment `production` (per repo):** secret `DOKPLOY_API_KEY`, variables `DOKPLOY_COMPOSE_ID` and

@@ -15,7 +15,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Detect changes beyond docs
+        id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+
+          # No usable base - a manual run, a new branch (all zeros), a force push past the old tip - counts as code.
+          if [[ -z "${BASE//0/}" ]] || ! changed=$(git diff --name-only "$BASE...HEAD"); then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          printf '%s\n' "$changed"
+          # Docs are `docs/**` and Markdown anywhere; an empty diff counts as code.
+          if grep -qvE '^docs/|\.md$' <<<"$changed"; then code=true; else code=false; fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   check:
+    needs: changes
+    # A skipped job satisfies the required `check`, so only a docs-only diff skips it. `!cancelled()` and `!= 'false'`
+    # run it even when `changes` failed: a broken detection must not wave code through.
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
