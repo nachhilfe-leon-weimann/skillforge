@@ -236,10 +236,11 @@ the Python client and calls `deploy.yml`, which hands over to the platform's sha
 ([`skill-platform-workflows`](https://github.com/Nachhilfe-Leon-Weimann/skill-platform-workflows), the same
 for every repo). Its script triggers `compose.deploy` over the Dokploy API, waits for the deployment to
 finish and then requires `GET /health` to answer `ok` with the released `version` - a failed migration or
-a stale container is a red workflow. Dokploy runs the repo's
-[`compose.yml`](../compose.yml), whose `image:` tags the release commit pins to `vX.Y.Z`: `main` records
-what prod runs. There is no automatic rollback - an app rollback would not roll back an Alembic migration;
-the manual procedure is in the [README](../README.md#rolling-back).
+a stale container is a red workflow. Dokploy runs the compose it stores, so the deploy first stores the
+repo's [`compose.yml`](../compose.yml) of the released commit there (`compose.update`); its `image:` tags the
+release commit pins to `vX.Y.Z`: `main` records what prod runs. There is no automatic rollback - an app
+rollback would not roll back an Alembic migration; the manual procedure is in the
+[README](../README.md#rolling-back).
 
 ## Change signals
 
