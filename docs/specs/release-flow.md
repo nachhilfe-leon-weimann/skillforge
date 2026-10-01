@@ -105,7 +105,7 @@ release cycles shipped with the real `git ship` alias.
 | ... and for the release PR opened with `GITHUB_TOKEN`? | **Rejected:** `Required status check "check" is expected`. The PR's CI run is created but never runs jobs. |
 | Workarounds without an App? | Closing and reopening the PR as a user starts CI, then shipping works (tested). Starting CI on the release branch via `workflow_dispatch` produced a green check that did **not** satisfy the rule (tested). Hence decision E. |
 | Does a workflow called from another repo get the caller's configuration? | **Yes** (live, `dry_run` dispatch after #133): inside `skill-platform-workflows`' `deploy.yml` the job's `environment: production` is this repo's environment - `secrets.DOKPLOY_API_KEY` (through `secrets: inherit`) and `vars.DOKPLOY_COMPOSE_ID` resolve, as does the org variable `DOKPLOY_BASE_URL`. `job.workflow_repository` / `job.workflow_sha` name the shared repo and the ref behind `@v1` (for an annotated tag the tag object's SHA, which `actions/checkout` resolves), so the script comes from the same ref as the workflow. The nesting `release.yml` -> `deploy.yml` -> shared `deploy.yml` with `secrets: inherit` on both levels is accepted. |
-| Which compose does Dokploy run? | **The one it stores, not the repo's** (found on 2026-10-01 with `v0.6.0`): `compose.deploy` restarts Dokploy's own copy, which still pinned `:latest` and started the worker as `app.workers.reaper`. The `v0.6.0` worker crashed, `/health` answered 503, the app never became healthy and Traefik answered 404. With `v0.5.0` the copy had passed unnoticed: `:latest` was the same image, and the version check cannot tell a pin from a coincidence. Since [skill-platform-workflows#6][workflows-6] the deploy stores the caller's `compose.yml` of the released commit through `compose.update` (`sourceType: raw`), reads it back and only then deploys; a `dry_run` reports whether Dokploy holds the released file. |
+| Which compose does Dokploy run? | **The one it stores, not the repo's** (found on 2026-10-01 with `v0.6.0`): `compose.deploy` restarts Dokploy's own copy, which still pinned `:latest` and started the worker as `app.workers.reaper`. The `v0.6.0` worker crashed, `/health` answered 503, the app never became healthy and Traefik answered 404. With `v0.5.0` the copy had passed unnoticed: `:latest` was the same image, and the version check cannot tell a pin from a coincidence. Since [skill-platform-workflows#6][workflows-6] the deploy stores the caller's `compose.yml` of the released commit through `compose.update` (`sourceType: raw`), reads it back and only then deploys; a `dry_run` reports whether Dokploy holds the released file. Seen live on 2026-10-01 (skill-platform-workflows `v1.0.2`): a `dry_run` reported "another compose file", the next deploy of `v0.6.0` stored the released one and went green. |
 | What if a step after the action fails in the release-please job? | The release already exists but build and deploy are skipped - a half-done release. Hence P0-3's "nothing after the action" rule and the manual deploy entry point. |
 
 ## Trade-offs accepted
@@ -287,10 +287,10 @@ What is identical in every repo; everything else is repo-specific detail behind 
         runs - the PR itself deploys nothing)*
   - [x] release-please rewrites exactly those lines. *(see Verified behavior: its own `Generic` updater, run
         against the file)*
-  - [ ] After a release, `compose.yml` on `main` names the released version and prod runs exactly that image.
-        *(Ticked on 2026-09-25 for `v0.5.0` on a false proof: prod ran Dokploy's stored compose on `:latest`,
-        which was the same image - see "Which compose does Dokploy run?". Holds once `v0.6.0` deploys through
-        [skill-platform-workflows#6][workflows-6].)*
+  - [x] After a release, `compose.yml` on `main` names the released version and prod runs exactly that image.
+        *(`v0.6.0`, 2026-10-01: the deploy stored the released `compose.yml` in Dokploy and went green. First
+        ticked on 2026-09-25 for `v0.5.0` on a false proof: prod ran Dokploy's stored compose on `:latest`, which
+        was the same image - see "Which compose does Dokploy run?")*
 
 **P1-2 - Local hooks.** *Dropped on 2026-09-20 - see Non-goals.* (Was: lefthook with `pre-commit`, `commit-msg`
 and `pre-push` hooks calling `just` recipes.)
