@@ -1,7 +1,7 @@
 # Spec: Bot decoupling (the bot owns its Discord workflows)
 
-> Status: Implemented - P0 and P1 on `main` (2026-10); open: skillbot's handover (skillbot#23), the link review
-> before the exchange grant | Arc `bot`
+> Status: Implemented - P0 and P1 on `main`, released as `v0.6.0` (2026-10); open: the link review before the
+> exchange grant | Arc `bot`
 > Tracking: [#166](https://github.com/Nachhilfe-Leon-Weimann/skillforge/issues/166)
 > Builds on the [project sketch](../PROJECT.md), [ADR 0009](../decisions/0009-bot-owns-its-discord-workflows.md),
 > [ADR 0008](../decisions/0008-user-authentication-and-reach.md) with its spec's
@@ -710,7 +710,8 @@ the published client loses `api.bot`.
   - [x] The allow-list test passes and its self-test rejects auth, system and worker imports.
   - [x] `test_error_envelope.py` runs its 11 items against `/api/v1/auth/users`; no bare-array 2xx remains.
   - [x] The exact reach is asserted, `TUTOR_OF` lending none.
-  - [ ] skillbot's handover docs are merged and reference `v0.5.0`.
+  - [x] skillbot's handover docs are merged and reference `v0.5.0`. *(skillbot#23, 2026-10-01 - after P0-4 had
+        merged; the code stayed readable at `v0.5.0` in between)*
 
 **P0-5 - Drop the bot schema, retire the bot scopes.** PR `feat(db): drop the bot schema and retire the bot scopes`.
 
