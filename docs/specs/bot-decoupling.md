@@ -1,6 +1,7 @@
 # Spec: Bot decoupling (the bot owns its Discord workflows)
 
-> Status: In progress | Arc `bot`
+> Status: Implemented - P0 and P1 on `main` (2026-10); open: skillbot's handover (skillbot#23), the link review
+> before the exchange grant | Arc `bot`
 > Tracking: [#166](https://github.com/Nachhilfe-Leon-Weimann/skillforge/issues/166)
 > Builds on the [project sketch](../PROJECT.md), [ADR 0009](../decisions/0009-bot-owns-its-discord-workflows.md),
 > [ADR 0008](../decisions/0008-user-authentication-and-reach.md) with its spec's
@@ -734,6 +735,8 @@ the published client loses `api.bot`.
   - [x] `git grep -nE "bot:(read|write)|BOT_(READ|WRITE)|bootstrap.skillbot" -- app tests justfile README.md CLAUDE.md ':!tests/db/test_migration_apply.py'` is empty.
   - [x] `Party` has no relationship to `DiscordAccount`.
   - [ ] The pre-flight's queries and the rehearsal are recorded in the epic before the release PR merges.
+        _(Waived for 0.6.0 on 2026-10-01: prod holds no data yet; the waiver and the after-deploy checks are
+        recorded in #166.)_
 
 **P0-6 - Pull signals.** PR `feat(crm): signal changes for pulling frontends`; the body states that removing a role
 now removes its `TUTOR_OF`.
