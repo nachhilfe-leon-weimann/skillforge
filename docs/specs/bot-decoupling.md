@@ -779,8 +779,8 @@ now removes its `TUTOR_OF`.
 **P1-1 - One-time link code.** PR `feat(auth): link a Discord account with a one-time code`.
 
 - _Technique:_ [One-time link code](#one-time-link-code-p1-1); `.env.example`; #163 lists the new secret-returning
-  route. It closes the epic and flips the rows "Bot state", "Bot permissions" and "Change signals" of the sketch's
-  "Where we are".
+  route. It is the arc's last slice and flips the rows "Bot state", "Bot permissions" and "Change signals" of the
+  sketch's "Where we are"; the epic closes once the operator records of P0-5 and P0-7 are in it.
 - _Acceptance criteria:_
   - [x] Issuing returns the code once (201), invalidates earlier unused codes and answers 409 for a disabled account.
   - [x] Redeeming with `auth:users:exchange` links the code's party and spends the code; a person's token gets 403;
