@@ -15,7 +15,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    # A manual run has no diff to filter: skipping this job leaves `code` empty, which runs `check`.
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+
+    steps:
+      # A PR's files come from the API; a push to `main` is diffed with git against the commit before it.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Detect changes beyond docs
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          predicate-quantifier: some-with-excludes
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+              - '!**/*.md'
+
   check:
+    needs: changes
+    # A skipped job satisfies the required `check`, so only a docs-only diff skips it. `!cancelled()` and `!= 'false'`
+    # run it even when `changes` failed or was skipped: a broken detection must not wave code through.
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
