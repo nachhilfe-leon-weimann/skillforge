@@ -88,6 +88,8 @@ async def put_relation(
     session: AsyncSession, party_id: uuid.UUID, type: PartyRelationType, to_party_id: uuid.UUID
 ) -> PartyRelationView:
     """Make sure ``party_id --type--> to_party_id`` exists. Idempotent: an existing relation is left as it is."""
+    if type is PartyRelationType.TUTOR_OF:
+        await _lock_pair(session, party_id, to_party_id)
     from_party = await load_party(session, party_id)
     try:
         to_party = await load_party(session, to_party_id)
@@ -127,6 +129,8 @@ async def put_relation(
 async def remove_relation(
     session: AsyncSession, party_id: uuid.UUID, type: PartyRelationType, to_party_id: uuid.UUID
 ) -> None:
+    if type is PartyRelationType.TUTOR_OF:
+        await _lock_pair(session, party_id, to_party_id)
     removed = await session.execute(
         delete(PartyRelation)
         .where(
@@ -141,6 +145,22 @@ async def remove_relation(
         raise PartyRelationNotFoundError(f"No {type.value} relation from {party_id} to {to_party_id}")
 
     await saved(session, party_id, to_party_id)
+
+
+async def _lock_pair(session: AsyncSession, *party_ids: uuid.UUID) -> None:
+    """Lock both parties of a ``tutor_of`` in ID order, before its roles are read or its row is written.
+
+    Every writer of a ``tutor_of`` takes its parties in this one order: ``put_relation`` before its rule reads their
+    roles, ``remove_relation`` before it deletes the row, and a role removal (``_lock_with_tutor_of`` in
+    ``roles.py``) for the person and the other side of each ``tutor_of`` it takes along (decision O of
+    bot-decoupling). Without the lock a PUT could check a role while a removal takes it away and insert its relation
+    after the removal cleaned up; in another order two of these writes could deadlock. ``delete_party`` locks only
+    the party it deletes first: a race with the deletion of one of the two parties can still deadlock, and Postgres
+    then fails one of the two requests.
+    """
+    await session.execute(
+        select(Party.id).where(Party.id.in_(party_ids)).order_by(Party.id).with_for_update(key_share=True)
+    )
 
 
 def _check_rule(type: PartyRelationType, from_party: Party, to_party: Party) -> None:

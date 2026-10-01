@@ -159,7 +159,7 @@ IDs and raw values. Names follow the existing convention (`*ListItem`, `*Detail`
 carry `Field(examples=[...])`.
 
 ```python
-class PartyListItem:        id, type: PartyType, display_name, roles: list[PartyRole]
+class PartyListItem:        id, type: PartyType, display_name, roles: list[PartyRole], updated_at
 class PersonDetail:         type: Literal[PartyType.PERSON], id, display_name, firstname, lastname,
                             student: StudentRole | None, tutor: TutorRole | None,
                             contact_infos: list[ContactInfoResponse], created_at, updated_at
@@ -277,7 +277,7 @@ class PartyListParams(PageParams):
     role: PartyRole | None = None
     subject_id: int | None = None
     q: str | None = Field(None, min_length=2)
-    updated_since: AwareDatetime | None = None  # P1-3
+    updated_since: UpdatedSince = None  # P1-3; the shared alias of every feed since bot-decoupling P0-6
 
 
 class RelationListParams(PageParams):
@@ -292,7 +292,9 @@ class RelationListParams(PageParams):
 - `updated_since` (P1-3) keeps the parties with `updated_at >= updated_since`, the boundary included. It is the
   pull side of decision H and has two limits a consumer must know: a **deleted** party is invisible to it (there is
   no soft delete), and `updated_at` is the **start** of the writing transaction (`now()`), so a change can become
-  visible after a later timestamp has already been seen - poll with an overlap, not from the newest `updated_at`.
+  visible after a later timestamp has already been seen - ask from the newest `updated_at` seen minus an overlap.
+  The whole pull contract is "Change signals" in [`ARCHITECTURE.md`](../ARCHITECTURE.md#change-signals); every
+  list item carries `updated_at` since P0-6 of [`bot-decoupling.md`](bot-decoupling.md).
 - Fixed order as verified above. `GET /subjects` takes the bare `PageQuery` and orders by `lower(title), id`.
   Relations order by `created_at, type, other party id`.
 - All query parameters of an endpoint live in its one model (the query-model trap of `api-conventions.md`).
@@ -498,7 +500,8 @@ criteria of P0-5 in `api-conventions.md`, which this spec supersedes.
   - [x] `subject_ids` replaces the set; an unknown ID is 422 `unknown_subject` whose `detail` lists the unknown IDs,
         and nothing is written (also for the nested create, which then creates no party at all).
   - [x] `DELETE` of a role that is not assigned is 404 `role_not_found`; a company's ID is 404 `person_not_found`.
-  - [x] Removing a role never inspects bot state (ADR 0007) and leaves relations untouched.
+  - [x] Removing a role never inspects bot state (ADR 0007) and leaves relations untouched. _Amended 2026-09 by
+        decision O of [`bot-decoupling.md`](bot-decoupling.md): the `tutor_of` the role anchored goes with it._
 - _Deviations:_
   - **A `PUT` that changes nothing is not a write** (same rule as the empty `PATCH` of P0-2): `updated_at` stays,
     so "200 twice with the same representation" also holds when the two requests are two transactions.

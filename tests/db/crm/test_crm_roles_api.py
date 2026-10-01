@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db.models import Party, PartyRelation, PartyRelationType, Student, StudentSubject, Tutor, TutorSubject
+from app.core.db.models import Party, PartyRelation, Student, StudentSubject, Tutor, TutorSubject
 
 pytestmark = pytest.mark.db
 
@@ -312,30 +312,51 @@ async def test_a_company_or_unknown_id_is_404_person_not_found(client: AsyncClie
     assert (delete.status_code, delete.json()) == (404, expected)
 
 
-@pytest.mark.parametrize("role", ["student", "tutor"])
-async def test_removing_a_role_leaves_relations_alone_and_never_looks_at_bot_state(
-    client: AsyncClient, session: AsyncSession, statements: list[str], role: str
+RELATIONS = {("anna", "tutor_of", "ben"), ("carl", "tutor_of", "anna"), ("anna", "parent_of", "ben")}
+
+
+@pytest.mark.parametrize(
+    ("role", "removed", "moved"),
+    [("tutor", ("anna", "ben"), {"anna", "ben"}), ("student", ("carl", "anna"), {"anna", "carl"})],
+    ids=["tutor", "student"],
+)
+async def test_removing_a_role_removes_the_tutor_of_it_anchored_and_moves_both_sides(
+    client: AsyncClient,
+    session: AsyncSession,
+    statements: list[str],
+    backdate,
+    updated_at,
+    role: str,
+    removed: tuple[str, str],
+    moved: set[str],
 ):
-    """ADR 0007: a CRM write is validated against CRM rules only."""
-    tutor = await _person(client, tutor={})
-    student = await _person(client, firstname="Mia", student={"preferred_meeting_tool": "discord"})
-    session.add(
-        PartyRelation(
-            from_party_id=uuid.UUID(tutor["id"]), to_party_id=uuid.UUID(student["id"]), type=PartyRelationType.TUTOR_OF
-        )
-    )
-    await session.flush()
-    session.expunge_all()
+    """Decision O of bot-decoupling: a `tutor_of` goes with either of its roles, and nothing else changes.
+
+    Anna tutors Ben, is tutored by Carl and is Ben's parent. Taking one of her roles away removes the `tutor_of` on
+    that side only; only its two parties move. CRM rules only (ADR 0007): no statement reads Discord or `ext` state.
+    """
+    anna = await _person(client, firstname="Anna", student={"preferred_meeting_tool": "discord"}, tutor={})
+    ben = await _person(client, firstname="Ben", student={"preferred_meeting_tool": "discord"})
+    carl = await _person(client, firstname="Carl", tutor={})
+    ids = {name: uuid.UUID(party["id"]) for name, party in (("anna", anna), ("ben", ben), ("carl", carl))}
+    for from_name, relation_type, to_name in sorted(RELATIONS):
+        response = await client.put(f"/parties/{ids[from_name]}/relations/{relation_type}/{ids[to_name]}")
+        assert response.status_code == 200, response.text
+    await backdate(*ids.values())
+    before = {name: await updated_at(party_id) for name, party_id in ids.items()}
     statements.clear()
 
-    response = await client.delete(f"/persons/{(student if role == 'student' else tutor)['id']}/{role}")
+    response = await client.delete(f"/persons/{anna['id']}/{role}")
     during_the_request = list(statements)  # the checks below query the same connection
 
     assert response.status_code == 204
-    assert during_the_request, "the recorder saw the request"
+    names = {party_id: name for name, party_id in ids.items()}
+    stored = await session.execute(select(PartyRelation.from_party_id, PartyRelation.type, PartyRelation.to_party_id))
+    assert {
+        (names[from_id], relation_type.value, names[to_id]) for from_id, relation_type, to_id in stored.tuples()
+    } == (RELATIONS - {(removed[0], "tutor_of", removed[1])})
+    assert {name for name, party_id in ids.items() if await updated_at(party_id) != before[name]} == moved
     assert [statement for statement in during_the_request if " bot." in statement or " ext." in statement] == []
-    assert [statement for statement in during_the_request if "party_relation" in statement] == []
-    assert await _count(session, PartyRelation) == 1
 
 
 # --- nested create ---

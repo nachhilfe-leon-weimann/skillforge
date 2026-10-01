@@ -29,7 +29,10 @@ async def put_student_role(party_id: PartyId, request: StudentRoleRequest, sessi
     responses=error_responses(PersonNotFoundError, RoleNotFoundError),
 )
 async def remove_student_role(party_id: PartyId, session: DBSession) -> None:
-    """Take the student role away. Relations of the person stay as they are."""
+    """Take the student role away, and with it every `tutor_of` pointing to the person.
+
+    The tutors on the other side of those relations change too: their `updated_at` moves. Other relations stay.
+    """
     await roles_service.remove_student_role(session, party_id)
 
 
@@ -51,5 +54,8 @@ async def put_tutor_role(party_id: PartyId, request: TutorRoleRequest, session: 
     responses=error_responses(PersonNotFoundError, RoleNotFoundError),
 )
 async def remove_tutor_role(party_id: PartyId, session: DBSession) -> None:
-    """Take the tutor role away. Relations of the person stay as they are."""
+    """Take the tutor role away, and with it every `tutor_of` starting at the person.
+
+    The students on the other side of those relations change too: their `updated_at` moves. Other relations stay.
+    """
     await roles_service.remove_tutor_role(session, party_id)

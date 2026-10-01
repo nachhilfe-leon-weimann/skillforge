@@ -2,7 +2,8 @@
 
 - **Reload rule:** the result can be mapped with ``party_detail()`` without a lazy load, which async
   SQLAlchemy would answer with ``MissingGreenlet``.
-- **Aggregate root:** the write moves ``party.updated_at`` of every party it touches.
+- **Aggregate root:** the write moves ``party.updated_at`` of exactly the parties it touches - "What moves what"
+  in the bot-decoupling spec; a related bystander keeps its stamp.
 
 ``WRITES`` holds one scenario per write service function; ``test_every_write_service_has_a_scenario``
 fails when a slice adds a function without adding it here.
@@ -14,8 +15,9 @@ import importlib
 import inspect
 import pkgutil
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from types import FunctionType
 from typing import Any
 
@@ -67,6 +69,14 @@ class Seed:
 
     person_id: uuid.UUID
     company_id: uuid.UUID
+    other_id: uuid.UUID
+    """A second person, on the other side of the ``tutor_of`` a role removal takes along."""
+    bystander_id: uuid.UUID
+    """The person's parent: related, so a write that moved every related party would move it too."""
+
+    @property
+    def parties(self) -> frozenset[uuid.UUID]:
+        return frozenset({self.person_id, self.company_id, self.other_id, self.bystander_id})
 
 
 @dataclass(frozen=True)
@@ -166,6 +176,28 @@ async def _remove_tutor_role(session: AsyncSession, seed: Seed) -> Party:
     return await roles.remove_tutor_role(session, seed.person_id)
 
 
+async def _remove_student_role_with_its_tutor_of(session: AsyncSession, seed: Seed) -> Party:
+    session.add_all([
+        Student(person_id=seed.person_id, preferred_meeting_tool=PreferredMeetingTool.DISCORD),
+        Tutor(person_id=seed.other_id),
+        PartyRelation(from_party_id=seed.other_id, to_party_id=seed.person_id, type=PartyRelationType.TUTOR_OF),
+    ])
+    await session.flush()
+    session.expunge_all()
+    return await roles.remove_student_role(session, seed.person_id)
+
+
+async def _remove_tutor_role_with_its_tutor_of(session: AsyncSession, seed: Seed) -> Party:
+    session.add_all([
+        Tutor(person_id=seed.person_id),
+        Student(person_id=seed.other_id, preferred_meeting_tool=PreferredMeetingTool.DISCORD),
+        PartyRelation(from_party_id=seed.person_id, to_party_id=seed.other_id, type=PartyRelationType.TUTOR_OF),
+    ])
+    await session.flush()
+    session.expunge_all()
+    return await roles.remove_tutor_role(session, seed.person_id)
+
+
 async def _first_contact_info_id(session: AsyncSession, party_id: uuid.UUID) -> uuid.UUID:
     contact_info_id = await session.scalar(
         select(ContactInfo.id).where(ContactInfo.party_id == party_id, ContactInfo.type == ContactInfoType.EMAIL)
@@ -247,6 +279,19 @@ WRITES = [
     Write(roles.put_tutor_role, _replace_tutor_role, touches=lambda seed: (seed.person_id,), label="[replace]"),
     Write(roles.remove_student_role, _remove_student_role, touches=lambda seed: (seed.person_id,)),
     Write(roles.remove_tutor_role, _remove_tutor_role, touches=lambda seed: (seed.person_id,)),
+    # Decision O of bot-decoupling: the tutor_of goes with the role, and its other side moves too.
+    Write(
+        roles.remove_student_role,
+        _remove_student_role_with_its_tutor_of,
+        touches=lambda seed: (seed.person_id, seed.other_id),
+        label="[with a tutor_of]",
+    ),
+    Write(
+        roles.remove_tutor_role,
+        _remove_tutor_role_with_its_tutor_of,
+        touches=lambda seed: (seed.person_id, seed.other_id),
+        label="[with a tutor_of]",
+    ),
     # A relation belongs to both aggregates.
     Write(relations.put_relation, _put_relation, touches=lambda seed: (seed.company_id, seed.person_id)),
     Write(relations.remove_relation, _remove_relation, touches=lambda seed: (seed.company_id, seed.person_id)),
@@ -281,8 +326,18 @@ WRITES = [
 async def seed(session: AsyncSession, backdate) -> Seed:
     person = await persons.create_person(session, firstname="Max", lastname="Mustermann", contact_infos=CONTACT_INFOS)
     company = await companies.create_company(session, name="Musterfirma GmbH")
-    await backdate(person.id, company.id)
-    return Seed(person_id=person.id, company_id=company.id)
+    other = await persons.create_person(session, firstname="Erika", lastname="Musterfrau")
+    bystander = await persons.create_person(session, firstname="Berta", lastname="Mustermann")
+    session.add(PartyRelation(from_party_id=bystander.id, to_party_id=person.id, type=PartyRelationType.PARENT_OF))
+    seed = Seed(person_id=person.id, company_id=company.id, other_id=other.id, bystander_id=bystander.id)
+    await backdate(*seed.parties)
+    return seed
+
+
+async def _stamps(session: AsyncSession, party_ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, datetime]:
+    """``updated_at`` of those of the parties that still exist, straight from the database."""
+    rows = await session.execute(select(Party.id, Party.updated_at).where(Party.id.in_(party_ids)))
+    return dict(rows.tuples().all())
 
 
 @pytest.mark.parametrize("write", WRITES, ids=lambda write: write.id)
@@ -361,12 +416,37 @@ async def test_the_detail_maps_both_roles_with_their_subjects_in_title_order(ses
     assert updated.student == detail.student and updated.tutor == detail.tutor
 
 
-async def test_a_write_leaves_the_other_parties_alone(session: AsyncSession, seed: Seed, updated_at):
-    before = await updated_at(seed.company_id)
+@pytest.mark.parametrize("write", WRITES, ids=lambda write: write.id)
+async def test_write_moves_no_party_beyond_those_it_touches(write: Write, session: AsyncSession, seed: Seed):
+    untouched = seed.parties - set(write.touches(seed))
+    before = await _stamps(session, untouched)
 
-    await persons.update_person(session, seed.person_id, firstname="Maximilian")
+    await write.run(session, seed)
 
-    assert await updated_at(seed.company_id) == before
+    after = await _stamps(session, untouched)
+    assert seed.bystander_id in after
+    assert after == {party_id: before[party_id] for party_id in after}
+
+
+async def test_subject_writes_move_no_party(session: AsyncSession, seed: Seed):
+    """Subjects are reference data: renaming one that both roles hold moves neither person."""
+    held = await subjects.create_subject(session, title="Mathematics")
+    session.add_all([
+        Student(
+            person_id=seed.person_id,
+            preferred_meeting_tool=PreferredMeetingTool.DISCORD,
+            student_subjects=[StudentSubject(subject_id=held.id)],
+        ),
+        Tutor(person_id=seed.other_id, tutor_subjects=[TutorSubject(subject_id=held.id)]),
+    ])
+    await session.flush()
+    before = await _stamps(session, seed.parties)
+
+    await subjects.update_subject(session, held.id, title="Maths")
+    spare = await subjects.create_subject(session, title="Latin")
+    await subjects.delete_subject(session, spare.id)
+
+    assert await _stamps(session, seed.parties) == before
 
 
 @pytest.mark.parametrize("target", ["person", "company"])
