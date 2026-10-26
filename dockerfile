@@ -25,7 +25,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY app ./app
 
-FROM python:3.14-slim-bookworm AS runtime
+FROM python:3.15-slim-bookworm AS runtime
 
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONPATH="/app" \
