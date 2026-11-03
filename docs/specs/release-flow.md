@@ -7,7 +7,8 @@
 > Platform arc (skillforge first, then skillbot and skillsite): skillbot adopted the flow (skillbot#10) and
 > released `v0.1.0` through it on 2026-09-21. **Amended 2026-10-01:** Dokploy ran a compose file it stores, never
 > the repo's; the deploy now stores the released `compose.yml` first ("Which compose does Dokploy run?",
-> [skill-platform-workflows#6][workflows-6]).
+> [skill-platform-workflows#6][workflows-6]). **Amended 2026-11-03:** only the maintainer merges, every PR lands
+> by squash, and `git ship` is no longer a way onto `main` (decisions C and F, *Merging*).
 > This spec is also the decision record (no separate ADR: *Decided defaults*, *Verified behavior* and
 > *Trade-offs accepted* carry the why). Written in skillforge because it is the first adopter; the **platform
 > contract** below is what the other repos copy. Every GitHub behavior this spec relies on was verified in a
@@ -74,10 +75,10 @@ Three mental models for one person is friction on every release. On top of that:
 |---|---|---|
 | **A - Release mechanism** | [release-please](https://github.com/googleapis/release-please) (`release-please-action`, pinned by SHA). It keeps one *release PR* up to date (version bump + `CHANGELOG.md`); shipping that PR is the release. | Same tool for Python and Node; version derived from conventional commits; replaces the hand-written bump workflow. Verified with `git ship` and the rulesets; squash merging is release-please's own default. |
 | **B - Environments** | Prod only. One GitHub Environment `production` per repo. | Decided 2026-09-19. |
-| **C - Branching** | Short-lived feature branches -> PR -> squash-merged onto `main` with `gh pr merge <n> -sd --auto` (waits for `check`, deletes the branch). `git ship` (local fast-forward) stays allowed, but only works when the branch tip already carries a green `check`. No release branch. Tags `vX.Y.Z` on `main`. | Linear history and signatures already enforced; a second branch would be a second history to keep in sync. |
+| **C - Branching** | Short-lived feature branches -> PR -> squash-merged onto `main` with `gh pr merge <n> -sd --auto` (waits for `check`, deletes the branch); a GitHub stack with `gh stack merge <n> --squash`. Only the maintainer merges, and every PR lands by squash, so `main` stays "Verified"; `git ship` (local fast-forward) is no longer a way onto `main`. No release branch. Tags `vX.Y.Z` on `main`. _(Amended 2026-11-03: who merges, and squash only.)_ | Linear history and signatures already enforced; a second branch would be a second history to keep in sync. The maintainer is the one review before a merge feeds the release PR and the changelog; a squash gives one GitHub-signed commit per slice (D, F). |
 | **D - History on `main`** | One PR per slice (not per spec); before shipping, fold fixups and "tick the spec" commits into the slice they belong to. Every commit on `main` is green on its own and conventional. A squash merge does the folding by itself: one PR, one commit, so the PR title must be the conventional message (for a single-commit PR GitHub takes that commit's subject instead). | ~6-8 commits for an arc like `crm-api.md` instead of ~40 - but not 1-2, which would destroy `git bisect` and the story. |
 | **E - Release PR author** | An org-wide **GitHub App**; release-please runs with its installation token. The App is **`skill-platform-release`** - the installed `skillsite-release-bot`, renamed (no `bot` in the name: GitHub appends `[bot]`, and it keeps clear of *skillbot*) and extended to the other repos. It started as releases only; since 2026-09-20 it is the platform's one automation App and also puts issues and PRs on the project board ([`project-intake.md`](project-intake.md)) - each workflow narrows its token to the permissions it needs. | PRs opened with `GITHUB_TOKEN` get no CI run, so the required check (G) would reject the release PR. Verified; see below. |
-| **F - Signatures** | Feature commits carry Leon's signature when they land via `git ship`, GitHub's when they are squash-merged. The one release commit per version is created through the GitHub API and carries GitHub's signature ("Verified"). Tags are lightweight and unsigned. | Satisfies the `required_signatures` rule; same trust level as today's bump PR. |
+| **F - Signatures** | Feature commits on `main` carry GitHub's signature, because every PR is squash-merged. _(Amended 2026-11-03: no `git ship` path.)_ The one release commit per version is created through the GitHub API and carries GitHub's signature ("Verified"). Tags are lightweight and unsigned. | Satisfies the `required_signatures` rule; same trust level as today's bump PR. |
 | **G - Gate on `main`** | The `main` ruleset additionally requires the status check **`check`**. Every repo's CI exposes a job with exactly this name. | A fast-forward keeps the commit SHA, so the green check from the PR still counts on push (verified); a squash merge enforces the check itself. A tip without a green check - unpushed, still running or cancelled - is rejected, which is why `--auto` is the default way to merge. |
 | **H - Deploy transport** | Dokploy **API** (`x-api-key`): `compose.update` with the released `compose.yml` (raw source, read back), then `compose.deploy`, then poll `deployment.allByCompose` until `done` / `error`, then verify the health endpoint. The deploy webhook is removed. | Authenticated, observable, fails loudly. Endpoints proven in `github-actions-playground`. Dokploy runs the compose it stores, not the repo's - without `compose.update`, decision I pins nothing. |
 | **I - Deployed version** | `compose.yml` pins `image: ...:vX.Y.Z`, rewritten by release-please in the release commit (P1-1; P0 deployed `:latest`). | One annotation per `image:` line; `main` then records what prod runs, and a restart cannot pull another version. |
@@ -115,14 +116,14 @@ release cycles shipped with the real `git ship` alias.
   with a squash merge the PR title is the message that counts, so it is the thing to get right.
 - **The release workflow holds a Dokploy API key**, which can do more than a single-purpose webhook URL. It
   lives only in the `production` environment, restricted to `main`.
-- **One commit per release is signed by GitHub, not by Leon.** It is mechanical, reviewable as a PR, and the
+- **One commit per release is signed by GitHub, not by the maintainer.** It is mechanical, reviewable as a PR, and the
   same trust level today's bump PR has. Squash-merged PRs are GitHub-signed in the same way.
 - **Stacks only through GitHub.** A squash merge gives the lower commits new SHAs, so a branch stacked by hand
   conflicts with `main` - this happened to #118 and #119 after #114-#116 were squashed. GitHub's stacked pull
   requests (`gh stack`, in public preview) retarget and rebase the PRs above a merged one themselves, so
   dependent slices form such a stack; every other PR stays independent.
-- **Feature commits on `main` are GitHub-signed, not Leon-signed**, because squash is the default. `git ship`
-  would keep his signature, but needs a green tip and therefore a wait that `--auto` does for you.
+- **Feature commits on `main` are GitHub-signed, not maintainer-signed**, because squash is the default. `git ship`
+  would keep the maintainer's signature, but needs a green tip and therefore a wait that `--auto` does for you.
 - **The platform depends on one GitHub App and its private key.** If the App is unavailable, the fallback is
   to close and reopen the release PR as a user so CI runs on it.
 - **Every repo's deploy follows a moving tag in another repo.** `@v1` is what makes one fix reach three repos
@@ -177,8 +178,9 @@ What is identical in every repo; everything else is repo-specific detail behind 
 - **Environment `production` (per repo):** secret `DOKPLOY_API_KEY`, variables `DOKPLOY_COMPOSE_ID` and
   `HEALTH_URL` (empty for services without HTTP). Deployment branches restricted to `main`. No required
   reviewer - shipping the release PR already is the approval.
-- **Merging:** `gh pr merge <n> --squash --delete-branch --auto`; the repo settings *Allow auto-merge* and
-  *Automatically delete head branches* are on.
+- **Merging:** only the maintainer merges - `gh pr merge <n> --squash --delete-branch --auto`, a GitHub stack with
+  `gh stack merge <n> --squash`; agents push branches and open PRs, and every PR lands only by squash. The repo
+  settings *Allow auto-merge* and *Automatically delete head branches* are on.
 - **Rulesets:** `main` - no deletion, no force-push, linear history, signatures, required check `check`.
   Tags `v*` - no deletion, no update.
 - **Conventions:** conventional commits; all actions pinned by SHA and kept current by Dependabot (grouped).
@@ -300,8 +302,8 @@ and `pre-push` hooks calling `just` recipes.)
 result.) skillbot's existing deploy notification therefore goes away when it adopts this flow.
 
 **P1-4 - History convention in `CLAUDE.md`.** Decision D as a short rule set, including "one PR per slice" and
-"fold `docs(specs): tick` commits into the slice". *Done: the "History on `main`" rule under Conventions in
-[`CLAUDE.md`](../../CLAUDE.md).*
+"fold `docs(specs): tick` commits into the slice". *Done: the "History on `main`" rule, since 2026-11-03 in the
+section "Branches, PRs and merging" of [`AGENTS.md`](../../AGENTS.md).*
 
 ### Future considerations (P2)
 
@@ -320,7 +322,7 @@ result.) skillbot's existing deploy notification therefore goes away when it ado
   - [x] The next release deploys through it. *(`v0.5.0`, 2026-09-25: the release run's
         `Deploy / Deploy production via Dokploy API` job called the shared workflow and passed)*
 - **Code scanning default setup**, if alerts start being read.
-- **A required reviewer on `production`**, if someone other than Leon ever ships.
+- **A required reviewer on `production`**, if someone other than the maintainer ever ships.
 
 ## Adoption in the other repos
 
@@ -356,6 +358,8 @@ platform contract): a new adopter copies the two callers from its README and `ci
 - **No ADR.** This spec is the decision record; a separate ADR would repeat *Decided defaults* in prose.
 - **Squash via `gh pr merge <n> -sd --auto` is the default merge path** (decisions C and G). `git ship` stays
   allowed but needs a green tip; once the required check was live it failed in daily use, which settled it.
+  _Amended 2026-11-03:_ only the maintainer merges, and every PR lands only by squash (a stack with
+  `gh stack merge <n> --squash`); `git ship` is no longer a way onto `main`.
 - **No local hooks and no deploy notifications** - P1-2 and P1-3 were dropped on 2026-09-20; P1 is P1-1 and P1-4.
 - **skillbot's Dokploy target** (decided at adoption, 2026-09-21): a repo `compose.yml` with the pinned image and
   a Dokploy *compose* service on it - the uniform option. The deploy script did not have to learn
@@ -394,18 +398,18 @@ One PR per requirement, `just check` green on each:
    *Done: `skill-platform-workflows` `v1.0.0`, #133.* Then skillbot (*adopted 2026-09-21, skillbot#10*), then
    skillsite.
 
-**Dependency:** Leon extends the App installation and creates the org variable/secret, the `production`
+**Dependency:** the maintainer extends the App installation and creates the org variable/secret, the `production`
 environment and the Dokploy API key - these cannot be done from a PR.
 
 ## Rules for implementing agents
 
-- Follow [`CLAUDE.md`](../../CLAUDE.md): English only, symbol references instead of line numbers, never
+- Follow [`AGENTS.md`](../../AGENTS.md): English only, symbol references instead of line numbers, never
   hand-edit `openapi.json`, `just check` green before every commit, conventional commits.
 - Pin every action by full SHA with a version comment, as the existing workflows do.
 - Never print or echo secrets; pass the Dokploy API key through a curl config file, not the command line.
 - Do not add rollback, digest pinning or attestation logic - they are non-goals, not omissions.
-- Repo settings, rulesets, the App installation and Dokploy configuration are changed by Leon, not by an
-  agent; describe the exact setting in the PR instead.
+- Repo settings, rulesets, the App installation and Dokploy configuration are changed by the maintainer, not by
+  an agent; describe the exact setting in the PR instead.
 - Tick the acceptance checkboxes in this file in the PR that fulfils them and flip the status line when P0 is done.
 
 [workflows]: https://github.com/Nachhilfe-Leon-Weimann/skill-platform-workflows
