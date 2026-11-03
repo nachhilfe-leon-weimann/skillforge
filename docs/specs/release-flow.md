@@ -8,7 +8,9 @@
 > released `v0.1.0` through it on 2026-09-21. **Amended 2026-10-01:** Dokploy ran a compose file it stores, never
 > the repo's; the deploy now stores the released `compose.yml` first ("Which compose does Dokploy run?",
 > [skill-platform-workflows#6][workflows-6]). **Amended 2026-11-03:** only the maintainer merges, every PR lands
-> by squash, and `git ship` is no longer a way onto `main` (decisions C and F, *Merging*).
+> by squash, and `git ship` is no longer a way onto `main` (decisions C and F, *Merging*). **Amended 2026-11-04:**
+> branch commits are signed as configured (decision F); squash commits take the PR title and an empty body (decision
+> D); goal 5 and the signature trade-off keep `git ship` as history.
 > This spec is also the decision record (no separate ADR: *Decided defaults*, *Verified behavior* and
 > *Trade-offs accepted* carry the why). Written in skillforge because it is the first adopter; the **platform
 > contract** below is what the other repos copy. Every GitHub behavior this spec relies on was verified in a
@@ -45,7 +47,7 @@ Three mental models for one person is friction on every release. On top of that:
 4. **The deploy reports the truth.** The workflow talks to the Dokploy API, waits for the deployment to finish
    and verifies the running version. A failed deploy is a red workflow.
 5. **`main` only accepts green commits.** PRs land by squash merge with `gh pr merge --auto`, which waits for the
-   check; a local fast-forward (`git ship`) is only accepted when its tip is already green.
+   check. *(Until 2026-11-03 a local fast-forward (`git ship`) was accepted when its tip was already green.)*
 6. **Less machinery than today**, not more. Everything the platform does not need is removed.
 
 ## Non-goals
@@ -76,10 +78,10 @@ Three mental models for one person is friction on every release. On top of that:
 | **A - Release mechanism** | [release-please](https://github.com/googleapis/release-please) (`release-please-action`, pinned by SHA). It keeps one *release PR* up to date (version bump + `CHANGELOG.md`); shipping that PR is the release. | Same tool for Python and Node; version derived from conventional commits; replaces the hand-written bump workflow. Verified with `git ship` and the rulesets; squash merging is release-please's own default. |
 | **B - Environments** | Prod only. One GitHub Environment `production` per repo. | Decided 2026-09-19. |
 | **C - Branching** | Short-lived feature branches -> PR -> squash-merged onto `main` with `gh pr merge <n> -sd --auto` (waits for `check`, deletes the branch); a GitHub stack with `gh stack merge <n> --squash`. Only the maintainer merges, and every PR lands by squash, so `main` stays "Verified"; `git ship` (local fast-forward) is no longer a way onto `main`. No release branch. Tags `vX.Y.Z` on `main`. _(Amended 2026-11-03: who merges, and squash only.)_ | Linear history and signatures already enforced; a second branch would be a second history to keep in sync. The maintainer is the one review before a merge feeds the release PR and the changelog; a squash gives one GitHub-signed commit per slice (D, F). |
-| **D - History on `main`** | One PR per slice (not per spec); before shipping, fold fixups and "tick the spec" commits into the slice they belong to. Every commit on `main` is green on its own and conventional. A squash merge does the folding by itself: one PR, one commit, so the PR title must be the conventional message (for a single-commit PR GitHub takes that commit's subject instead). | ~6-8 commits for an arc like `crm-api.md` instead of ~40 - but not 1-2, which would destroy `git bisect` and the story. |
+| **D - History on `main`** | One PR per slice (not per spec); before shipping, fold fixups and "tick the spec" commits into the slice they belong to. Every commit on `main` is green on its own and conventional. A squash merge does the folding by itself: one PR, one commit, so the PR title must be the conventional message (the squash commit takes the PR title and no body). | ~6-8 commits for an arc like `crm-api.md` instead of ~40 - but not 1-2, which would destroy `git bisect` and the story. |
 | **E - Release PR author** | An org-wide **GitHub App**; release-please runs with its installation token. The App is **`skill-platform-release`** - the installed `skillsite-release-bot`, renamed (no `bot` in the name: GitHub appends `[bot]`, and it keeps clear of *skillbot*) and extended to the other repos. It started as releases only; since 2026-09-20 it is the platform's one automation App and also puts issues and PRs on the project board ([`project-intake.md`](project-intake.md)) - each workflow narrows its token to the permissions it needs. | PRs opened with `GITHUB_TOKEN` get no CI run, so the required check (G) would reject the release PR. Verified; see below. |
-| **F - Signatures** | Feature commits on `main` carry GitHub's signature, because every PR is squash-merged. _(Amended 2026-11-03: no `git ship` path.)_ The one release commit per version is created through the GitHub API and carries GitHub's signature ("Verified"). Tags are lightweight and unsigned. | Satisfies the `required_signatures` rule; same trust level as today's bump PR. |
-| **G - Gate on `main`** | The `main` ruleset additionally requires the status check **`check`**. Every repo's CI exposes a job with exactly this name. | A fast-forward keeps the commit SHA, so the green check from the PR still counts on push (verified); a squash merge enforces the check itself. A tip without a green check - unpushed, still running or cancelled - is rejected, which is why `--auto` is the default way to merge. |
+| **F - Signatures** | Feature commits on `main` carry GitHub's signature, because every PR is squash-merged; branch commits, an agent's included, are signed as configured. _(Amended 2026-11-03: no `git ship` path; 2026-11-04: branch signing.)_ The one release commit per version is created through the GitHub API and carries GitHub's signature ("Verified"). Tags are lightweight and unsigned. | Satisfies the `required_signatures` rule; same trust level as today's bump PR. |
+| **G - Gate on `main`** | The `main` ruleset additionally requires the status check **`check`**. Every repo's CI exposes a job with exactly this name. | A squash merge enforces the check itself (until 2026-11-03 a fast-forward kept the SHA and its green check, verified). A tip without a green check - unpushed, still running or cancelled - is rejected, which is why `--auto` is the default way to merge. |
 | **H - Deploy transport** | Dokploy **API** (`x-api-key`): `compose.update` with the released `compose.yml` (raw source, read back), then `compose.deploy`, then poll `deployment.allByCompose` until `done` / `error`, then verify the health endpoint. The deploy webhook is removed. | Authenticated, observable, fails loudly. Endpoints proven in `github-actions-playground`. Dokploy runs the compose it stores, not the repo's - without `compose.update`, decision I pins nothing. |
 | **I - Deployed version** | `compose.yml` pins `image: ...:vX.Y.Z`, rewritten by release-please in the release commit (P1-1; P0 deployed `:latest`). | One annotation per `image:` line; `main` then records what prod runs, and a restart cannot pull another version. |
 | **J - Health contract** | Every service with a public HTTP endpoint answers `GET /health` with at least `status` and `version`. Services without HTTP (skillbot) are verified by the Dokploy deployment status alone. | Lets the deploy job prove that the *new* version is the one answering. |
@@ -122,8 +124,9 @@ release cycles shipped with the real `git ship` alias.
   conflicts with `main` - this happened to #118 and #119 after #114-#116 were squashed. GitHub's stacked pull
   requests (`gh stack`, in public preview) retarget and rebase the PRs above a merged one themselves, so
   dependent slices form such a stack; every other PR stays independent.
-- **Feature commits on `main` are GitHub-signed, not maintainer-signed**, because squash is the default. `git ship`
-  would keep the maintainer's signature, but needs a green tip and therefore a wait that `--auto` does for you.
+- **Feature commits on `main` are GitHub-signed, not maintainer-signed**, because every PR is squash-merged. Until
+  2026-11-03 `git ship` kept the maintainer's signature, but needed a green tip and therefore a wait that `--auto`
+  does for you.
 - **The platform depends on one GitHub App and its private key.** If the App is unavailable, the fallback is
   to close and reopen the release PR as a user so CI runs on it.
 - **Every repo's deploy follows a moving tag in another repo.** `@v1` is what makes one fix reach three repos
@@ -356,8 +359,8 @@ platform contract): a new adopter copies the two callers from its README and `ci
   hand. `changelog-sections` keeps it to what a consumer cares about: 26 features and 12 fixes instead of an
   additional 34 documentation entries.
 - **No ADR.** This spec is the decision record; a separate ADR would repeat *Decided defaults* in prose.
-- **Squash via `gh pr merge <n> -sd --auto` is the default merge path** (decisions C and G). `git ship` stays
-  allowed but needs a green tip; once the required check was live it failed in daily use, which settled it.
+- **Squash via `gh pr merge <n> -sd --auto` is the default merge path** (decisions C and G). `git ship`
+  stayed allowed but needed a green tip; once the required check was live it failed in daily use, which settled it.
   _Amended 2026-11-03:_ only the maintainer merges, and every PR lands only by squash (a stack with
   `gh stack merge <n> --squash`); `git ship` is no longer a way onto `main`.
 - **No local hooks and no deploy notifications** - P1-2 and P1-3 were dropped on 2026-09-20; P1 is P1-1 and P1-4.

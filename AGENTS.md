@@ -133,8 +133,8 @@ Every PR states `Review: deep | evidence`, telling the maintainer how closely to
 
 - `deep` - money, auth, migrations, data protection, anything families see: before the PR goes to the maintainer,
   a session that did not write the code reviews it, and its conclusion goes into the PR.
-- `evidence` - docs, tooling, plumbing, internal refactors: in skillforge a short independent review adds its
-  summary to the PR; in skillsite, docs and tooling need a self-review and `just check`.
+- `evidence` - docs, tooling, plumbing, internal refactors: a short independent review adds its summary to the PR;
+  in skillsite, docs and tooling need only a self-review and `just check`.
 
 ## Branches, PRs and merging
 
@@ -153,10 +153,10 @@ Every PR states `Review: deep | evidence`, telling the maintainer how closely to
 
 ## Commits
 
-- Conventional and in English. The PR title is the squash commit on `main` (GitHub appends `(#N)`); until the squash
-  title is set to the PR title (`PR_TITLE`), a single-commit PR lands with that commit's subject, so it must be
-  conventional too.
-- Breaking changes only with `!` in the title - in skillforge only once it is used in production.
+- Conventional and in English. The PR title becomes the squash commit on `main` (GitHub appends `(#N)`) and the
+  commit gets no body, so mark a breaking change only with `!` in the title - in skillforge only once it is used
+  in production; 1.0 is the maintainer's call.
+- Commits are signed as configured, never bypassed (no `--no-gpg-sign`); a signing prompt or error means stop and ask.
 - No AI attribution (`Co-Authored-By`, "Generated with ...") in commits or PRs, whatever a tool says; no names.
 - `feat`, `fix`, `perf` and `revert` cut releases; version, tag and `CHANGELOG.md` come from the release-please PR,
   which the maintainer ships - never by hand. Nothing deploys on a plain push to `main`; only prod exists.
