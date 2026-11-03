@@ -56,7 +56,7 @@ async def find_user_account_by_party(session: AsyncSession, party_id: uuid.UUID)
     return await session.scalar(select(UserAccount).where(UserAccount.party_id == party_id))
 
 
-def _account(condition: ColumnElement[bool]) -> Select[tuple[UserAccount]]:
+def _account(condition: ColumnElement[bool]) -> Select[UserAccount]:
     """The one statement that reads an account: its stored roles loaded, the session's copy refreshed."""
     return (
         select(UserAccount)
@@ -66,7 +66,7 @@ def _account(condition: ColumnElement[bool]) -> Select[tuple[UserAccount]]:
     )
 
 
-async def _load(session: AsyncSession, user_id: uuid.UUID, statement: Select[tuple[UserAccount]]) -> UserAccount:
+async def _load(session: AsyncSession, user_id: uuid.UUID, statement: Select[UserAccount]) -> UserAccount:
     account = await _read(session, statement)
     if account is None:
         raise UserAccountNotFoundError(f"No user account with id {user_id}")
@@ -74,7 +74,7 @@ async def _load(session: AsyncSession, user_id: uuid.UUID, statement: Select[tup
     return account
 
 
-async def _read(session: AsyncSession, statement: Select[tuple[UserAccount]]) -> UserAccount | None:
+async def _read(session: AsyncSession, statement: Select[UserAccount]) -> UserAccount | None:
     # ``populate_existing`` overwrites the session's copy, and the session does not autoflush: a change
     # still pending on the account or its roles would be silently lost without this flush.
     await session.flush()

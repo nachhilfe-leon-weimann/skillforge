@@ -1,7 +1,7 @@
 """Fixtures for auth tests that run the real app, or the auth services, against the test database."""
 
 from collections import Counter
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Iterable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -91,7 +91,7 @@ async def link_bot(session: AsyncSession) -> AsyncIterator[AsyncClient]:
 
 
 @asynccontextmanager
-async def _api_client(session: AsyncSession, *scopes: Scope) -> AsyncIterator[AsyncClient]:
+async def _api_client(session: AsyncSession, *scopes: Scope) -> AsyncGenerator[AsyncClient]:
     """An API client holding ``scopes`` whose requests run on ``session``.
 
     Every request is wrapped in a SAVEPOINT that is rolled back when the request fails, which
@@ -103,7 +103,7 @@ async def _api_client(session: AsyncSession, *scopes: Scope) -> AsyncIterator[As
 
 
 @asynccontextmanager
-async def _app_client(session: AsyncSession, *, headers: dict[str, str] | None = None) -> AsyncIterator[AsyncClient]:
+async def _app_client(session: AsyncSession, *, headers: dict[str, str] | None = None) -> AsyncGenerator[AsyncClient]:
     """An API client of the auth routes whose requests run on ``session``, each in a SAVEPOINT (see ``_api_client``)."""
 
     async def request_session() -> AsyncIterator[AsyncSession]:
@@ -309,7 +309,7 @@ def command_session(session: AsyncSession, monkeypatch) -> None:
     transaction."""
 
     @asynccontextmanager
-    async def _session() -> AsyncIterator[AsyncSession]:
+    async def _session() -> AsyncGenerator[AsyncSession]:
         async with session.begin_nested():
             yield session
 

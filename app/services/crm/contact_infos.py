@@ -1,7 +1,7 @@
 """Contact infos: owned children of a party, addressed by their own ID under the party's."""
 
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 
 from sqlalchemy import select
@@ -111,7 +111,7 @@ async def _get_contact_info(session: AsyncSession, party_id: uuid.UUID, contact_
 
 
 @asynccontextmanager
-async def _unique_per_party(session: AsyncSession) -> AsyncIterator[None]:
+async def _unique_per_party(session: AsyncSession) -> AsyncGenerator[None]:
     """Write the change made inside the block in a SAVEPOINT and translate a uq_contact_info conflict.
 
     Uniqueness is decided by the constraint, not by check-then-insert; the flush forces the violation

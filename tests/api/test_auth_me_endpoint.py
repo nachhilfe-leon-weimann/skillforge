@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -162,7 +162,7 @@ def test_me_depends_on_the_principal_only():
 
 
 @asynccontextmanager
-async def _client() -> AsyncIterator[AsyncClient]:
+async def _client() -> AsyncGenerator[AsyncClient]:
     app.dependency_overrides[get_auth_settings] = lambda: _auth_settings()
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:

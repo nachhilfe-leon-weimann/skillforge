@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
@@ -135,7 +135,7 @@ async def _override_db_session() -> AsyncIterator[object]:
 
 
 @asynccontextmanager
-async def _client(*, raise_app_exceptions: bool = True) -> AsyncIterator[AsyncClient]:
+async def _client(*, raise_app_exceptions: bool = True) -> AsyncGenerator[AsyncClient]:
     app.dependency_overrides[get_db_session] = _override_db_session
     app.dependency_overrides[get_auth_settings] = lambda: _auth_settings()
     transport = ASGITransport(app=app, raise_app_exceptions=raise_app_exceptions)

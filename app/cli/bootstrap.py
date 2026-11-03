@@ -7,7 +7,7 @@ reads it from the terminal and passes it on. It must never go through the logger
 import argparse
 import asyncio
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from pydantic import TypeAdapter, ValidationError
@@ -125,7 +125,7 @@ def _login_email(value: str) -> str:
 
 
 @asynccontextmanager
-async def _session() -> AsyncIterator[AsyncSession]:
+async def _session() -> AsyncGenerator[AsyncSession]:
     """A session on the configured database whose transaction commits when the block succeeds."""
     db = Database.from_url(str(get_settings().db.url))
     try:

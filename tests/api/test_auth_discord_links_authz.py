@@ -1,7 +1,7 @@
 """Runtime guards of the Discord link routes: reads need `auth:discord-links:read`, writes `auth:users:manage`, and
 redeeming a link code is the bot's alone (`auth:users:exchange`, an application)."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
 
@@ -140,7 +140,7 @@ async def _no_db_session() -> AsyncIterator[object]:
 
 
 @asynccontextmanager
-async def _client() -> AsyncIterator[AsyncClient]:
+async def _client() -> AsyncGenerator[AsyncClient]:
     app.dependency_overrides[get_db_session] = _no_db_session
     app.dependency_overrides[get_auth_settings] = lambda: SETTINGS
     try:
