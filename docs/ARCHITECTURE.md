@@ -320,6 +320,6 @@ guardian, ops plane, eventing, integration sync - rested on the bot's job and op
 | How is the DB structured? | [`DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md) |
 | Why was X decided this way? | [`decisions/`](decisions/) |
 | What is planned / design sketches? | [`specs/`](specs/) |
-| Which commands exist? | [`../justfile`](../justfile), [`../CLAUDE.md`](../CLAUDE.md) |
+| Which commands exist? | [`../justfile`](../justfile), [`../AGENTS.md`](../AGENTS.md) |
 | What does the API look like? | [`../openapi.json`](../openapi.json) |
 | How do people get into the system? | [`specs/crm-api.md`](specs/crm-api.md), [CRM](#crm) |

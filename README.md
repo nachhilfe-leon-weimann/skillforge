@@ -80,4 +80,4 @@ Fix forward instead, or first run `alembic downgrade <revision>` from the newer 
 - [`DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md) - the database
 - [`decisions/`](docs/decisions/) - why things were decided (ADRs)
 - [`specs/`](docs/specs/) - work orders, one per arc
-- [`CLAUDE.md`](CLAUDE.md) - commands and conventions for AI assistants
+- [`AGENTS.md`](AGENTS.md) - commands, conventions and working rules for agents
