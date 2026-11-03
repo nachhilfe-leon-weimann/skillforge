@@ -136,7 +136,7 @@ def _reach_alternatives(requirement: dict[str, list[str]], *, operation_id: str 
     is built.
     """
     for scopes in requirement.values():
-        if mixed := {BASE_OF[scope] for scope in scopes if scope in BASE_OF} & set(scopes):
+        if mixed := {base for scope in scopes if (base := BASE_OF.get(scope))} & set(scopes):
             raise RuntimeError(
                 f"Operation {operation_id} demands {', '.join(sorted(mixed))} through require_scopes and "
                 "require_access at once. Drop require_scopes: require_access admits both forms."

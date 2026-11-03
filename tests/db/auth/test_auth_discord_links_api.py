@@ -40,7 +40,10 @@ async def test_link_unlink_read_and_link_again(link_admin: AsyncClient, session:
         "discord_link.removed": 1,
         "discord_link.reactivated": 1,
     })
-    assert all(detail.endswith("by application:00000000-0000-0000-0000-000000000001.") for _, detail in rows)
+    assert all(
+        detail is not None and detail.endswith("by application:00000000-0000-0000-0000-000000000001.")
+        for _, detail in rows
+    )
 
 
 async def test_a_repeated_put_answers_the_same_body(link_admin: AsyncClient, make_person):

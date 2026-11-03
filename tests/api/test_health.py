@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
@@ -174,7 +174,7 @@ def _heartbeat(expires_at: datetime, last_status: WorkerCycleStatus) -> WorkerHe
 
 
 @asynccontextmanager
-async def _client(database: _FakeDatabase) -> AsyncIterator[AsyncClient]:
+async def _client(database: _FakeDatabase) -> AsyncGenerator[AsyncClient]:
     # Stand in for the shared app-lifespan engine so the real health wiring runs
     # against our fake and we can assert it is never disposed per request (#57).
     app.dependency_overrides[get_database] = lambda: database

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
@@ -25,7 +25,7 @@ class _FakeDatabase:
         return True
 
     @asynccontextmanager
-    async def session(self, *, write: bool = True) -> AsyncIterator[object]:
+    async def session(self, *, write: bool = True) -> AsyncGenerator[object]:
         # Mirror Database.session(): hand out a session, never touch the engine.
         self.session_calls += 1
         yield object()

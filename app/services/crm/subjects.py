@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Collection
+from collections.abc import AsyncGenerator, Collection
 from contextlib import asynccontextmanager
 
 from sqlalchemy import exists, func, select
@@ -72,7 +72,7 @@ async def delete_subject(session: AsyncSession, subject_id: int) -> None:
 
 
 @asynccontextmanager
-async def _unique_title(session: AsyncSession) -> AsyncIterator[None]:
+async def _unique_title(session: AsyncSession) -> AsyncGenerator[None]:
     """Write the change made inside the block in a SAVEPOINT and translate a title conflict.
 
     Uniqueness is decided by uq_subject_title_lower, not by check-then-insert; the flush forces the

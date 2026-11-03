@@ -6,7 +6,7 @@ An account belongs to exactly one person party and is created only through ``aut
 """
 
 import uuid
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncGenerator, Iterable
 from contextlib import asynccontextmanager
 
 from sqlalchemy import func, select
@@ -211,7 +211,7 @@ async def _change_email(session: AsyncSession, account: UserAccount, new_email: 
 
 
 @asynccontextmanager
-async def _unique_email(session: AsyncSession) -> AsyncIterator[None]:
+async def _unique_email(session: AsyncSession) -> AsyncGenerator[None]:
     """Write the change made inside the block in a SAVEPOINT and translate an e-mail conflict.
 
     Uniqueness is decided by the constraint, not by check-then-insert; the flush forces the violation

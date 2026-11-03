@@ -1,5 +1,5 @@
-from fastapi import Request
 from fastapi.openapi.models import OAuthFlowClientCredentials, OAuthFlowPassword, OAuthFlows
+from fastapi.requests import HTTPConnection
 from fastapi.security import OAuth2
 from fastapi.security.utils import get_authorization_scheme_param
 
@@ -9,7 +9,7 @@ TOKEN_URL = "/api/v1/auth/token"
 
 
 class OAuth2Bearer(OAuth2):
-    async def __call__(self, request: Request) -> str | None:
+    async def __call__(self, request: HTTPConnection) -> str | None:
         authorization = request.headers.get("Authorization")
         scheme, param = get_authorization_scheme_param(authorization)
         if not authorization or scheme.lower() != "bearer":

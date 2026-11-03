@@ -1,6 +1,6 @@
 """The Discord link routes over their service seams: status mapping, the wire type, the actor (no database)."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -189,7 +189,7 @@ async def _no_db_session() -> AsyncIterator[object]:
 
 
 @asynccontextmanager
-async def _client() -> AsyncIterator[AsyncClient]:
+async def _client() -> AsyncGenerator[AsyncClient]:
     app.dependency_overrides[get_db_session] = _no_db_session
     app.dependency_overrides[get_auth_settings] = lambda: SETTINGS
     try:

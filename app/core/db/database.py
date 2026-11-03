@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
@@ -43,7 +43,7 @@ class Database:
         return cls(engine=engine, session_factory=session_factory)
 
     @asynccontextmanager
-    async def session(self, *, write: bool = True) -> AsyncIterator[AsyncSession]:
+    async def session(self, *, write: bool = True) -> AsyncGenerator[AsyncSession]:
         async with self.session_factory() as session:
             try:
                 if write:
