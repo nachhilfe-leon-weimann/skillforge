@@ -26,8 +26,8 @@ Everything runs through [`just`](justfile), which wraps `uv`:
 
 - `just dev` - API with auto-reload (`http://localhost:8000`).
 - `just check` - lint, format check, typecheck, `openapi-check`, the agent guard's tests (`just test-guard`, node)
-  and the tests without DB; `just check-all` adds the DB tests. `just test`, `just test-db` (only `@pytest.mark.db`), `just test-without-db`, `just test-one <name>`,
-  `just test-file <path>`.
+  and the tests without DB; `just check-all` adds the DB tests. `just test`, `just test-db` (only `@pytest.mark.db`),
+  `just test-without-db`, `just test-one <name>`, `just test-file <path>`.
 - `just openapi` - regenerate `openapi.json`; `just test-clients` builds and smoke-tests the generated client.
 - `just bootstrap-client <client_id> --application "<scopes>" --delegated "<scopes>"` - seed an application client
   with grants in both modes.
