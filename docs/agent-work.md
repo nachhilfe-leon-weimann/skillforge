@@ -33,7 +33,8 @@ Write everything for the repository in English, add no AI attribution lines and 
 ## Handoff
 
 Every session ends with a handoff in the chat; at the end of a phase it also goes onto the phase's last PR as a
-comment. It records the work, links instead of retelling and never becomes a file.
+comment. It records the work, links instead of retelling and never becomes a file. It is as compact as a PR body
+should be: bullets over paragraphs, nothing the diff or the spec already says.
 
 ```markdown
 **Handoff** · YYYY-MM-DD
@@ -59,6 +60,8 @@ comment. It records the work, links instead of retelling and never becomes a fil
 - **Evidence and mutation probes.** "Tests pass" says nothing about what was run. Commands with their numbers and
   named gaps can be checked; a mutation probe shows that the test which should catch a broken money, rights or
   data rule really does.
+- **Compact bodies and handoffs.** The maintainer reads every PR body and handoff; what the diff or the spec already
+  says costs reading time and adds nothing, and a bullet is found again faster than a paragraph.
 - **Stop and ask.** Reversible choices cost less to correct in review than to wait for, so agents decide them
   and say so. What families see, money, data, legal texts and live systems cannot be taken back after the merge,
   so they are asked first - all questions in one message, because every round trip stalls the work.

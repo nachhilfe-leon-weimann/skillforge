@@ -38,7 +38,8 @@ Everything runs through [`just`](justfile), which wraps `uv`:
 
 - **English everywhere**: code, comments, identifiers, docs, specs, configs, commits, PRs. Write "SkillForge", never
   "Forge"; Mermaid diagrams without crossing edges; nothing speculative in docs that describe what exists.
-  Developer artifacts name no person: write "the maintainer".
+  Developer artifacts name no person: write "the maintainer". Exception once the billing domain exists: the German
+  texts families see (invoice lines, header and footer) live in one place of it, verbatim from `billing.md`.
 - **Reference code by symbol, not line number** - in Markdown, link the file and name the function, class or
   constant (`MAX_PAGE_LIMIT` in `pagination.py`); line anchors rot. After moving code, rewrite every path that
   names the old place, specs included, and note the move in the spec's status block.
@@ -110,9 +111,14 @@ Everything runs through [`just`](justfile), which wraps `uv`:
 - **Stop at once** on a credential prompt, real personal data in view, a live system the work would need (the
   production database, a third-party API on a real account) and a spec-code contradiction in a money path.
 - **Specs while implementing**: a slice PR updates status, checkboxes and obvious slips; decisions change only with
-  the maintainer's approval. A slice that is too big may be split (reason in the PR); combining slices needs asking.
+  the maintainer's approval. A slice that outgrows one review ([`docs/specs/README.md`](docs/specs/README.md)) may
+  be split into a stack, each PR with its tests (reason in the PR) - the one exception to one PR per slice;
+  combining slices needs asking.
 - **Briefs and handoffs** follow the [agent work guide](docs/agent-work.md): a subagent that does not load this file
   gets its paragraph verbatim; a handoff goes into the chat, for a phase also onto its last PR, never into a file.
+  PR bodies and handoffs are as compact as possible: bullets over paragraphs, nothing the diff or the spec says.
+- **Billing slices run only in Claude Code**: only there do the maintainer's deny rules and guard hook apply; no
+  other agent tool takes them.
 
 ## Definition of done
 

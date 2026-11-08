@@ -10,7 +10,7 @@
 
 ## What changed
 
-<!-- Grouped by file or topic. -->
+<!-- Bullets, grouped by file or topic; only what the diff and the spec do not show. -->
 
 ## How it was checked
 
