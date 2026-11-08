@@ -25,8 +25,8 @@ commands, conventions and working rules; the _why_ lives in [`docs/`](docs/). "T
 Everything runs through [`just`](justfile), which wraps `uv`:
 
 - `just dev` - API with auto-reload (`http://localhost:8000`).
-- `just check` - lint, format check, typecheck, `openapi-check` and the tests without DB; `just check-all` adds the
-  DB tests. `just test`, `just test-db` (only `@pytest.mark.db`), `just test-without-db`, `just test-one <name>`,
+- `just check` - lint, format check, typecheck, `openapi-check`, the agent guard's tests (`just test-guard`, node)
+  and the tests without DB; `just check-all` adds the DB tests. `just test`, `just test-db` (only `@pytest.mark.db`), `just test-without-db`, `just test-one <name>`,
   `just test-file <path>`.
 - `just openapi` - regenerate `openapi.json`; `just test-clients` builds and smoke-tests the generated client.
 - `just bootstrap-client <client_id> --application "<scopes>" --delegated "<scopes>"` - seed an application client
@@ -80,6 +80,8 @@ Everything runs through [`just`](justfile), which wraps `uv`:
   maintainer runs; agents see only counts or redacted output.
 - **Secrets**: never read or print `.env` files, only the tracked `*.example` files. No environment dumps, no remote
   shells. A prompt for credentials or a login means stop and ask.
+- **The agent guard** (`.claude/hooks/guard.mjs`) blocks merges, secret reads, remote shells and repo administration;
+  it catches accidents, it is no security boundary. A block means stop and ask, never work around it.
 - **No new external service** without asking. **Legal texts** change only on an explicit request; flag a change that
   may affect one.
 - **The configured database may be production.** The settings read `.env`, and `.env.example` names Neon as the

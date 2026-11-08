@@ -13,9 +13,9 @@ typecheck:
 
 static-checks: lint format-check typecheck openapi-check
 
-check: static-checks test-without-db
+check: static-checks test-guard test-without-db
 
-check-all: static-checks test
+check-all: static-checks test-guard test
 
 # --- Contract ---
 
@@ -98,6 +98,10 @@ test-without-db:
 
 test-v:
     uv run pytest -v
+
+# The agent guard hook (.claude/hooks/guard.mjs) needs only node.
+test-guard:
+    node --test .claude/hooks/
 
 test-file file:
     uv run pytest {{ file }}
