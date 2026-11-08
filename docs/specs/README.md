@@ -64,7 +64,7 @@ A slice:
 
 - A spec's *Rules for implementing agents* apply in addition to [`AGENTS.md`](../../AGENTS.md); if they contradict
   it, ask.
-- Progress shows only in the checkboxes and the status block: a slice PR ticks its own boxes, and a change of
+- Progress shows only in the checkboxes and the status block: a slice's last PR ticks its boxes, and a change of
   course gets an **Amended** line with its date. Moved code gets a status line saying what moved where.
 - No tracking issues. Existing `> Tracking:` lines stay as history.
 - A task plan for a phase lives versioned in `docs/plans/`, linked from the slice as `_Plan:_`; it replaces tool

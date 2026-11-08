@@ -9,8 +9,9 @@
 > the repo's; the deploy now stores the released `compose.yml` first ("Which compose does Dokploy run?",
 > [skill-platform-workflows#6][workflows-6]). **Amended 2026-11-03:** only the maintainer merges, every PR lands
 > by squash, and `git ship` is no longer a way onto `main` (decisions C and F, *Merging*). **Amended 2026-11-04:**
-> branch commits are signed as configured (decision F); squash commits take the PR title and an empty body (decision
-> D); goal 5 and the signature trade-off keep `git ship` as history.
+> branch commits are signed as configured (decision F); squash commits take the PR title and an empty body, and a
+> slice lands as one PR or a small stack within size limits (goal 3, decisions C and D); goal 5 and the signature
+> trade-off keep `git ship` as history.
 > This spec is also the decision record (no separate ADR: *Decided defaults*, *Verified behavior* and
 > *Trade-offs accepted* carry the why). Written in skillforge because it is the first adopter; the **platform
 > contract** below is what the other repos copy. Every GitHub behavior this spec relies on was verified in a
@@ -42,8 +43,8 @@ Three mental models for one person is friction on every release. On top of that:
    Knowing how one repo releases means knowing all of them.
 2. **Releasing is one deliberate act:** shipping the release PR. Version, changelog, tag, image, publish and
    deploy follow from it without further manual steps.
-3. **A readable `main`.** One commit per logical slice, conventional commit messages, one release commit per
-   version. Tags on `main` plus `CHANGELOG.md` are the condensed view - no release branch.
+3. **A readable `main`.** One commit per PR, a slice being one PR or a small stack, conventional commit messages,
+   one release commit per version. Tags on `main` plus `CHANGELOG.md` are the condensed view - no release branch.
 4. **The deploy reports the truth.** The workflow talks to the Dokploy API, waits for the deployment to finish
    and verifies the running version. A failed deploy is a red workflow.
 5. **`main` only accepts green commits.** PRs land by squash merge with `gh pr merge --auto`, which waits for the
@@ -77,8 +78,8 @@ Three mental models for one person is friction on every release. On top of that:
 |---|---|---|
 | **A - Release mechanism** | [release-please](https://github.com/googleapis/release-please) (`release-please-action`, pinned by SHA). It keeps one *release PR* up to date (version bump + `CHANGELOG.md`); shipping that PR is the release. | Same tool for Python and Node; version derived from conventional commits; replaces the hand-written bump workflow. Verified with `git ship` and the rulesets; squash merging is release-please's own default. |
 | **B - Environments** | Prod only. One GitHub Environment `production` per repo. | Decided 2026-09-19. |
-| **C - Branching** | Short-lived feature branches -> PR -> squash-merged onto `main` with `gh pr merge <n> -sd --auto` (waits for `check`, deletes the branch); a GitHub stack with `gh stack merge <n> --squash`. Only the maintainer merges, and every PR lands by squash, so `main` stays "Verified"; `git ship` (local fast-forward) is no longer a way onto `main`. No release branch. Tags `vX.Y.Z` on `main`. _(Amended 2026-11-03: who merges, and squash only.)_ | Linear history and signatures already enforced; a second branch would be a second history to keep in sync. The maintainer is the one review before a merge feeds the release PR and the changelog; a squash gives one GitHub-signed commit per slice (D, F). |
-| **D - History on `main`** | One PR per slice (not per spec); before shipping, fold fixups and "tick the spec" commits into the slice they belong to. Every commit on `main` is green on its own and conventional. A squash merge does the folding by itself: one PR, one commit, so the PR title must be the conventional message (the squash commit takes the PR title and no body). | ~6-8 commits for an arc like `crm-api.md` instead of ~40 - but not 1-2, which would destroy `git bisect` and the story. |
+| **C - Branching** | Short-lived feature branches -> PR -> squash-merged onto `main` with `gh pr merge <n> -sd --auto` (waits for `check`, deletes the branch); a GitHub stack with `gh stack merge <n> --squash`. Only the maintainer merges, and every PR lands by squash, so `main` stays "Verified"; `git ship` (local fast-forward) is no longer a way onto `main`. No release branch. Tags `vX.Y.Z` on `main`. _(Amended 2026-11-03: who merges, and squash only.)_ | Linear history and signatures already enforced; a second branch would be a second history to keep in sync. The maintainer is the one review before a merge feeds the release PR and the changelog; a squash gives one GitHub-signed commit per PR (D, F). |
+| **D - History on `main`** | A slice (not a spec) lands as one PR or a small stack; before shipping, fold fixups and "tick the spec" commits into the slice they belong to. A PR targets <= ~400 changed lines and never exceeds 1000; generated files (`openapi.json`, lockfiles, recorded fixtures) do not count. Larger work is split in the stack, reason in the PR. Once code plus tests would exceed ~300 lines, the new tests get their own PR directly above the code PR (edits to existing tests stay in the code PR); below that they stay together. The maintainer merges code and test PR together, and each PR is green on its own. Every commit on `main` is green on its own and conventional. A squash merge does the folding by itself: one PR, one commit, so the PR title must be the conventional message (the squash commit takes the PR title and no body). _(Amended 2026-11-04: a slice may be a small stack; size limits and the new tests' own PR replace "one PR per slice" and "~6-8 commits for an arc".)_ | Small PRs can be read in full, and one commit per PR keeps `git bisect` and the story useful - an arc lands as many small commits, not ~40 fixups and not a few huge ones. Tests in their own PR keep the code PR readable once the diff grows. |
 | **E - Release PR author** | An org-wide **GitHub App**; release-please runs with its installation token. The App is **`skill-platform-release`** - the installed `skillsite-release-bot`, renamed (no `bot` in the name: GitHub appends `[bot]`, and it keeps clear of *skillbot*) and extended to the other repos. It started as releases only; since 2026-09-20 it is the platform's one automation App and also puts issues and PRs on the project board ([`project-intake.md`](project-intake.md)) - each workflow narrows its token to the permissions it needs. | PRs opened with `GITHUB_TOKEN` get no CI run, so the required check (G) would reject the release PR. Verified; see below. |
 | **F - Signatures** | Feature commits on `main` carry GitHub's signature, because every PR is squash-merged; branch commits, an agent's included, are signed as configured. _(Amended 2026-11-03: no `git ship` path; 2026-11-04: branch signing.)_ The one release commit per version is created through the GitHub API and carries GitHub's signature ("Verified"). Tags are lightweight and unsigned. | Satisfies the `required_signatures` rule; same trust level as today's bump PR. |
 | **G - Gate on `main`** | The `main` ruleset additionally requires the status check **`check`**. Every repo's CI exposes a job with exactly this name. | A squash merge enforces the check itself (until 2026-11-03 a fast-forward kept the SHA and its green check, verified). A tip without a green check - unpushed, still running or cancelled - is rejected, which is why `--auto` is the default way to merge. |
@@ -304,9 +305,10 @@ and `pre-push` hooks calling `just` recipes.)
 **P1-3 - Deploy notification.** *Dropped on 2026-09-20 - see Non-goals.* (Was: one Discord message per deploy
 result.) skillbot's existing deploy notification therefore goes away when it adopts this flow.
 
-**P1-4 - History convention in `CLAUDE.md`.** Decision D as a short rule set, including "one PR per slice" and
-"fold `docs(specs): tick` commits into the slice". *Done: the "History on `main`" rule, since 2026-11-03 in the
-section "Branches, PRs and merging" of [`AGENTS.md`](../../AGENTS.md).*
+**P1-4 - History convention in `CLAUDE.md`.** Decision D as a short rule set, including "a slice lands as one PR or a
+small stack" (amended 2026-11-04; first "one PR per slice") and "fold `docs(specs): tick` commits into the slice".
+*Done: the "History on `main`" rule since 2026-11-03, the "PR size" rule since 2026-11-04, both in the section
+"Branches, PRs and merging" of [`AGENTS.md`](../../AGENTS.md).*
 
 ### Future considerations (P2)
 

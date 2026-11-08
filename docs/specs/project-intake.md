@@ -287,7 +287,7 @@ missing from the board.
 ## Rules for implementing agents
 
 - Follow [`AGENTS.md`](../../AGENTS.md): English only, symbol references instead of line numbers, conventional
-  commits, `just check` green before every commit, one PR per slice.
+  commits, `just check` green before every commit, a slice as one PR or a small stack (_PR size_).
 - Pin every action by full SHA with a version comment, as the existing workflows do.
 - Keep this repo's `triage.yml` a caller. The workflow itself is changed in `skill-platform-workflows` - and
   there: never add a checkout step, and never use `${{ github.event.* }}` inside a `run:` block.
