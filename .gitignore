@@ -11,6 +11,11 @@ wheels/
 
 # Secrets
 .env
+.env.*
+!.env.example
+
+# Agent worktrees
+.claude/worktrees/
 
 # Logs
 *.log
