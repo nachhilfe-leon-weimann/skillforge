@@ -51,6 +51,9 @@ A slice:
   GitHub, a live API) and how; anything not verified says so.
 - **Every requirement names its symbols and files** and has criteria a reviewer can check, ticked in the PR that
   fulfils them.
+- **A slice fits one review.** It lands as one PR with its tests and adds at most about 400 lines of code, migrations
+  included; tests, docs and generated files (`openapi.json`, `uv.lock`) do not count. The maintainer then reads it in
+  one sitting. A larger requirement is split into several, one slice each.
 - **Edits to tests are declared.** *Tests that change* lists the tests a slice may touch, so a changed assertion
   elsewhere is a finding, not a fix.
 - **Standing criteria** hold for every slice (an import boundary, no secret in a log, `just check-all` green) and
@@ -64,7 +67,7 @@ A slice:
 
 - A spec's *Rules for implementing agents* apply in addition to [`AGENTS.md`](../../AGENTS.md); if they contradict
   it, ask.
-- Progress shows only in the checkboxes and the status block: a slice's last PR ticks its boxes, and a change of
+- Progress shows only in the checkboxes and the status block: a slice PR ticks its own boxes, and a change of
   course gets an **Amended** line with its date. Moved code gets a status line saying what moved where.
 - No tracking issues. Existing `> Tracking:` lines stay as history.
 - A task plan for a phase lives versioned in `docs/plans/`, linked from the slice as `_Plan:_`; it replaces tool

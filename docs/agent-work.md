@@ -66,5 +66,5 @@ should be: bullets over paragraphs, nothing the diff or the spec already says.
   and say so. What families see, money, data, legal texts and live systems cannot be taken back after the merge,
   so they are asked first - all questions in one message, because every round trip stalls the work.
 
-Who merges, why every PR lands only by squash, how stacks merge and how large a PR may be is in
-[`release-flow.md`](specs/release-flow.md), decisions C, D and F.
+Who merges, why every PR lands only by squash and how stacks merge is in
+[`release-flow.md`](specs/release-flow.md), decisions C and F.
