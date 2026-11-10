@@ -121,7 +121,7 @@ may see - who pays for a student, for example, is none of the tutor's business.
 
 ## Where we are
 
-As of 2026-09.
+As of 2026-11.
 
 | Topic           | Today                                                                                                                                                                                                | Target                                                                                                                                   |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
@@ -132,7 +132,7 @@ As of 2026-09.
 | Own data        | `crm:read:own` limits a person to their reach on the party read routes; the other routes still need the unqualified scope                                                                            | `:own` scopes limit a person to their reach                                                                                              |
 | Change signals  | Parties and Discord links carry `updated_at`, their lists filter by `updated_since`, and one pull contract says how to pull ("Change signals" in `ARCHITECTURE.md`)                                  | Frontends pull what changed and bring their state in line                                                                                |
 | Portal          | Not started                                                                                                                                                                                          | A Next.js server backend that talks to SkillForge                                                                                        |
-| Billing         | Not in SkillForge (2026-11): lessons are tracked in a time tracker and invoiced in sevDesk by hand; `ext.sevdesk_contact` has no writer and `app/integrations/` is empty                             | SkillForge knows the lessons, prices them, creates invoice drafts in sevDesk and keeps prepaid credit; the portal only shows it          |
+| Billing         | Not in SkillForge: lessons are tracked in a time tracker and invoiced in sevDesk by hand; `ext.sevdesk_contact` has no writer and no route reads a calendar or writes an invoice                     | SkillForge knows the lessons, prices them, creates invoice drafts in sevDesk and keeps prepaid credit; the portal only shows it          |
 
 ## Roadmap
 
@@ -174,7 +174,7 @@ Coarse on purpose; the details live in the specs.
 - **Token**: short-lived proof a client sends with every request, saying who is asking and what they
   may do.
 - **Lesson**: one tutoring appointment of a student. It is billed only after it was checked off as
-  held.
+  held - or, for a late cancellation, after it was marked billable.
 - **Payer**: the party that receives a student's invoices - whoever pays for the student in the CRM,
   otherwise the student.
 - **Draft**: an invoice SkillForge created in sevDesk and did not send. Sending stays a human step
