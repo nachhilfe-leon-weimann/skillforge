@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0, SF1-1, SF1-2 and SF1-2b done; SP-CAL scripts written, not yet run. SP-SD freezes this spec after both spikes; until
+> Status: Draft - SF0, SF1-1, SF1-2, SF1-2b and SF1-3a done; SP-CAL scripts written, not yet run. SP-SD freezes this spec after both spikes; until
 > then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
@@ -952,24 +952,27 @@ write (`invoices.py`)._
 
 **SF1-3a - Doctor and contract run.**
 
-- _Technique:_ `app/cli/sevdesk_doctor.py` and the recipe `just sevdesk-doctor`: read-only, `--account trial|live`,
-  checks that every configured id exists, prints ids and object kinds only - never a person's name. Its
+- _Technique:_ `app/cli/sevdesk_doctor.py` and the recipe `just sevdesk-doctor trial|live [--discover]`:
+  read-only, checks that every configured id exists, prints ids and object kinds only - never a person's name. Its
   `--discover` mode is how the expected account id is first learned: it reads `GET /SevClient`, `GET /SevUser` and
-  `GET /ContactCustomFieldSetting`, and prints the candidate client ids and "TRIAL: yes/no". It is the one path
-  that reads before an expected id is configured. The live run is the maintainer's, from the maintainer's
-  own terminal. The recipe `just contract-sevdesk`: loads `~/.config/skillforge/sevdesk-trial.env`, sets the
-  contract run, runs `pytest -m contract`. It refuses in CI and when any `SEVDESK__*` variable is already set in
-  the shell; a `401` on the identity read skips with "trial expired".
+  `GET /ContactCustomFieldSetting`, and prints the `sevClient` ids they report and "TRIAL marker: yes/no". It is
+  the one path that reads before an expected id is configured. The live run is the maintainer's, from the
+  maintainer's own terminal. The recipe `just contract-sevdesk`: loads `~/.config/skillforge/sevdesk-trial.env`
+  (`SKILLFORGE_SEVDESK_TRIAL_ENV` overrides the path), sets the contract run, runs `pytest -m contract`. The trial
+  recipes refuse in CI, when any `SEVDESK__*` variable is already set in the shell - in any letter case - and an env
+  file inside the repository or any other git work tree, symlinks resolved, or with whitespace in its path
+  (`scripts/sevdesk_trial_env.sh`); a `401` on the
+  identity read skips with "trial expired".
 - _Acceptance criteria:_
-  - [ ] The doctor sends only reads and prints ids and kinds - no name, address or e-mail of a person (test on a
+  - [x] The doctor sends only reads and prints ids and kinds - no name, address or e-mail of a person (test on a
         synthetic response).
-  - [ ] `--discover` sends exactly its three reads and works without an expected id; without it, no call leaves
+  - [x] `--discover` sends exactly its three reads and works without an expected id; without it, no call leaves
         before the identity check.
-  - [ ] `pytest -m contract` is registered as a marker, deselected by `just check` and `just check-all`, and
+  - [x] `pytest -m contract` is registered as a marker, deselected by `just check` and `just check-all`, and
         absent from CI.
-  - [ ] `just contract-sevdesk` refuses in CI and with a `SEVDESK__*` variable already set; without the env file,
+  - [x] `just contract-sevdesk` refuses in CI and with a `SEVDESK__*` variable already set; without the env file,
         or with a `401` on the identity read, it ends with a skip message and exit code 0.
-  - [ ] The agent guide says it in these words: agents run the trial recipes only after the maintainer's go in
+  - [x] The agent guide says it in these words: agents run the trial recipes only after the maintainer's go in
         the session.
 
 **SF1-3b - Recorder and spike.**
@@ -996,12 +999,12 @@ write (`invoices.py`)._
 **SP-SD - sevDesk spike and freeze.** _After SF1-3b; the trial runs 14 days._
 
 - _Technique:_ the maintainer creates the trial and its env file - the expected account id comes from
-  `just sevdesk-doctor --discover`. The trial holds synthetic data only: a company name that contains `TRIAL`,
+  `just sevdesk-doctor trial --discover`. The trial holds synthetic data only: a company name that contains `TRIAL`,
   § 19, a payment term of 14 days, the custom field "Zahlungsverfahren" with its two values and a public example
   IBAN. After the maintainer's go in the session, an agent runs `just sevdesk-spike`, records the manifest and
   writes the answers into this spec; the maintainer does the manifest's UI steps (send, edit, cancel, issue,
   delete a draft) in the trial. What only the real account can show - the raw templates, a top-up invoice of
-  today, the ids - the maintainer reads in person (`just sevdesk-doctor --account live`) and passes on without
+  today, the ids - the maintainer reads in person (`just sevdesk-doctor live`) and passes on without
   personal data. Then the spec is frozen: open questions move to
   [Decided](#decided-formerly-open-questions), every proposal becomes a
   decision or is replaced, the status becomes `Accepted`, and so does ADR 0010's status line - with ADR 0006's
@@ -1508,10 +1511,11 @@ independent review has no open finding.
 
 ### Never
 
-- Call a live system: sevDesk, Microsoft Graph, the production database. Only `just contract-sevdesk` and
-  `just sevdesk-spike` reach the trial - and an agent runs either only after the maintainer's go in the session.
+- Call a live system: sevDesk, Microsoft Graph, the production database. Only `just sevdesk-doctor trial`,
+  `just contract-sevdesk` and `just sevdesk-spike` reach the trial - and an agent runs each only after the
+  maintainer's go in the session.
 - Run `scripts/graph/exchange-rbac-calendar.ps1` or `scripts/graph/record_calendar.py` against Microsoft,
-  `just sevdesk-doctor --account live`, or `just billing-drafts` against production: they are the maintainer's.
+  `just sevdesk-doctor live`, or `just billing-drafts` against production: they are the maintainer's.
 - Read an env file, or put a token, a certificate, a tenant id or an id of the real sevDesk account into the
   repository. Ids of trial objects in recorded fixtures are fine; the recorder replaces the SevClient id with 0.
 - Use a real name, address or e-mail anywhere. Families are "family A", students "student B", addresses end in

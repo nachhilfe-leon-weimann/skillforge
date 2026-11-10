@@ -85,16 +85,16 @@ dev-local-core:
 # --- Testing ---
 
 test:
-    uv run pytest
+    uv run pytest -m "not contract"
 
 test-coverage:
-    uv run pytest --cov=app --cov-report=term-missing:skip-covered --cov-report=xml:coverage.xml
+    uv run pytest -m "not contract" --cov=app --cov-report=term-missing:skip-covered --cov-report=xml:coverage.xml
 
 test-db:
     uv run pytest -m db
 
 test-without-db:
-    uv run pytest -m "not db"
+    uv run pytest -m "not db and not contract"
 
 test-v:
     uv run pytest -v
@@ -126,6 +126,43 @@ bootstrap-client *args:
 [positional-arguments]
 bootstrap-admin *args:
     uv run python -m app.cli.bootstrap admin "$@"
+
+# --- sevDesk ---
+# These call sevDesk: only the maintainer runs them, never CI. The trial's settings come from its env file, outside
+# the repository (SKILLFORGE_SEVDESK_TRIAL_ENV overrides the path), and never mix with SEVDESK__ variables of the
+# shell, which would take precedence over the file.
+
+# Read-only contract tests against the synthetic sevDesk trial account; without a trial env file, nothing runs.
+contract-sevdesk:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "${CI:-}" ]; then echo "contract-sevdesk never runs in CI" >&2; exit 1; fi
+    source "{{justfile_directory()}}/scripts/sevdesk_trial_env.sh" "{{justfile_directory()}}"
+    if [ ! -f "$env_file" ]; then echo "no trial configured: $env_file does not exist"; exit 0; fi
+    SKILLFORGE_CONTRACT_RUN=1 uv run --env-file "$env_file" pytest -m contract
+
+# Check the configured sevDesk ids, read-only: `just sevdesk-doctor trial|live [--discover]`.
+[positional-arguments]
+sevdesk-doctor account *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "${CI:-}" ]; then echo "sevdesk-doctor never runs in CI" >&2; exit 1; fi
+    account="$1"
+    shift
+    case "$*" in
+        "" | --discover) ;;
+        *) echo "sevdesk-doctor takes trial or live and at most --discover" >&2; exit 1 ;;
+    esac
+    case "$account" in
+        trial)
+            source "{{justfile_directory()}}/scripts/sevdesk_trial_env.sh" "{{justfile_directory()}}"
+            if [ ! -f "$env_file" ]; then echo "no trial configured: $env_file does not exist" >&2; exit 1; fi
+            exec uv run --env-file "$env_file" python -m app.cli.sevdesk_doctor --account trial "$@" ;;
+        live)
+            exec uv run python -m app.cli.sevdesk_doctor --account live "$@" ;;
+        *)
+            echo "the account is trial or live, not $account" >&2; exit 1 ;;
+    esac
 
 # --- Docker ---
 

@@ -97,6 +97,7 @@ class CustomFieldSetting(SevdeskObject):
 
     name: str
     identifier: str | None = None
+    sev_client: ObjectRef | None = None
 
 
 class ContactCustomField(SevdeskObject):

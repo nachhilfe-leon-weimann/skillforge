@@ -8,6 +8,7 @@ the identity read.
 
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Self
 
 from pydantic import NonNegativeInt, ValidationError
@@ -30,7 +31,7 @@ from app.integrations.transport import (
 )
 
 from .config import SevdeskSettings
-from .identity import verify_account
+from .identity import TRIAL_MARKER, verify_account
 from .invoices import InvoiceDraft, invoice_payload
 from .models import (
     Account,
@@ -102,6 +103,25 @@ class SevdeskClient:
             await verify_account(client.account, settings)
             client._confirmed = True
             yield client
+
+    @classmethod
+    async def discover(cls, settings: SevdeskSettings, *, transport: InnerTransport | None = None) -> Discovery:
+        """The account the token belongs to, read without the identity check, which needs its id: how the
+        maintainer finds ``SEVDESK__EXPECTED_ACCOUNT_ID``. The one path that reads before the account is
+        confirmed; it sends exactly the three reads of spike row S2 and nothing else."""
+        async with _sevdesk_http(settings, transport=transport) as http:
+            account = await cls(http, settings).account()
+            users = _many(SevUser, _objects(await http.read("/SevUser"), "GET /SevUser"), "GET /SevUser")
+            where = "GET /ContactCustomFieldSetting"
+            field_settings = _many(
+                CustomFieldSetting, _objects(await http.read("/ContactCustomFieldSetting"), where), where
+            )
+        return Discovery(
+            account_id=account.id,
+            trial_marker=TRIAL_MARKER in account.name,
+            user_account_ids=_account_ids(users),
+            field_setting_account_ids=_account_ids(field_settings),
+        )
 
     # --- reads ---
 
@@ -239,6 +259,24 @@ class SevdeskClient:
                     raise UnexpectedResponseError(f"sevdesk {where}: {len(items)} objects listed of {total}")
                 return items
         raise UnexpectedResponseError(f"sevdesk {where}: more than {MAX_PAGES} pages")
+
+
+@dataclass(frozen=True, slots=True)
+class Discovery:
+    """What ``discover`` learned: account ids and whether the company name carries the trial marker - never the
+    name itself."""
+
+    account_id: int
+    """The ``SevClient`` id: the candidate for ``SEVDESK__EXPECTED_ACCOUNT_ID``."""
+    trial_marker: bool
+    user_account_ids: tuple[int, ...]
+    """The distinct ``sevClient`` ids of the ``SevUser`` objects, for comparison (spike question Q7)."""
+    field_setting_account_ids: tuple[int, ...]
+    """The distinct ``sevClient`` ids of the ``ContactCustomFieldSetting`` objects, for comparison."""
+
+
+def _account_ids(objects: list[SevUser] | list[CustomFieldSetting]) -> tuple[int, ...]:
+    return tuple(sorted({item.sev_client.id for item in objects if item.sev_client is not None}))
 
 
 def _get(path: str) -> str:
