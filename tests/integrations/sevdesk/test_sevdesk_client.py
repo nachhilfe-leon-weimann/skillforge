@@ -1,7 +1,6 @@
-"""The sevDesk client against a synthetic sevDesk: wire format, lenient parsing, dry_run, no retry, no leaks."""
+"""The sevDesk client against a synthetic sevDesk: wire format, lenient parsing, complete listings, no leaks."""
 
-import json
-from datetime import date
+import traceback
 from decimal import Decimal
 
 import httpx
@@ -9,68 +8,35 @@ import pytest
 
 from app.core.logging import LogFormat, LoggingSettings, LogLevel, configure_logging
 from app.integrations.errors import (
-    IntegrationRefusedError,
+    IntegrationRejectedError,
     IntegrationUnavailableError,
-    OutcomeUnknownError,
     UnexpectedResponseError,
 )
 from app.integrations.sevdesk import client as sevdesk_client
 from app.integrations.sevdesk.client import SevdeskClient
-from app.integrations.sevdesk.invoices import InvoiceDraft, PositionDraft
-from app.integrations.sevdesk.models import ContactCustomField, Invoice, InvoicePosition, Part
-from app.integrations.transport import PlannedRequest
-from tests.integrations.sevdesk.fake_sevdesk import ACCOUNT_ID, TOKEN, FakeSevdesk, objects
+from app.integrations.sevdesk.models import Contact, ContactCustomField, Part
+from tests.integrations.sevdesk.fake_sevdesk import ACCOUNT_ID, TOKEN, FakeSevdesk, objects, page
 
-DRAFT = InvoiceDraft(
-    contact_id=21,
-    invoice_date=date(2026, 11, 2),
-    header="Invoice 2026-10",
-    tax_text="Synthetic tax text",
-    positions=(PositionDraft(name="Maths", quantity=Decimal("1.5"), price=Decimal("30.00"), unity_id=12, part_id=31),),
-    customer_internal_note="skillforge:run-0001",
-    foot_text="Synthetic foot text",
-)
-INVOICE = {
-    "id": "501",
-    "objectName": "Invoice",
-    "invoiceNumber": None,
-    "status": "100",
-    "contact": {"id": "21", "objectName": "Contact"},
-    "invoiceDate": "2026-11-02T00:00:00+01:00",
-    "taxRule": {"id": "11", "objectName": "TaxRule"},
-    "smallSettlement": "1",
-    "sumNet": "45.00",
-    "sumGross": "45.00",
-    "customerInternalNote": "skillforge:run-0001",
-    "sevClient": {"id": str(ACCOUNT_ID), "objectName": "SevClient"},
-}
-POSITION = {
-    "id": "601",
-    "invoice": {"id": "501", "objectName": "Invoice"},
-    "part": {"id": "31", "objectName": "Part"},
-    "unity": {"id": "12", "objectName": "Unity"},
-    "quantity": "1.5",
-    "price": "30",
-    "taxRate": "0",
-    "positionNumber": "0",
-    "name": "Maths",
-}
+PART = {"id": "31", "objectName": "Part", "name": "Maths", "price": "30", "taxRate": "0.0", "status": "100"}
 
 
 # --- lenient parsing, strict types ---
 
 
-def test_string_numbers_and_booleans_parse_into_strict_types():
-    invoice = Invoice.model_validate(INVOICE)
-    position = InvoicePosition.model_validate(POSITION)
-    part = Part.model_validate({"id": "31", "name": "Maths", "price": None, "taxRate": "0.0", "status": "100"})
+def test_string_numbers_parse_into_strict_types():
+    part = Part.model_validate(PART)
+    contact = Contact.model_validate({"id": "21", "category": {"id": "3", "objectName": "Category"}})
 
-    assert (invoice.id, invoice.status, invoice.contact.id, invoice.small_settlement) == (501, 100, 21, True)
-    assert invoice.sum_net == Decimal("45.00")
-    assert invoice.tax_rule is not None and invoice.tax_rule.id == 11
-    assert (position.quantity, position.price, position.position_number) == (Decimal("1.5"), Decimal(30), 0)
-    assert Invoice.model_validate({**INVOICE, "smallSettlement": "0"}).small_settlement is False
-    assert (part.price, part.tax_rate, part.status) == (None, Decimal(0), 100)
+    assert (part.id, part.price, part.tax_rate, part.status) == (31, Decimal("30.00"), Decimal(0), 100)
+    assert str(part.price) == "30.00"
+    assert Part.model_validate({**PART, "price": None}).price is None
+    assert contact.category is not None and (contact.id, contact.category.id) == (21, 3)
+
+
+@pytest.mark.parametrize("amount", ["30.005", "0.001", 0.1 + 0.2])
+def test_an_amount_below_a_cent_is_refused(amount: object):
+    with pytest.raises(ValueError, match="below a cent"):
+        Part.model_validate({**PART, "price": amount})
 
 
 def test_a_reference_typed_as_a_list_of_one_is_accepted():
@@ -84,10 +50,10 @@ def test_a_reference_typed_as_a_list_of_one_is_accepted():
     assert field.contact_custom_field_setting.id == 13
 
 
-@pytest.mark.parametrize("bad", [{"status": "draft"}, {"contact": None}, {"id": "five"}])
+@pytest.mark.parametrize("bad", [{"status": "draft"}, {"name": None}, {"id": "five"}])
 def test_a_wrong_type_is_rejected(bad):
     with pytest.raises(ValueError):
-        Invoice.model_validate({**INVOICE, **bad})
+        Part.model_validate({**PART, **bad})
 
 
 # --- reads ---
@@ -112,37 +78,20 @@ async def test_an_unknown_id_reads_as_none(settings, fake_sevdesk: FakeSevdesk):
 
 
 async def test_a_single_object_reads_as_a_list_of_one(settings, fake_sevdesk: FakeSevdesk):
-    fake_sevdesk.on("GET", "/Invoice/501", objects(INVOICE))
+    fake_sevdesk.on("GET", "/Contact/21", objects({"id": "21", "objectName": "Contact"}))
 
     async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
-        invoice = await client.get_invoice(501)
+        contact = await client.get_contact(21)
 
-    assert invoice is not None and invoice.id == 501
-
-
-async def test_find_invoices_pages_and_filters_by_the_note_itself(settings, fake_sevdesk: FakeSevdesk, monkeypatch):
-    monkeypatch.setattr(sevdesk_client, "PAGE_LIMIT", 2)
-    other = {**INVOICE, "id": "502", "customerInternalNote": "skillforge:run-0002"}
-    pages = {"0": [INVOICE, other], "2": [{**INVOICE, "id": "503"}]}
-    fake_sevdesk.on("GET", "/Invoice", lambda request: objects(pages[request.url.params["offset"]]))
-
-    async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
-        found = await client.find_invoices("skillforge:run-0001")
-
-    assert [invoice.id for invoice in found] == [501, 503]
-    params = [dict(request.url.params) for request in fake_sevdesk.requests[1:]]
-    assert params == [
-        {"customerInternalNote": "skillforge:run-0001", "limit": "2", "offset": "0"},
-        {"customerInternalNote": "skillforge:run-0001", "limit": "2", "offset": "2"},
-    ]
+    assert contact is not None and contact.id == 21
 
 
 async def test_an_unexpected_read_names_fields_but_no_values(settings, fake_sevdesk: FakeSevdesk):
-    fake_sevdesk.on("GET", "/Invoice/501", objects([{**INVOICE, "status": "Synthetic Person"}]))
+    fake_sevdesk.on("GET", "/Part", page([{**PART, "status": "Synthetic Person"}]))
 
     async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
         with pytest.raises(UnexpectedResponseError, match=r"\['status'\]") as raised:
-            await client.get_invoice(501)
+            await client.parts()
 
     assert "Synthetic Person" not in str(raised.value)
 
@@ -157,103 +106,109 @@ async def test_a_read_failing_with_500_is_unavailable_and_keeps_the_remote_messa
     assert raised.value.remote_message == "Synthetic failure"
 
 
-# --- the saveInvoice write ---
+async def test_a_rejection_other_than_404_is_no_unknown_id(settings, fake_sevdesk: FakeSevdesk):
+    fake_sevdesk.on("GET", "/Contact/21", httpx.Response(401, json={"error": {"message": "Authentication required"}}))
 
-
-async def test_a_dry_run_save_returns_the_planned_request_and_sends_no_post(settings, fake_sevdesk: FakeSevdesk):
     async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
-        planned = await client.save_invoice(DRAFT)
+        with pytest.raises(IntegrationRejectedError) as raised:
+            await client.get_contact(21)
 
-    assert isinstance(planned, PlannedRequest)
-    assert (planned.method, planned.url) == ("POST", "https://my.sevdesk.de/api/v1/Invoice/Factory/saveInvoice")
-    assert fake_sevdesk.sent("POST") == []
-    assert fake_sevdesk.sent() == ["GET /SevClient"]
+    assert raised.value.status == 401
 
 
-async def test_the_save_body_is_a_draft_under_section_19(settings, fake_sevdesk: FakeSevdesk):
+async def test_the_configuration_reads(settings, fake_sevdesk: FakeSevdesk):
+    user = {"id": "11", "objectName": "SevUser", "sevClient": {"id": str(ACCOUNT_ID), "objectName": "SevClient"}}
+    setting = {"id": "13", "objectName": "ContactCustomFieldSetting", "name": "Payment method"}
+    fake_sevdesk.on("GET", "/SevUser", objects([user]))
+    fake_sevdesk.on("GET", "/SevUser/11", objects([user]))
+    fake_sevdesk.on("GET", "/Unity/12", objects([{"id": "12", "objectName": "Unity", "name": "Std."}]))
+    fake_sevdesk.on("GET", "/ContactCustomFieldSetting", objects([setting]))
+    fake_sevdesk.on("GET", "/ContactCustomFieldSetting/13", objects([setting]))
+
     async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
-        planned = await client.save_invoice(DRAFT)
+        users, user_11 = await client.users(), await client.get_user(11)
+        unity, settings_read = await client.get_unity(12), await client.custom_field_settings()
+        setting_13 = await client.get_custom_field_setting(13)
 
-    assert isinstance(planned, PlannedRequest) and isinstance(planned.body, dict)
-    body = planned.body
-    assert list(body) == [
-        "invoice",
-        "invoicePosSave",
-        "invoicePosDelete",
-        "discountSave",
-        "discountDelete",
-        "takeDefaultAddress",
-    ]
-    assert body["invoice"] == {
-        "objectName": "Invoice",
-        "mapAll": True,
-        "invoiceDate": "2026-11-02",
-        "contact": {"id": 21, "objectName": "Contact"},
-        "contactPerson": {"id": 11, "objectName": "SevUser"},
-        "status": 100,
-        "invoiceType": "RE",
-        "currency": "EUR",
-        "taxRule": {"id": "11", "objectName": "TaxRule"},
-        "taxText": "Synthetic tax text",
-        "header": "Invoice 2026-10",
-        "footText": "Synthetic foot text",
-        "customerInternalNote": "skillforge:run-0001",
-    }
-    assert body["invoicePosSave"] == [
-        {
-            "objectName": "InvoicePos",
-            "mapAll": True,
-            "name": "Maths",
-            "quantity": 1.5,
-            "price": 30.0,
-            "taxRate": 0,
-            "unity": {"id": 12, "objectName": "Unity"},
-            "part": {"id": 31, "objectName": "Part"},
+    assert [found.id for found in users] == [11] and users[0].sev_client is not None
+    assert user_11 is not None and user_11.sev_client is not None and user_11.sev_client.id == ACCOUNT_ID
+    assert unity is not None and (unity.id, unity.name) == (12, "Std.")
+    assert [found.name for found in settings_read] == ["Payment method"]
+    assert setting_13 is not None and setting_13.id == 13
+
+
+async def test_contacts_by_custom_field_send_the_field_and_value(settings, fake_sevdesk: FakeSevdesk):
+    contact = {"id": "21", "objectName": "Contact", "customerNumber": "1001"}
+    fake_sevdesk.on("GET", "/Contact/Factory/findContactsByCustomFieldValue", objects([contact]))
+
+    async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
+        found = await client.find_contacts_by_custom_field("skillforge_party", "party-0001")
+
+    assert [(item.id, item.customer_number) for item in found] == [(21, "1001")]
+    params = dict(fake_sevdesk.requests[-1].url.params)
+    assert params == {"customFieldName": "skillforge_party", "value": "party-0001"}
+
+
+async def test_custom_fields_of_another_contact_are_dropped(settings, fake_sevdesk: FakeSevdesk):
+    def field(field_id: str, contact_id: str) -> dict[str, object]:
+        return {
+            "id": field_id,
+            "contact": {"id": contact_id, "objectName": "Contact"},
+            "contactCustomFieldSetting": {"id": "13", "objectName": "ContactCustomFieldSetting"},
+            "value": "synthetic",
         }
-    ]
-    assert (body["invoicePosDelete"], body["discountSave"], body["discountDelete"]) == (None, None, None)
-    assert body["takeDefaultAddress"] is True
+
+    fake_sevdesk.on("GET", "/ContactCustomField", page([field("1", "21"), field("2", "22")]))
+
+    async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
+        fields = await client.contact_custom_fields(21)
+
+    assert [item.id for item in fields] == [1]
+    params = dict(fake_sevdesk.requests[-1].url.params)
+    assert (params["contact[id]"], params["contact[objectName]"]) == ("21", "Contact")
 
 
-async def test_a_save_without_contact_person_is_refused(settings, fake_sevdesk: FakeSevdesk):
-    async with SevdeskClient.connect(
-        settings.model_copy(update={"contact_person_id": None}), transport=fake_sevdesk.transport
-    ) as client:
-        with pytest.raises(IntegrationRefusedError, match="CONTACT_PERSON_ID"):
-            await client.save_invoice(DRAFT)
+def _part(part_id: int) -> dict[str, object]:
+    return {"id": str(part_id), "objectName": "Part", "name": f"Part {part_id}"}
 
 
-async def test_a_live_save_returns_the_saved_draft(live_settings, fake_sevdesk: FakeSevdesk):
-    saved = objects({"invoice": INVOICE, "invoicePos": [POSITION]}, status=201)
-    fake_sevdesk.on("POST", "/Invoice/Factory/saveInvoice", saved)
-
-    async with SevdeskClient.connect(live_settings, transport=fake_sevdesk.transport) as client:
-        result = await client.save_invoice(DRAFT)
-
-    assert not isinstance(result, PlannedRequest)
-    assert (result.invoice.id, result.invoice.status, [p.id for p in result.positions]) == (501, 100, [601])
-    sent = json.loads(fake_sevdesk.requests[-1].content)
-    assert sent["invoice"]["customerInternalNote"] == "skillforge:run-0001"
-
-
-SAVE_FAILURES = {
-    "a timeout": httpx.ReadTimeout("timed out"),
-    "a dropped connection": httpx.RemoteProtocolError("closed"),
-    "a refused connection": httpx.ConnectError("refused"),
-    "a 500 validation error": httpx.Response(500, json={"error": {"message": "Synthetic validation error"}}),
-    "an unreadable success": httpx.Response(201, json={"objects": {"invoice": {"id": "501"}}}),
+BROKEN_LISTINGS = {
+    "a page longer than the limit": lambda request: page([_part(1), _part(2), _part(3)], total=3),
+    "an id twice in a page": lambda request: page([_part(1), _part(1)], total=4),
+    "an id again on the next page": lambda request: page([_part(1), _part(2)], total=4),
+    "fewer objects than the total": lambda request: page([_part(1)], total=2),
+    "more objects than the total": lambda request: page([_part(1), _part(2)], total=1),
+    "no total": lambda request: objects([_part(1)]),
+    "a negative total": lambda request: page([], total=-1),
+    "pages without end": lambda request: page(
+        [_part(int(request.url.params["offset"]) + 1), _part(int(request.url.params["offset"]) + 2)], total=99
+    ),
 }
 
 
-@pytest.mark.parametrize("answer", SAVE_FAILURES.values(), ids=SAVE_FAILURES.keys())
-async def test_a_failed_save_is_sent_once_and_its_outcome_unknown(answer, live_settings, fake_sevdesk: FakeSevdesk):
-    fake_sevdesk.on("POST", "/Invoice/Factory/saveInvoice", answer)
+@pytest.mark.parametrize("answer", BROKEN_LISTINGS.values(), ids=BROKEN_LISTINGS.keys())
+async def test_an_incomplete_or_inconsistent_listing_is_refused(answer, settings, fake_sevdesk, monkeypatch):
+    monkeypatch.setattr(sevdesk_client, "PAGE_LIMIT", 2)
+    monkeypatch.setattr(sevdesk_client, "MAX_PAGES", 3)
+    fake_sevdesk.on("GET", "/Part", answer)
 
-    async with SevdeskClient.connect(live_settings, transport=fake_sevdesk.transport) as client:
-        with pytest.raises(OutcomeUnknownError):
-            await client.save_invoice(DRAFT)
+    async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
+        with pytest.raises(UnexpectedResponseError):
+            await client.parts()
 
-    assert fake_sevdesk.sent("POST") == ["POST /Invoice/Factory/saveInvoice"]
+    assert len(fake_sevdesk.sent()) <= 1 + 3
+
+
+async def test_a_listing_stops_once_its_total_is_read(settings, fake_sevdesk: FakeSevdesk, monkeypatch):
+    monkeypatch.setattr(sevdesk_client, "PAGE_LIMIT", 2)
+    pages = {"0": [_part(1), _part(2)], "2": [_part(3), _part(4)]}
+    fake_sevdesk.on("GET", "/Part", lambda request: page(pages[request.url.params["offset"]], total=4))
+
+    async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
+        parts = await client.parts()
+
+    assert [part.id for part in parts] == [1, 2, 3, 4]
+    assert fake_sevdesk.sent() == ["GET /SevClient", "GET /Part", "GET /Part"]
 
 
 # --- the token stays inside ---
@@ -266,23 +221,24 @@ def restore_logging():
 
 
 async def test_the_token_appears_in_no_repr_log_or_error(
-    live_settings, fake_sevdesk: FakeSevdesk, restore_logging, capsys, caplog
+    settings, fake_sevdesk: FakeSevdesk, restore_logging, capsys, caplog
 ):
     configure_logging(LoggingSettings(level=LogLevel.DEBUG, format=LogFormat.JSON))
     capsys.readouterr()
-    fake_sevdesk.on("POST", "/Invoice/Factory/saveInvoice", httpx.Response(500, json={"error": {"message": "x"}}))
-    fake_sevdesk.on("GET", "/Part", httpx.ReadTimeout("timed out"))
+    fake_sevdesk.on("GET", "/Contact/21", httpx.Response(500, json={"error": {"message": "x"}}))
+    fake_sevdesk.on("GET", "/Part", httpx.LocalProtocolError(f"Illegal header value b'{TOKEN} '"))
     errors: list[Exception] = []
 
-    async with SevdeskClient.connect(live_settings, transport=fake_sevdesk.transport) as client:
-        for call in (client.save_invoice(DRAFT), client.parts()):
+    async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
+        for call in (client.get_contact(21), client.parts()):
             try:
                 await call
-            except (OutcomeUnknownError, IntegrationUnavailableError) as exc:
+            except IntegrationUnavailableError as exc:
                 errors.append(exc)
-        texts = [repr(client), repr(live_settings), str(live_settings)]
+        texts = [repr(client), repr(settings), str(settings)]
 
     output = capsys.readouterr().out
     assert len(errors) == 2 and output.count("integration_request") == 3
-    for text in (*texts, output, caplog.text, *map(str, errors), *map(repr, errors)):
+    tracebacks = ["".join(traceback.format_exception(error)) for error in errors]
+    for text in (*texts, output, caplog.text, *tracebacks, *map(repr, errors)):
         assert TOKEN not in text

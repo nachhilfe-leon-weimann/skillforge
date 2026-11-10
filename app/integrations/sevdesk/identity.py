@@ -25,7 +25,8 @@ async def verify_account(read_account: Callable[[], Awaitable[Account]], setting
     try:
         account = await read_account()
     except IntegrationError as exc:
-        raise IdentityCheckError("the sevDesk account could not be read") from exc
+        # No chaining: the cause may carry the remote system's message.
+        raise IdentityCheckError(f"the sevDesk account could not be read ({type(exc).__name__})") from None
     if account.id != expected:
         raise IdentityCheckError(f"the token belongs to sevDesk account {account.id}, not to {expected}")
     if settings.account is IntegrationAccount.TRIAL and TRIAL_MARKER not in account.name:

@@ -3,19 +3,24 @@
 sevDesk types numbers and booleans as strings (``"12.50"``, ``"0"``/``"1"``): the models accept them through
 pydantic's lax mode but hold strict types. They declare only the fields SkillForge uses and ignore the rest,
 so a person's name, address or bank data is never read where it is not needed; a declared name stays out of
-``repr``.
+``repr``. An amount (``Money``) holds whole cents: a sub-cent value is refused, never rounded.
 """
 
-from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 
 class SevdeskModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, validate_by_name=True, extra="ignore", frozen=True)
+
+
+class SevdeskObject(SevdeskModel):
+    """An object with its own id."""
+
+    id: int
 
 
 class ObjectRef(SevdeskModel):
@@ -33,102 +38,64 @@ def unwrap_single(value: object) -> object:
 type SingleRef = Annotated[ObjectRef, BeforeValidator(unwrap_single)]
 
 
+CENT = Decimal("0.01")
+
+
+def _whole_cents(amount: Decimal) -> Decimal:
+    cents = amount.quantize(CENT)
+    if cents != amount:
+        raise ValueError("an amount below a cent")
+    return cents
+
+
+type Money = Annotated[Decimal, AfterValidator(_whole_cents)]
+
+
 class BookkeepingVersion(SevdeskModel):
     version: str
 
 
-class Account(SevdeskModel):
+class Account(SevdeskObject):
     """The ``SevClient``: the sevDesk account a token belongs to."""
 
-    id: int
     name: str = Field(repr=False)
 
 
-class SevUser(SevdeskModel):
+class SevUser(SevdeskObject):
     """A user of the account; only its id and account are read, never its name."""
 
-    id: int
     sev_client: ObjectRef | None = None
 
 
-class Unity(SevdeskModel):
+class Unity(SevdeskObject):
     """A unit of quantity, such as hours."""
 
-    id: int
     name: str
 
 
-class Contact(SevdeskModel):
-    id: int
+class Contact(SevdeskObject):
     customer_number: str | None = None
     category: ObjectRef | None = None
     sev_client: ObjectRef | None = None
 
 
-class CustomFieldSetting(SevdeskModel):
+class CustomFieldSetting(SevdeskObject):
     """A ``ContactCustomFieldSetting``: the definition of a custom contact field."""
 
-    id: int
     name: str
     identifier: str | None = None
 
 
-class ContactCustomField(SevdeskModel):
-    id: int
+class ContactCustomField(SevdeskObject):
     contact: ObjectRef
     contact_custom_field_setting: SingleRef
     value: str = Field(repr=False)
 
 
-class Part(SevdeskModel):
-    id: int
+class Part(SevdeskObject):
     name: str
     part_number: str | None = None
     unity: ObjectRef | None = None
-    price: Decimal | None = None
+    price: Money | None = None
     tax_rate: Decimal | None = None
     status: int | None = None
-
-
-class InvoiceSequence(SevdeskModel):
-    """The ``SevSequence`` that numbers invoices: its format and the next number."""
-
-    id: int
-    format: str
-    next_sequence: int
-    type: str
-
-
-class Invoice(SevdeskModel):
-    id: int
-    invoice_number: str | None = None
-    status: int
-    contact: ObjectRef
-    contact_person: ObjectRef | None = None
-    invoice_date: datetime | None = None
-    tax_rule: ObjectRef | None = None
-    small_settlement: bool | None = None
-    sum_net: Decimal | None = None
-    sum_gross: Decimal | None = None
-    customer_internal_note: str | None = None
-    foot_text: str | None = Field(default=None, repr=False)
-    sev_client: ObjectRef | None = None
-
-
-class InvoicePosition(SevdeskModel):
-    id: int
-    invoice: ObjectRef
-    part: ObjectRef | None = None
-    unity: ObjectRef | None = None
-    quantity: Decimal
-    price: Decimal | None = None
-    tax_rate: Decimal | None = None
-    position_number: int | None = None
-    name: str | None = Field(default=None, repr=False)
-
-
-class SavedInvoice(SevdeskModel):
-    """What ``saveInvoice`` answers: the invoice and its positions."""
-
-    invoice: Invoice
-    positions: list[InvoicePosition] = Field(default_factory=list, alias="invoicePos")
