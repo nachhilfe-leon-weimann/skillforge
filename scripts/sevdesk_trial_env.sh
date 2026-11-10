@@ -26,14 +26,16 @@ for _ in 1 2 3 4 5 6 7 8; do
     esac
 done
 if [ -L "$target" ]; then echo "the trial env file's path has too many symlinks" >&2; exit 1; fi
-# git finds a work tree from any directory inside it, through symlinks and whatever the letter case; the repository
-# check stands on its own, should git be missing.
-repository="$(cd -- "$1" && pwd -P)"
-if env_dir="$(cd -- "$(dirname -- "$target")" 2>/dev/null && pwd -P)"; then
+# The directory is resolved physically (`cd -P`), as `uv` opens the file: a `..` after a symlinked directory leads
+# where the link points, not back. git finds a work tree from any directory inside it, whatever the letter case, and
+# no variable of the shell may point it elsewhere or stop its search; the repository check stands on its own, should
+# git be missing.
+repository="$(cd -P -- "$1" && pwd -P)"
+if env_dir="$(cd -P -- "$(dirname -- "$target")" 2>/dev/null && pwd -P)"; then
     case "$env_dir/" in
         "$repository"/*) echo "the trial env file must live outside the repository" >&2; exit 1 ;;
     esac
-    if env -u GIT_DIR -u GIT_WORK_TREE git -C "$env_dir" rev-parse --show-toplevel >/dev/null 2>&1; then
+    if env -u GIT_DIR -u GIT_WORK_TREE -u GIT_CEILING_DIRECTORIES git -C "$env_dir" rev-parse --show-toplevel >/dev/null 2>&1; then
         echo "the trial env file must live outside any git work tree" >&2
         exit 1
     fi
