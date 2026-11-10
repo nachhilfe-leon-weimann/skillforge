@@ -312,7 +312,7 @@ def acquire_token(config: GraphConfig) -> str:
     passing a SHA-1 ``thumbprint`` instead is MSAL's deprecated RS256 path.
     """
     # A PEP 723 dependency that the project environment lacks on purpose; imported here so the rest loads without it.
-    import msal  # ty: ignore[unresolved-import]
+    import msal  # ty: ignore[import-not-found]
 
     certificate = config.certificate_path.read_text()
     public_certificate = certificate_pem(certificate)
