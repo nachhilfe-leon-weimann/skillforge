@@ -442,7 +442,8 @@ def test_a_path_template_names_no_object(path: str, template: str):
 async def test_no_id_appears_in_a_log_line_or_an_error_message(restore_logging, capsys, caplog):
     configure_logging(LoggingSettings(level=LogLevel.DEBUG, format=LogFormat.JSON))
     capsys.readouterr()
-    contact = "4711"
+    # Longer than any run of digits in the output (a timestamp's fraction has six), so a match is a leak, not chance.
+    contact = "73915864"
     messages: list[str] = []
     responses = iter([httpx.Response(200, json={}), httpx.Response(404, json={}), httpx.Response(500, json={})])
 

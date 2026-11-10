@@ -352,7 +352,8 @@ async def test_no_id_appears_in_a_log_line_or_an_error_message(
 ):
     configure_logging(LoggingSettings(level=LogLevel.DEBUG, format=LogFormat.JSON))
     capsys.readouterr()
-    contact = 98765
+    # Longer than any run of digits in the output (a timestamp's fraction has six), so a match is a leak, not chance.
+    contact = 73915864
     fake_sevdesk.on("GET", f"/Contact/{contact}", httpx.Response(500, json={"error": {"message": "x"}}))
     fake_sevdesk.on("GET", f"/SevUser/{contact}", objects([{"id": "1", "objectName": "SevUser"}]))
     fake_sevdesk.on("GET", f"/Unity/{contact}", objects([{"id": str(contact), "objectName": "Unity", "name": None}]))
