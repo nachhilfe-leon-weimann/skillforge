@@ -85,6 +85,13 @@ row, commit, call, record the outcome - there is no job queue.
   `/Contact/{id}`), never an object's id.
 - **Layering.** `app/integrations/` imports only `app.core` and itself, and `app/core/` imports no integration
   (`tests/integrations/test_integrations_architecture.py`).
+- **sevDesk** (`sevdesk/`): settings `SEVDESK__*` (`SevdeskSettings`, all optional; account-specific ids are
+  configuration). A `SevdeskClient` comes only from `connect`, which first confirms the account
+  (`verify_account` in `identity.py`): the `SevClient` the token belongs to must have `SEVDESK__EXPECTED_ACCOUNT_ID`
+  and, for a `trial` account, a company name containing `TRIAL` - anything else, a failed read included, is an
+  `IdentityCheckError`. The models (`models.py`) parse sevDesk's string-typed numbers and booleans into strict
+  types and read no field SkillForge does not use; `invoices.py` builds the `saveInvoice` body of a draft under
+  § 19 UStG (`taxRule` 11).
 
 ## Housekeeping worker
 
