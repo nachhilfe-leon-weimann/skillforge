@@ -100,10 +100,13 @@ row, commit, call, record the outcome - there is no job queue.
   ([`app/cli/sevdesk_doctor.py`](../app/cli/sevdesk_doctor.py)) checks the configured ids read-only and, with
   `--discover` - the one read before the account is confirmed - prints the `sevClient` ids that `GET /SevClient`,
   `GET /SevUser` and `GET /ContactCustomFieldSetting` report and whether the company name carries the trial marker;
-  `just contract-sevdesk` runs the `contract` tests against the trial, skipping them once the trial expired. The
-  trial recipes load the trial's env file and refuse (`scripts/sevdesk_trial_env.sh`) a shell that has `SEVDESK__*`
-  variables of its own, in any letter case, and an env file inside the repository or any other git work tree
-  (symlinks resolved) or with whitespace in its path; `.gitignore` keeps out any `*.env` file.
+  `just contract-sevdesk` runs the `contract` tests against the trial, skipping them once the trial expired;
+  `just sevdesk-spike` ([`scripts/sevdesk_spike.py`](../scripts/sevdesk_spike.py), not in the image) walks the
+  trial step by step. The trial recipes load the trial's env file and refuse (`scripts/sevdesk_trial_env.sh`) a
+  shell that has `SEVDESK__*` variables of its own, in any letter case, and an env file inside the repository or
+  any other git work tree (symlinks resolved) or with whitespace in its path; `.gitignore` keeps out any `*.env`
+  file. The spike's exchanges go through the `Recorder` (`recording.py`), which scrubs them
+  into fixtures under `tests/fixtures/` once the identity check passed.
 
 ## Housekeeping worker
 
