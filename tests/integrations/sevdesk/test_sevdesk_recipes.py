@@ -139,18 +139,66 @@ def test_a_trial_recipe_refuses_a_file_symlink_into_the_repository(
     assert recipes.uv_calls() == []
 
 
-def test_a_trial_recipe_refuses_an_env_file_in_any_git_work_tree(recipes: Recipes, tmp_path, monkeypatch):
+def test_a_trial_recipe_follows_a_chain_of_symlinks_and_refuses_a_loop(recipes: Recipes, tmp_path, monkeypatch):
+    (tmp_path / "second.env").symlink_to(ROOT / "tests" / "sevdesk-trial.env")
+    (tmp_path / "first.env").symlink_to(tmp_path / "second.env")
+    (tmp_path / "loop-a.env").symlink_to(tmp_path / "loop-b.env")
+    (tmp_path / "loop-b.env").symlink_to(tmp_path / "loop-a.env")
+
+    monkeypatch.setenv("SKILLFORGE_SEVDESK_TRIAL_ENV", str(tmp_path / "first.env"))
+    chain = recipes.run("contract-sevdesk")
+    monkeypatch.setenv("SKILLFORGE_SEVDESK_TRIAL_ENV", str(tmp_path / "loop-a.env"))
+    loop = recipes.run("contract-sevdesk")
+
+    assert chain.returncode == 1 and "must live outside the repository" in chain.stderr
+    assert loop.returncode == 1 and "too many symlinks" in loop.stderr
+    assert recipes.uv_calls() == []
+
+
+def test_a_trial_recipe_resolves_dot_dot_after_a_symlinked_directory(recipes: Recipes, tmp_path, monkeypatch):
+    (tmp_path / "into-tests").symlink_to(ROOT / "tests", target_is_directory=True)
+    # The kernel reads into-tests/.. as the repository root; a lexical `..` would read it as tmp_path.
+    monkeypatch.setenv("SKILLFORGE_SEVDESK_TRIAL_ENV", str(tmp_path / "into-tests" / ".." / "sevdesk-trial.env"))
+
+    result = recipes.run("contract-sevdesk")
+
+    assert result.returncode == 1 and "must live outside the repository" in result.stderr
+    assert recipes.uv_calls() == []
+
+
+@pytest.fixture
+def other_repository(tmp_path) -> Path:
     other = tmp_path / "another-repository"
     (other / "config").mkdir(parents=True)
     subprocess.run(["git", "init", "-q", str(other)], check=True)
-    env_file = other / "config" / "sevdesk-trial.env"
+    return other
+
+
+@pytest.mark.parametrize("ceiling", [False, True], ids=["plain", "with a ceiling in the shell"])
+def test_a_trial_recipe_refuses_an_env_file_in_any_git_work_tree(
+    ceiling: bool, recipes: Recipes, other_repository: Path, monkeypatch
+):
+    env_file = other_repository / "config" / "sevdesk-trial.env"
     env_file.write_text("SEVDESK__ACCOUNT=trial\n")
     monkeypatch.setenv("SKILLFORGE_SEVDESK_TRIAL_ENV", str(env_file))
+    if ceiling:
+        monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(other_repository))
 
     result = recipes.run("contract-sevdesk")
 
     assert result.returncode == 1 and "must live outside any git work tree" in result.stderr
     assert recipes.uv_calls() == []
+
+
+def test_a_git_dir_of_the_shell_does_not_mark_a_file_outside_any_work_tree(
+    recipes: Recipes, trial_env_file, other_repository: Path, monkeypatch
+):
+    monkeypatch.setenv("GIT_DIR", str(other_repository / ".git"))
+
+    result = recipes.run("contract-sevdesk")
+
+    assert result.returncode == 0, result.stderr
+    assert len(recipes.uv_calls()) == 1
 
 
 def test_git_ignores_a_trial_env_file_anywhere_in_the_repository():
