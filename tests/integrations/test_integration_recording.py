@@ -450,15 +450,14 @@ def test_an_existing_fixture_is_never_overwritten_and_the_failure_is_kept(tmp_pa
     assert (tmp_path / RUN_ID / "exchange-01.json").read_text() == "recorded before\n"
 
 
-def test_an_answer_too_deep_to_parse_is_recorded_by_size_only(tmp_path: Path):
+def test_an_answer_too_deep_to_parse_is_recorded_by_size_only(tmp_path: Path, too_deep: bytes):
     recorder = _recorder(tmp_path)
     recorder.arm()
-    deep = b"[" * 100_000 + b"]" * 100_000
 
-    recorder(replace(_exchange(), response_content=deep))
+    recorder(replace(_exchange(), response_content=too_deep))
 
     recorded = json.loads(next((tmp_path / RUN_ID).iterdir()).read_text())
-    assert recorded["response"]["body"] == "[200000 bytes application/json]"
+    assert recorded["response"]["body"] == f"[{len(too_deep)} bytes application/json]"
 
 
 def test_an_answer_too_deep_to_scrub_fails_the_recording_with_its_reason(tmp_path: Path):
