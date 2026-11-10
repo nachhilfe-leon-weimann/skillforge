@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0 and SF1-1 to SF1-3b done; SP-CAL scripts written, not yet run. SP-SD freezes this spec after both spikes; until
+> Status: Draft - SF0 and SF1-1 to SF1-3c done; SP-CAL scripts written, not yet run. SP-SD freezes this spec after both spikes; until
 > then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
@@ -999,7 +999,41 @@ write (`invoices.py`)._
   - [x] The spike script sends every write once and tags it with the run id; its one `DELETE` targets a draft the
         same run created.
 
-**SP-SD - sevDesk spike and freeze.** _After SF1-3b; the trial runs 14 days._
+**SF1-3c - The manifest's steps.** _On SF1-3b, before the trial exists, so its 14 days are spent recording._
+
+- _Technique:_ the remaining rows of the [fixture manifest](#fixture-manifest) as steps of
+  `scripts/sevdesk_spike.py`: S3 (`contact-reads`), S5 (`payment-methods`: two more contacts with a payment method
+  each, the run's first without), the S11 variants (`invoice-variants`: several lessons, several children, the
+  transfer foot text, a top-up, and for Q5 a position with a part and no name, whose refusal is Q5's answer; each
+  lesson with a description in the form of `POSITION_DESCRIPTION`, the top-up's open; the part from `discovery`
+  unless `--part-id` names one), S15 (`--head-text` and `--foot-text`, on every draft: `HEAD_TEXT` and
+  `FOOT_PAYPAL` line by line as written here, `<br>` and line break included, with placeholders, also in a link
+  target with `re=` and `&betrag=`), S19 (`rounding`: quarter, three quarters and one and a half hours at three
+  rates, against the local sum), S20 (`cut-connection`: the spike's transport drops the answer of one
+  `saveInvoice` after it went out, then the lookups by reference and the contact's drafts), S21 (`error-bodies`: a
+  draft without contact, a wrong token), S23 (`numbers`: two drafts back to back with numbers from S8), S24
+  (`delivery-dates`, in the year before the invoice date - decision L) and the read of S25 (`deleted-read`). The
+  spike reads the listings of Q18 raw with `countAll` and reports whether `total` came back, so an open answer never
+  stops the walk; `discovery` prints the placeholders with their values. A row the maintainer completes in the
+  trial's UI stays manual: the script reads afterwards, in a step run on its own (`--run-id`, `--step`), never in
+  the walk. The write rules of SF1-3b hold for every new step, and a write whose exchange could not be recorded
+  stops the run before the next call.
+- _Tests that change:_ in `tests/integrations/sevdesk/test_sevdesk_spike.py`, the `trial` fixture gains routes and
+  the walk of SF1-3b more steps:
+  `test_a_full_walk_creates_tagged_objects_records_everything_and_saves_the_pdf` counts the new writes and texts
+  and one write the cut connection leaves unrecorded; `test_a_single_step_runs_alone`,
+  `test_delete_reads_first_and_deletes_only_a_draft_of_this_run` and
+  `test_delete_of_this_runs_draft_reads_it_then_deletes_it` see the `GET /SevUser` read after the identity check
+  and the raw listing of read-back; `test_a_failure_to_record_stops_the_walk` collides with that read;
+  `test_a_write_with_an_unknown_outcome_is_not_retried_and_stops_the_walk` finds more writes before the failing
+  one.
+- _Acceptance criteria:_
+  - [x] Every new write is sent once and carries the run id - a contact in its name, a draft in
+        `customerInternalNote` - and the walk's fixtures pass the scan.
+  - [x] The cut connection leaves its write unknown, sends it once, and is followed by reads only.
+  - [x] A step that reads what the maintainer did in the UI is no part of the walk.
+
+**SP-SD - sevDesk spike and freeze.** _After SF1-3c; the trial runs 14 days._
 
 - _Technique:_ the maintainer creates the trial and its env file - the expected account id comes from
   `just sevdesk-doctor trial --discover`. The trial holds synthetic data only: a company name that contains `TRIAL`,
@@ -1455,9 +1489,9 @@ No slice waits for a merge: dependent PRs form a stack ([`AGENTS.md`](../../AGEN
 | Slice | Needs | Note |
 |---|---|---|
 | **SF0** | - | |
-| **SF1-1**, **SF1-2**, **SF1-3a**, **SF1-3b** | SF0, each the one before | One stack. |
+| **SF1-1**, **SF1-2**, **SF1-2b**, **SF1-3a**, **SF1-3b**, **SF1-3c** | SF0, each the one before | One stack. |
 | **SP-CAL** | SF0 | The scripts can start at once; its fixture PR needs the scan of SF1-3b. |
-| **SP-SD** | SF1-3b | The maintainer creates the trial only when SF1-3b is merged, so its 14 days are not spent waiting. Freezes the spec. |
+| **SP-SD** | SF1-3c | The maintainer creates the trial only when SF1-3c is merged, so its 14 days are not spent waiting. Freezes the spec. |
 | **SF2-1**, **SF2-2**, **SF2-3** | SF0, PD3, PD9; each the one before | Can run beside SF1; both proposals are approved. |
 | **SF3-1**, **SF3-2** | SF2-2, PD1 | |
 | **SF4-1** | SP-CAL, SF1-1, M5 | |
