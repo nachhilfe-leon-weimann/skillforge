@@ -785,21 +785,12 @@ def test_record_writes_a_fixture_and_summary_free_of_the_synthetic_input(
     for text in (summary, fixture_text):
         words = {word.casefold() for word in re.findall(r"[^\W_]+", text)}
         assert not NAME_TOKENS & words
-        for secret in (
-            MAILBOX,
-            OTHER_MAILBOX,
-            TENANT_ID,
-            CLIENT_ID,
-            CALENDAR_NAME,
-            CALENDAR_ID,
-            "Musterweg",
-            "+49 170",
-        ):
-            assert secret not in text
-        for raw in RAW_EVENTS:
-            assert raw["id"] not in re.findall(r'"([^"]+)"', text)
-        for day in RAW_DATES:
-            assert day not in text
+        secrets = (MAILBOX, OTHER_MAILBOX, TENANT_ID, CLIENT_ID, CALENDAR_NAME, CALENDAR_ID, "Musterweg", "+49 170")
+        quoted = set(re.findall(r'"([^"]+)"', text))
+        # Lists of leaks, not ``x not in text``: pytest would diff the whole fixture for a failure.
+        assert [secret for secret in secrets if secret in text] == []
+        assert [raw["id"] for raw in RAW_EVENTS if raw["id"] in quoted] == []
+        assert [day for day in sorted(RAW_DATES) if day in text] == []
     assert not re.search(r"\d{4}-\d{2}-\d{2}", summary)
     assert not re.search(r"\d{4}-\d{2}-\d{2}", json.dumps(fixture["meta"]))
     assert fixture["meta"]["windowDays"] == 9

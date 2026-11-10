@@ -542,17 +542,10 @@ def _category_key(category: str) -> str:
 class Pseudonymizer:
     """Keyed replacements: the same salt maps a name or id the same way across runs; the date shift is per run."""
 
-    def __init__(
-        self,
-        salt: bytes,
-        extra_subjects: Iterable[str] = (),
-        extra_categories: Iterable[str] = (),
-        *,
-        week_offset: int | None = None,
-    ) -> None:
+    def __init__(self, salt: bytes, extra_subjects: Iterable[str] = (), extra_categories: Iterable[str] = ()) -> None:
         self._name_key = self._derive(salt, b"names")
         self._id_key = self._derive(salt, b"ids")
-        self._week_offset = random_week_offset() if week_offset is None else week_offset
+        self._week_offset = random_week_offset()
         kept = (*SUBJECTS, *TITLE_MARKERS, KENNENLERNEN, *extra_subjects)
         self._kept_words = {normalize_token(word) for text in kept for word in _WORD.findall(text)}
         self._kept_categories = {_category_key(category) for category in (*DEFAULT_CATEGORIES, *extra_categories)}
