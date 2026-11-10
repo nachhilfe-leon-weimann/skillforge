@@ -1,7 +1,7 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0 done. SP-SD freezes this spec after both spikes; until then nothing is built on a point marked
-> **open**.
+> Status: Draft - SF0 done; SP-CAL scripts written, not yet run. SP-SD freezes this spec after both spikes; until
+> then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
 > [`api-conventions.md`](api-conventions.md), [`crm-api.md`](crm-api.md) and
@@ -867,7 +867,7 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   maintainer runs them and hands over the fixture; an agent adds it under `tests/fixtures/graph/` once the fixture
   scan of SF1-3b exists.
 - _Acceptance criteria:_
-  - [ ] Both scripts exist; tests on synthetic events show that a fixture and a summary hold no name, address or
+  - [x] Both scripts exist; tests on synthetic events show that a fixture and a summary hold no name, address or
         id, and that the recorder refuses an output path inside a git work tree.
   - [ ] The maintainer ran the setup: the lesson mailbox is in scope, the other mailbox is not, and the app holds
         no application permission in Entra (the maintainer's statement, in the PR).
