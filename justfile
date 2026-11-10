@@ -170,8 +170,7 @@ sevdesk-spike *args:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ -n "${CI:-}" ]; then echo "sevdesk-spike never runs in CI" >&2; exit 1; fi
-    env_file="${SKILLFORGE_SEVDESK_TRIAL_ENV:-$HOME/.config/skillforge/sevdesk-trial.env}"
-    if compgen -e | grep -q '^SEVDESK__'; then echo "unset the SEVDESK__ variables of this shell first" >&2; exit 1; fi
+    source "{{justfile_directory()}}/scripts/sevdesk_trial_env.sh" "{{justfile_directory()}}"
     if [ ! -f "$env_file" ]; then echo "no trial configured: $env_file does not exist" >&2; exit 1; fi
     exec uv run --env-file "$env_file" python -m scripts.sevdesk_spike "$@"
 

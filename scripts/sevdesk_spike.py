@@ -2,17 +2,16 @@
 
 Only the maintainer runs it. It refuses unless ``SEVDESK__MODE=live``, ``SEVDESK__ACCOUNT=trial`` and the identity
 check passes; the recorder keeps nothing before that, then records every exchange, starting with the identity read
-again, into ``tests/fixtures/sevdesk/``. Every object it creates carries the run id - an invoice in
-``customerInternalNote`` and its texts, a contact in its name. A write is never retried: on an unknown outcome,
-an unreadable answer to a write included, the step stops and names the run tag to look for in the trial. It lives
-in ``scripts/``, which the image does not contain, so it can never run from a deployed container.
+again, into ``tests/fixtures/sevdesk/<run id>/``; a run that cannot record stops. Every object it creates carries
+the run id - an invoice in ``customerInternalNote`` and its texts, a contact in its name. A write is never retried:
+on an unknown outcome, an unreadable answer to a write included, the step stops and names the run tag to look for
+in the trial. Its one ``DELETE`` targets a draft that carries this run's tag. It lives in ``scripts/``, which the
+image does not contain, so it can never run from a deployed container.
 """
 
 import argparse
 import asyncio
 import base64
-import json
-import secrets
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -21,10 +20,10 @@ from typing import Any
 
 from app.integrations.config import IntegrationAccount, IntegrationMode
 from app.integrations.errors import IntegrationError, IntegrationRejectedError, OutcomeUnknownError
-from app.integrations.recording import Recorder
+from app.integrations.recording import RUN_ID, Recorder, new_run_id
 from app.integrations.sevdesk.client import SevdeskClient
 from app.integrations.sevdesk.config import SevdeskSettings
-from app.integrations.sevdesk.invoices import InvoiceDraft, PositionDraft
+from app.integrations.sevdesk.invoices import DRAFT_STATUS, InvoiceDraft, PositionDraft
 from app.integrations.transport import InnerTransport, PlannedRequest, Reply
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -116,11 +115,13 @@ async def read_back(spike: Spike) -> None:
     found = await spike.client.get_invoice(invoice_id)
     if found is None:
         raise SystemExit(f"invoice {invoice_id} not found")
-    spike.out(f"invoice {found.id}: status {found.status}, number {found.invoice_number}, sum {found.sum_gross}")
+    spike.out(
+        f"invoice {found.id}: status {found.status}, number {found.invoice_number}, sum {found.sum_gross_cents} cents"
+    )
     spike.out(f"tax rule {found.tax_rule.id if found.tax_rule else '-'}, small settlement {found.small_settlement}")
     spike.out(f"foot text as stored: {found.foot_text!r}")
     for position in await spike.client.invoice_positions(invoice_id):
-        spike.out(f"position {position.id}: {position.quantity} x {position.price}, unit {position.unity}")
+        spike.out(f"position {position.id}: {position.quantity} x {position.price_cents} cents, unit {position.unity}")
     params = {"customerInternalNote": spike.tag, "limit": 1000}
     listed = _objects(await spike.client.http.read("/Invoice", params=params))
     matching = await spike.client.find_invoices(spike.tag)
@@ -145,6 +146,9 @@ async def pdf(spike: Spike) -> None:
 
 async def delete(spike: Spike) -> None:
     invoice_id = _invoice_id(spike)
+    found = await spike.client.get_invoice(invoice_id)
+    if found is None or found.customer_internal_note != spike.tag or found.status != DRAFT_STATUS:
+        raise SystemExit(f"invoice {invoice_id} is no draft of this run ({spike.tag}): not deleted")
     where = f"DELETE /Invoice/{invoice_id}"
     try:
         reply = _readable(_sent(await spike.client.http.write("DELETE", f"/Invoice/{invoice_id}")), where)
@@ -187,8 +191,11 @@ async def run(
     if pdf_dir.is_relative_to(REPO_ROOT):
         out(f"--pdf-dir must lie outside the repository: {pdf_dir}")
         return 1
-    run_id = arguments.run_id or f"{datetime.now(UTC):%Y%m%dT%H%M%S}-{secrets.token_hex(2)}"
-    recorder = Recorder(arguments.record_dir, keep=run_id)
+    run_id = arguments.run_id or new_run_id(datetime.now(UTC))
+    if not RUN_ID.fullmatch(run_id):
+        out(f"--run-id is 'run' and 18 digits, as a run prints it: {run_id!r}")
+        return 1
+    recorder = Recorder(arguments.record_dir, run_id=run_id)
     out(f"run {run_id}")
     try:
         async with SevdeskClient.connect(settings, observer=recorder, transport=transport) as client:
@@ -198,9 +205,14 @@ async def run(
             spike = Spike(client, settings, run_id, pdf_dir, arguments.foot_text.format(run_id=run_id), out)
             spike.contact_id, spike.invoice_id = arguments.contact_id, arguments.invoice_id
             for name in arguments.step or STEPS:
+                _ensure_recorded(recorder)
                 recorder.step = name
                 out(f"== {name}")
                 await STEPS[name](spike)
+            _ensure_recorded(recorder)
+    except RecordingFailedError as exc:
+        out(f"stopped: {exc}")
+        return 1
     except OutcomeUnknownError as exc:
         out(f"outcome unknown, not retried: {exc}; look for skillforge-spike:{run_id} in the trial")
         return 1
@@ -213,13 +225,24 @@ async def run(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m scripts.sevdesk_spike", description=__doc__, allow_abbrev=False)
     parser.add_argument("--step", action="append", choices=list(STEPS), help="Run only this step (repeatable).")
-    parser.add_argument("--run-id", help="Reuse a run id instead of a new one.")
+    parser.add_argument("--run-id", help="Continue a run: its id, as the run printed it ('run' and 18 digits).")
     parser.add_argument("--contact-id", type=int, help="The contact for the invoice step, without the contact step.")
     parser.add_argument("--invoice-id", type=int, help="The invoice for read-back, pdf and delete.")
     parser.add_argument("--foot-text", default=FOOT_TEXT, help="Foot text under test; {run_id} is filled in.")
     parser.add_argument("--record-dir", type=Path, default=RECORD_DIR, help="Where the recorder writes fixtures.")
     parser.add_argument("--pdf-dir", type=Path, default=PDF_DIR, help="Where the PDF goes; outside the repository.")
     return parser
+
+
+class RecordingFailedError(Exception):
+    """The recorder could not write a fixture: the run stops rather than go on unrecorded."""
+
+
+def _ensure_recorded(recorder: Recorder) -> None:
+    if recorder.failure is not None:
+        raise RecordingFailedError(
+            f"recording failed ({recorder.failure}) in step {recorder.step}; the fixtures are incomplete"
+        )
 
 
 def _sent[T](written: T | PlannedRequest) -> T:
@@ -247,7 +270,7 @@ def _created_id(written: Reply | PlannedRequest, where: str) -> int:
 
 def _objects(reply: Reply) -> list[dict[str, Any]]:
     """A raw response's objects as a list, for the calls only the spike makes."""
-    objects = json.loads(reply.content)
+    objects: Any = reply.json()
     if isinstance(objects, dict):
         objects = objects.get("objects", objects)
     return objects if isinstance(objects, list) else [objects]

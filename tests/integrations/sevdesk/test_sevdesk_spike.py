@@ -13,7 +13,7 @@ from scripts.sevdesk_spike import STEPS, build_parser, run
 from tests.integrations.sevdesk.fake_sevdesk import TOKEN, TRIAL_COMPANY, FakeSevdesk, objects, page
 from tests.test_fixture_scan import leaks
 
-RUN_ID = "20261110T120000-ab12"
+RUN_ID = "run202611101200000042"
 TAG = f"skillforge-spike:{RUN_ID}"
 INVOICE = {"id": "501", "objectName": "Invoice", "status": "100", "contact": {"id": "21", "objectName": "Contact"}}
 PDF = b"%PDF-1.7 synthetic"
@@ -80,6 +80,7 @@ async def test_a_full_walk_creates_tagged_objects_records_everything_and_saves_t
         "POST /Invoice/501/render",
         "DELETE /Invoice/501",
     ]
+    assert trial.sent()[-3:] == ["GET /Invoice/501", "DELETE /Invoice/501", "GET /SevSequence/Factory/getByType"]
     contact, invoice = [json.loads(request.content) for request in trial.requests if request.method == "POST"][:2]
     assert contact["familyname"] == RUN_ID
     assert invoice["invoice"]["customerInternalNote"] == TAG
@@ -87,13 +88,13 @@ async def test_a_full_walk_creates_tagged_objects_records_everything_and_saves_t
     pdf_request = next(request for request in trial.requests if request.url.path.endswith("/getPdf"))
     assert pdf_request.url.params["preventSendBy"] == "true"
     assert (tmp_path / "pdf" / f"{RUN_ID}-invoice-501.pdf").read_bytes() == PDF
-    fixtures = sorted((tmp_path / "fixtures").iterdir())
+    fixtures = sorted((tmp_path / "fixtures" / RUN_ID).iterdir())
     assert len(fixtures) == len(trial.requests) - 1, "the first identity read is not recorded, its re-read is"
     assert "identity-01.json" in {fixture.name for fixture in fixtures}
     for fixture in fixtures:
         text = fixture.read_text()
         assert TOKEN not in text and HEX_TOKEN not in text and "Synthia" not in text and leaks(text) == []
-    assert TAG in (tmp_path / "fixtures" / "read-back-10.json").read_text(), "the run's own texts stay"
+    assert TAG in (tmp_path / "fixtures" / RUN_ID / "read-back-10.json").read_text(), "the run's own texts stay"
 
 
 async def test_a_single_step_runs_alone(live_settings, trial, tmp_path):
@@ -108,6 +109,65 @@ async def test_a_single_step_runs_alone(live_settings, trial, tmp_path):
         "GET /Invoice",
         "GET /Invoice",
     ]
+
+
+NOT_THIS_RUNS_DRAFT = {
+    "another run's draft": {**INVOICE, "customerInternalNote": "skillforge-spike:run202611091200000007"},
+    "a draft without a tag": INVOICE,
+    "a tag that only contains this run's": {**INVOICE, "customerInternalNote": f"{TAG} copy"},
+    "an issued invoice of this run": {**INVOICE, "customerInternalNote": TAG, "status": "200"},
+}
+
+
+@pytest.mark.parametrize("found", NOT_THIS_RUNS_DRAFT.values(), ids=NOT_THIS_RUNS_DRAFT.keys())
+async def test_delete_reads_first_and_deletes_only_a_draft_of_this_run(found, live_settings, trial, tmp_path):
+    trial.on("GET", "/Invoice/501", objects([found]))
+
+    with pytest.raises(SystemExit, match="no draft of this run"):
+        await _spike(live_settings, trial, tmp_path, "--step", "delete", "--invoice-id", "501")
+
+    assert trial.sent() == ["GET /SevClient", "GET /SevClient", "GET /Invoice/501"]
+
+
+async def test_delete_of_an_invoice_sevdesk_does_not_know_deletes_nothing(live_settings, trial, tmp_path):
+    trial.on("GET", "/Invoice/501", objects([]))
+
+    with pytest.raises(SystemExit, match="no draft of this run"):
+        await _spike(live_settings, trial, tmp_path, "--step", "delete", "--invoice-id", "501")
+
+    assert trial.sent("DELETE") == []
+
+
+async def test_delete_of_this_runs_draft_reads_it_then_deletes_it(live_settings, trial, tmp_path):
+    code, _ = await _spike(live_settings, trial, tmp_path, "--step", "delete", "--invoice-id", "501")
+
+    assert code == 0
+    assert trial.sent()[2:] == ["GET /Invoice/501", "DELETE /Invoice/501"]
+
+
+async def test_a_failure_to_record_stops_the_walk(live_settings, trial, tmp_path):
+    # A file of an earlier run with this id: the numbering goes on from one file, so the identity read collides.
+    run_directory = tmp_path / "fixtures" / RUN_ID
+    run_directory.mkdir(parents=True)
+    (run_directory / "identity-02.json").write_text("recorded before\n")
+
+    code, lines = await _spike(live_settings, trial, tmp_path)
+
+    assert code == 1
+    assert lines[-1] == "stopped: recording failed (FileExistsError) in step identity; the fixtures are incomplete"
+    assert not any(line.startswith("==") for line in lines)
+    assert trial.sent() == ["GET /SevClient", "GET /SevClient"]
+    assert (run_directory / "identity-02.json").read_text() == "recorded before\n"
+
+
+@pytest.mark.parametrize("run_id", ["a", "20261110T120000-ab12", "run1"])
+async def test_a_run_id_outside_the_format_is_refused_before_any_call(run_id: str, live_settings, trial, tmp_path):
+    arguments = build_parser().parse_args(["--run-id", run_id, "--record-dir", str(tmp_path / "fixtures")])
+    lines: list[str] = []
+
+    assert await run(arguments, settings=live_settings, transport=trial.transport, out=lines.append) == 1
+    assert lines[0].startswith("--run-id is 'run' and 18 digits")
+    assert trial.requests == []
 
 
 async def test_a_write_with_an_unknown_outcome_is_not_retried_and_stops_the_walk(live_settings, trial, tmp_path):

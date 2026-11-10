@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0, SF1-1, SF1-2, SF1-2b and SF1-3a done; SP-CAL scripts written, not yet run. SP-SD freezes this spec after both spikes; until
+> Status: Draft - SF0 and SF1-1 to SF1-3b done; SP-CAL scripts written, not yet run. SP-SD freezes this spec after both spikes; until
 > then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
@@ -781,9 +781,9 @@ repository.
 
 Every response shape SF1, SF6 and SFP-2 build on is recorded once, scrubbed, and never edited by hand - a changed
 shape is recorded again and the diff reviewed. sevDesk fixtures come from the trial account through the recorder
-of SF1-3b and live under `tests/fixtures/sevdesk/`; Graph fixtures are the exception: the maintainer runs the
-recorder of SP-CAL once, outside every work tree, and hands over its redacted summary; an agent builds G1 to G6 as
-synthetic fixtures of that shape under `tests/fixtures/graph/`, and G7 is the recorded token and error response,
+of SF1-3b and live under `tests/fixtures/sevdesk/<run id>/`; Graph fixtures are the exception: the maintainer runs
+the recorder of SP-CAL once, outside every work tree, and hands over its redacted summary; an agent builds G1 to G6
+as synthetic fixtures of that shape under `tests/fixtures/graph/`, and G7 is the recorded token and error response,
 scrubbed. The maintainer compares them with the recording once and then deletes it: nothing recorded from the
 calendar enters the repository.
 
@@ -797,14 +797,14 @@ the script then only reads.
 | S2 | The account's identity and company name: `GET /SevClient`; for comparison `GET /SevUser` and `GET /ContactCustomFieldSetting` with their client ids | Script | SF1-2 | Q7 |
 | S3 | A synthetic contact: `GET /Contact/{id}`, `GET /Contact?customerNumber=...&depth=1` | Script | SF1-2, SF5-4 | |
 | S4 | `GET /ContactCustomFieldSetting` with the "Zahlungsverfahren" setting | Script | SF1-2 | |
-| S5 | `GET /ContactCustomField` and `GET /Contact/Factory/findContactsByCustomFieldValue`: a contact with `PayPal`, one with `Überweisung`, one empty | Script | SF5-4 | |
+| S5 | `GET /ContactCustomField` and `GET /Contact/Factory/findContactsByCustomFieldValue`: a contact with `PayPal`, one with `Überweisung`, one empty; the listing with `countAll` | Script | SF5-4 | Q18 |
 | S6 | The hour unit as it appears on a position or a part | Script | SF1-2 | Q6 |
 | S7 | The contact person as it appears on an invoice | Script | SF1-2 | Q6 |
 | S8 | `GET /SevSequence/Factory/getByType?objectType=Invoice&type=RE` | Script | SF6-1 | Q1, Q3 |
-| S9 | `GET /Part`: one part per subject | Script | SF5-4 | Q5 |
+| S9 | `GET /Part`: one part per subject, with `countAll` | Script | SF5-4 | Q5, Q18 |
 | S10 | `GET /Textparser/fetchDictionaryEntriesByType?objectName=Invoice` | Script | SF5-2 | Q2 |
 | S11 | `saveInvoice` drafts, request and response: one lesson; several lessons; several children; a top-up "N x subject" | Script | SF1-2, SF6-1, SFP-2a | Q5 |
-| S12 | Read-back of S11: `GET /Invoice/{id}`, `GET /Invoice/{id}/getPositions` | Script | SF6-1 | |
+| S12 | Read-back of S11: `GET /Invoice/{id}`, `GET /Invoice/{id}/getPositions` with `countAll` | Script | SF6-1 | Q18 |
 | S13 | Status values: a draft; the same invoice after each way of sending; a booked payment if reachable | The maintainer sends and books in the UI; script reads | SF6-2, SFP-2b | Q13 |
 | S14 | The rendered PDF for both foot texts: the title (`header`), the texts, the § 19 line, GiroCode, bank block, and whether the reference (`customerInternalNote`) is printed | Script | SF5-2 | Q2, Q4 |
 | S15 | Placeholders and markup in a head and a foot text set through the API - bold, italic, a link, a placeholder inside a link target, line breaks; rendered | Script | SF5-2 | Q2 |
@@ -812,7 +812,7 @@ the script then only reads.
 | S17 | A cancellation: the original and the cancellation invoice | The maintainer cancels in the UI; script reads | SF6-2, SFP-2b | Q12 |
 | S18 | `DELETE /Invoice/{id}` on a draft the run created - the script's only delete, on the trial only | Script | SF6-2 | Q11 |
 | S19 | Rounding parity: positions with quantities `0.25`, `0.75`, `1.5` at several rates; sevDesk's sums against local cents | Script | SF6-1 | Q14 |
-| S20 | A cut connection on `saveInvoice`, then the lookup by reference: the filter on `customerInternalNote` and the list of the contact's drafts | Script | SF6-1, SF6-2 | Q10 |
+| S20 | A cut connection on `saveInvoice`, then the lookup by reference: the filter on `customerInternalNote` and the list of the contact's drafts | Script | SF6-1, SF6-2 | Q10, Q18 |
 | S21 | Error bodies: a validation error with its status, a wrong token | Script | SF1-2, SF6-1 | Q14 |
 | S22 | `invoiceNumber` on one draft, on a second draft, after issue | Script; the maintainer issues in the UI | SF6-1 | Q1 |
 | S23 | Two drafts created back to back, each with a number from S8; issued in either order: are the numbers kept | Script; the maintainer opens and issues in the UI | SF6-1 | Q3 |
@@ -979,21 +979,23 @@ write (`invoices.py`)._
 
 - _Technique:_ `app/integrations/recording.py`: the recorder. Nothing is recorded before the identity check
   passed. It drops the `Authorization` header and cookies; person and company objects - SevClient, SevUser,
-  Contact, ContactAddress, CommunicationWay, an invoice's address - are scrubbed by allowlist, so only listed
-  fields survive; IBANs, e-mail addresses (to `example.org`) and phone numbers are replaced. Fixtures go to
-  `tests/fixtures/sevdesk/`. `tests/test_fixture_scan.py` runs in `just check`: token-like strings, an e-mail
-  address outside `example.org`, IBAN patterns, phone numbers, the `TRIAL` company marker.
-  `scripts/sevdesk_spike.py` with the recipe `just sevdesk-spike`: trial only, with the refusals of
-  `just contract-sevdesk`; it walks the [fixture manifest](#fixture-manifest), never retries a write, tags every
-  object it creates with a run id in `customerInternalNote`, and its only `DELETE` is S18.
+  Contact, ContactAddress, CommunicationWay - are scrubbed by allowlist at every depth, so only listed fields
+  survive; free text elsewhere, an invoice's address among it, goes unless the run sent exactly that string; IBANs,
+  e-mail addresses (to `example.org`) and phone numbers are replaced. Fixtures go to
+  `tests/fixtures/sevdesk/<run id>/`, and no file is overwritten. `tests/test_fixture_scan.py` runs in
+  `just check`: token-like strings, an e-mail address outside `example.org`, IBAN patterns, phone numbers, the
+  `TRIAL` company marker. `scripts/sevdesk_spike.py` with the recipe `just sevdesk-spike`: trial only, with the
+  refusals of `just contract-sevdesk`; it walks the [fixture manifest](#fixture-manifest), never retries a write,
+  tags every object it creates with its run id (`run` and 18 digits) in `customerInternalNote`, stops when the
+  recorder fails, and its only `DELETE` is S18 - on a draft it read first and found carrying its tag.
 - _Acceptance criteria:_
-  - [ ] The scan fails on each of its five patterns (one bad sample per rule, built in the test) and passes on the
+  - [x] The scan fails on each of its five patterns (one bad sample per rule, built in the test) and passes on the
         recorder's output for a response that held all five.
-  - [ ] A field that is not on the allowlist of a person or company object does not reach a fixture.
-  - [ ] The recorder writes nothing before the identity check passed.
-  - [ ] `just sevdesk-spike` refuses `SEVDESK__ACCOUNT=live`, CI, and a `SEVDESK__*` variable already set; the
+  - [x] A field that is not on the allowlist of a person or company object does not reach a fixture.
+  - [x] The recorder writes nothing before the identity check passed.
+  - [x] `just sevdesk-spike` refuses `SEVDESK__ACCOUNT=live`, CI, and a `SEVDESK__*` variable already set; the
         agent guide's rule - only after the maintainer's go in the session - names this recipe too.
-  - [ ] The spike script sends every write once and tags it with the run id; its one `DELETE` targets a draft the
+  - [x] The spike script sends every write once and tags it with the run id; its one `DELETE` targets a draft the
         same run created.
 
 **SP-SD - sevDesk spike and freeze.** _After SF1-3b; the trial runs 14 days._
@@ -1013,7 +1015,7 @@ write (`invoices.py`)._
   - [ ] Every row S1 to S25 has a scrubbed fixture, or a written reason why it could not be recorded; the scan is
         green.
   - [ ] Every created object carries the run id, and the script's log shows one request per write.
-  - [ ] Q1 to Q8, Q10 to Q15 and Q17 are answered, each naming its fixture.
+  - [ ] Q1 to Q8, Q10 to Q15, Q17 and Q18 are answered, each naming its fixture.
   - [ ] Trial and real account both report bookkeeping system 2.0.
   - [ ] Every **pending approval** in [Family-visible texts](#family-visible-texts), every row of
         [Approved by the maintainer](#approved-by-the-maintainer) and every item of
@@ -1411,6 +1413,7 @@ None yet. SP-CAL and SP-SD move each answered question here, with the fixture th
 | Q15 | How does sevDesk read the time zone of `deliveryDate`? Which delivery date does a top-up carry today? | The request's dates; `delivery_from` on a top-up. | SP-SD (S24); a top-up invoice of today, read by the maintainer |
 | Q16 | Which Graph id stays the same when an occurrence of a series moves? | `calendar_event.external_id`. | SP-CAL (G2) |
 | Q17 | How does a draft read after the maintainer deleted it in the UI: the answer of `GET /Invoice/{id}`, and is it gone from the contact's list? | What `discard` must read before it voids. | SP-SD (S25) |
+| Q18 | Does every listing the client reads whole - `/Part`, `/ContactCustomField`, `/Invoice/{id}/getPositions`, `/Invoice` - answer `countAll=true` with `total`? | The client refuses a listing without `total` ("listing without countAll total"): a listing that lacks it needs another way to be read whole. | SP-SD (S5, S9, S12, S20) |
 
 ### For the maintainer
 

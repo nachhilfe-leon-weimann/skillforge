@@ -18,8 +18,9 @@ too. The layer is described in [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.
   settings `app/core/config.py` nests (`tests/integrations/test_integrations_architecture.py`).
 - **Ids are configuration.** Account-specific ids (contact person, units, custom fields) come from settings, never
   from literals in code.
-- **Fixtures only through the recorder.** `Recorder` in `recording.py` writes them under `tests/fixtures/`,
-  scrubbed; `tests/test_fixture_scan.py` checks them. Never hand-edit a recorded fixture.
+- **Fixtures only through the recorder.** `Recorder` in `recording.py` writes them under
+  `tests/fixtures/<integration>/<run id>/`, scrubbed, and never overwrites one; `tests/test_fixture_scan.py`
+  checks them. Never hand-edit a recorded fixture.
 - **Live calls need the maintainer's go.** `just sevdesk-doctor`, `just contract-sevdesk` (`@pytest.mark.contract`,
   skipped in every other run) and `just sevdesk-spike` (`scripts/sevdesk_spike.py`) reach sevDesk; an agent runs
   the trial recipes only after the maintainer's go in the session, and `just sevdesk-doctor live` never.

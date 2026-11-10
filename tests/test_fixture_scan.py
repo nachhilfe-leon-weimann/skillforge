@@ -12,6 +12,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 _EMAIL = re.compile(r"[\w.%+-]+(?:@|%40|\(at\))(?P<domain>[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,})")
 _PHONE = re.compile(r"(?:\+\s*\d|\(\s*0|\b0)(?:[\s()./-]*\d){7,}")
+_DATE = re.compile(r"\b\d\d\.\d\d\.\d{4}\b|\b\d{4}-\d\d-\d\d\b")
 LEAKS = {
     "a 32-hex token": re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{32}"),
     "an IBAN": re.compile(r"\b[A-Za-z]{2}\d{2}(?:\s?[A-Za-z0-9]{4}){2,7}(?:\s?[A-Za-z0-9]{1,3})?\b"),
@@ -20,8 +21,8 @@ LEAKS = {
 
 
 def _phones(text: str) -> bool:
-    """A run of at least 9 digits that starts like a phone number; a date or a time has fewer."""
-    return any(len(re.sub(r"\D", "", match[0])) >= 9 for match in _PHONE.finditer(text))
+    """A run of at least 9 digits that starts like a phone number, dates in it not counted: a date range is none."""
+    return any(len(re.sub(r"\D", "", _DATE.sub("", match[0]))) >= 9 for match in _PHONE.finditer(text))
 
 
 def leaks(text: str) -> list[str]:
@@ -62,6 +63,7 @@ def test_no_fixture_leaks():
         ('{"text": "Tel.:+491701234567"}', "a phone number"),
         ('{"text": "Telefon 0170.1234567"}', "a phone number"),
         ('{"phone": "030/1234567"}', "a phone number"),
+        ('{"text": "01.10.2026 0170 1234567"}', "a phone number"),
     ],
 )
 def test_the_scan_catches_each_pattern(tmp_path: Path, content: str, leak: str):
@@ -74,7 +76,8 @@ def test_the_scan_catches_each_pattern(tmp_path: Path, content: str, leak: str):
 def test_the_scan_lets_synthetic_data_pass():
     clean = (
         '{"id": "501", "email": "person@example.org", "date": "2026-11-02T00:00:00+01:00", "hex": "ab12",'
-        ' "period": "01.10.2026", "sum": "1234567.89", "run": "20261110T120000-ab12"}'
+        ' "period": "01.10.2026 - 31.10.2026", "range": "2026-10-01-2026-10-31", "sum": "1234567.89",'
+        ' "run": "run202611101200000042"}'
     )
 
     assert leaks(clean) == []
