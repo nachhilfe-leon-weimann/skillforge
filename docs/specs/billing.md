@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0 and SF1-1 done; SP-CAL scripts written, not yet run. SP-SD freezes this spec after both spikes; until
+> Status: Draft - SF0, SF1-1 and SF1-2 done; SP-CAL scripts written, not yet run. SP-SD freezes this spec after both spikes; until
 > then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
@@ -898,7 +898,8 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   - [x] The app starts, and `just check` passes, with no integration setting present.
   - [x] `app/integrations/AGENTS.md` exists; the `CLAUDE.md` beside it holds only `@AGENTS.md`.
 
-**SF1-2 - sevDesk client.** _May land as two PRs: client and identity; the invoice write._
+**SF1-2 - sevDesk client.** _Lands as two PRs: SF1-2, the client and its identity check; SF1-2b, the invoice
+write (`invoices.py`)._
 
 - _Technique:_ `app/integrations/sevdesk/`: `config.py` (the settings of [Configuration](#configuration)),
   `models.py` (typed, lenient parsing: sevDesk sends numbers as strings), `identity.py`, `invoices.py`,
@@ -914,11 +915,11 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   - [ ] In `dry_run`, `saveInvoice` returns the planned request and the transport saw no write; a read is sent.
   - [ ] A write that fails in transit, gets a `5xx` or an unreadable `2xx` raises `OutcomeUnknownError` and was
         sent exactly once; a `4xx` raises `IntegrationRejectedError`.
-  - [ ] No call leaves before the identity check passed; a wrong account id and a trial whose company name lacks
+  - [x] No call leaves before the identity check passed; a wrong account id and a trial whose company name lacks
         `TRIAL` each fail closed; `SEVDESK__ACCOUNT` defaults to `trial`.
   - [ ] Numbers that arrive as strings parse (`"100"`, `"100.00"`); an amount never passes through `float`, in
         either direction.
-  - [ ] The token appears in no log line, exception message or `repr`.
+  - [x] The token appears in no log line, exception message or `repr`.
 
 **SF1-3a - Doctor and contract run.**
 
