@@ -15,6 +15,11 @@ def objects(payload: object, status: int = 200) -> httpx.Response:
     return httpx.Response(status, json={"objects": payload})
 
 
+def page(items: list[dict[str, object]], total: int | None = None) -> httpx.Response:
+    """A page of a ``countAll`` listing; ``total`` defaults to the page's own length, as a string like sevDesk's."""
+    return httpx.Response(200, json={"total": str(len(items) if total is None else total), "objects": items})
+
+
 class FakeSevdesk:
     """Answers ``(method, path)`` routes below ``/api/v1``; an unknown route is a 404."""
 

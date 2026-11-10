@@ -1,5 +1,8 @@
 from enum import StrEnum
+from typing import Annotated
 
+from pydantic import BeforeValidator
+from pydantic_core import PydanticUseDefault
 from skillcore.config import CoreSettings
 
 
@@ -21,6 +24,16 @@ class IntegrationAccount(StrEnum):
     """The production account."""
 
 
+def _default_if_empty(value: object) -> object:
+    if value == "":
+        raise PydanticUseDefault
+    return value
+
+
+EmptyIsDefault = BeforeValidator(_default_if_empty)
+"""An empty variable (``SEVDESK__HOUR_UNIT_ID=``, as ``.env.example`` lists it) means unset: the default applies."""
+
+
 class IntegrationSettings(CoreSettings):
     """Base of every integration's settings; a subclass sets its ``env_prefix`` (``SEVDESK__``).
 
@@ -28,5 +41,5 @@ class IntegrationSettings(CoreSettings):
     is ``dry_run`` and the default account ``trial``, whose identity check refuses a production account.
     """
 
-    mode: IntegrationMode = IntegrationMode.DRY_RUN
-    account: IntegrationAccount = IntegrationAccount.TRIAL
+    mode: Annotated[IntegrationMode, EmptyIsDefault] = IntegrationMode.DRY_RUN
+    account: Annotated[IntegrationAccount, EmptyIsDefault] = IntegrationAccount.TRIAL

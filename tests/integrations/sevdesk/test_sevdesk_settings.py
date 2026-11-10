@@ -1,5 +1,8 @@
 """sevDesk settings are optional, nested under ``SEVDESK__`` and keep the token out of every representation."""
 
+import re
+from pathlib import Path
+
 import pytest
 
 from app.core.config import Settings
@@ -43,3 +46,32 @@ def test_an_invalid_value_is_refused(clean_env, field: str, value: str):
 
     with pytest.raises(ValueError):
         SevdeskSettings(_env_file=None)
+
+
+def test_an_empty_variable_means_unset(clean_env):
+    for field in (*FIELDS, "PAYMENT_METHOD_FIELD_SETTING_ID"):
+        if field != "TOKEN":
+            clean_env.setenv(f"SEVDESK__{field}", "")
+
+    for sevdesk in (SevdeskSettings(_env_file=None), Settings(_env_file=None).sevdesk):
+        assert (sevdesk.mode, sevdesk.account) == (IntegrationMode.DRY_RUN, IntegrationAccount.TRIAL)
+        assert (sevdesk.expected_account_id, sevdesk.contact_person_id, sevdesk.hour_unit_id) == (None, None, None)
+        assert sevdesk.payment_method_field_setting_id is None
+
+
+@pytest.mark.parametrize("token", ["", " ", "synthetic token", "synthetic-token\n"])
+def test_an_empty_or_spaced_token_is_refused(clean_env, token: str):
+    clean_env.setenv("SEVDESK__TOKEN", token)
+
+    for load in (lambda: SevdeskSettings(_env_file=None), lambda: Settings(_env_file=None)):
+        with pytest.raises(ValueError, match="SEVDESK__TOKEN") as raised:
+            load()
+        assert token.strip() == "" or token not in str(raised.value)
+
+
+def test_the_example_env_file_lists_every_setting_and_nothing_else():
+    example = (Path(__file__).resolve().parents[3] / ".env.example").read_text()
+    listed = {name.lower() for name in re.findall(r"^#?SEVDESK__(\w+)=$", example, flags=re.MULTILINE)}
+
+    assert listed == set(SevdeskSettings.model_fields)
+    assert re.search(r"^SEVDESK__TOKEN=", example, flags=re.MULTILINE) is None, "an empty token is refused"
