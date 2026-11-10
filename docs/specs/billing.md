@@ -931,7 +931,8 @@ write (`invoices.py`)._
   maintainer's own terminal. The recipe `just contract-sevdesk`: loads `~/.config/skillforge/sevdesk-trial.env`
   (`SKILLFORGE_SEVDESK_TRIAL_ENV` overrides the path), sets the contract run, runs `pytest -m contract`. The trial
   recipes refuse in CI, when any `SEVDESK__*` variable is already set in the shell - in any letter case - and an env
-  file inside the repository or with whitespace in its path (`scripts/sevdesk_trial_env.sh`); a `401` on the
+  file inside the repository or any other git work tree, symlinks resolved, or with whitespace in its path
+  (`scripts/sevdesk_trial_env.sh`); a `401` on the
   identity read skips with "trial expired".
 - _Acceptance criteria:_
   - [x] The doctor sends only reads and prints ids and kinds - no name, address or e-mail of a person (test on a
