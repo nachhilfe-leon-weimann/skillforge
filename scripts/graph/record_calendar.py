@@ -17,6 +17,9 @@ Names, ids and categories off the allowlist map to keyed pseudonyms that stay st
 salt file). Dates move by a random whole number of weeks, drawn afresh for every recording and never stored
 or printed, so neither one fixture nor several of them reveal the real dates.
 
+The recording stays on the maintainer's machine: agents build synthetic fixtures from its shape and the summary,
+and the maintainer deletes it after comparing them once (SP-CAL in ``docs/specs/billing.md``).
+
 The inline metadata above gives ``uv run`` its own environment, so the project gains no runtime dependency.
 The project environment has ``httpx`` but not ``msal``: the pure logic imports without it and the token
 request imports it lazily, which keeps the module importable by the tests, ``ruff`` and ``ty``.
@@ -804,7 +807,7 @@ def _in_git_work_tree(path: Path) -> bool:
 
 
 def check_out_dir(out: Path, *, force: bool) -> Path:
-    """Refuse any git work tree (a later PR commits the reviewed fixture), a symlink and an unforced overwrite."""
+    """Refuse any git work tree (the recording never enters a repository), a symlink and an unforced overwrite."""
     out = out.expanduser().resolve()
     if _in_git_work_tree(out):
         raise RecorderError("--out lies inside a git work tree; write outside every repository and review it first")
