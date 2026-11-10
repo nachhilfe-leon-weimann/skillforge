@@ -1,0 +1,35 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/oauth2/v2.0/token",
+    "params": {},
+    "headers": {
+      "accept": "application/json",
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    "body": {
+      "client_id": "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
+      "scope": "https://graph.microsoft.com/.default",
+      "grant_type": "client_credentials",
+      "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+      "client_assertion": "synthetic-client-assertion-g7"
+    }
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "error": "invalid_client",
+      "error_description": "AADSTS700027: The certificate with identifier used to sign the client assertion is not registered on application. Trace ID: eeeeeeee-ffff-4aaa-8bbb-cccccccccccc Correlation ID: ffffffff-aaaa-4bbb-8ccc-dddddddddddd Timestamp: 2026-11-09 22:40:58Z",
+      "error_codes": [
+        700027
+      ],
+      "timestamp": "2026-11-09 22:40:58Z",
+      "trace_id": "eeeeeeee-ffff-4aaa-8bbb-cccccccccccc",
+      "correlation_id": "ffffffff-aaaa-4bbb-8ccc-dddddddddddd",
+      "error_uri": "https://login.microsoftonline.com/error?code=700027"
+    }
+  }
+}

@@ -20,7 +20,9 @@ too. The layer is described in [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.
   from literals in code.
 - **Fixtures only through the recorder.** `Recorder` in `recording.py` writes them under
   `tests/fixtures/<integration>/<run id>/`, scrubbed, and never overwrites one; `tests/test_fixture_scan.py`
-  checks them. Never hand-edit a recorded fixture.
+  checks them. Never hand-edit a recorded fixture. Graph's are the exception: synthetic, built from the
+  maintainer's redacted SP-CAL summary (`tests/fixtures/graph/README.md`), and rebuilt from a new summary, never
+  patched.
 - **Live calls need the maintainer's go.** `just sevdesk-doctor`, `just contract-sevdesk` (`@pytest.mark.contract`,
   skipped in every other run) and `just sevdesk-spike` (`scripts/sevdesk_spike.py`) reach sevDesk; an agent runs
   the trial recipes only after the maintainer's go in the session, and `just sevdesk-doctor live` never.

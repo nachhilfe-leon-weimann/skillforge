@@ -1,0 +1,152 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/v1.0/users/lessons@example.org/calendars/AAMkAGc3ludGhldGljOmNhbGVuZGFyOmxlc3NvbnM=/calendarView",
+    "params": {
+      "startDateTime": "2026-10-18T22:00:00Z",
+      "endDateTime": "2026-11-01T23:00:00Z",
+      "$select": "id,iCalUId,seriesMasterId,type,subject,start,end,originalStart,isAllDay,isCancelled,isOnlineMeeting,onlineMeetingProvider,location,categories,showAs,lastModifiedDateTime",
+      "$top": "100"
+    },
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; odata.metadata=minimal; odata.streaming=true; IEEE754Compatible=false; charset=utf-8"
+    },
+    "body": {
+      "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('lessons@example.org')/calendars('AAMkAGc3ludGhldGljOmNhbGVuZGFyOmxlc3NvbnM=')/calendarView(id,iCalUId,seriesMasterId,type,subject,start,end,originalStart,isAllDay,isCancelled,isOnlineMeeting,onlineMeetingProvider,location,categories,showAs,lastModifiedDateTime)",
+      "value": [
+        {
+          "@odata.etag": "W/\"ZXRhZzpnNS0yMDI2LTEwLTIyOjIwMjYtMTEtMDJUMTg6MDQ6MTE=\"",
+          "id": "AAMkAGc3ludGhldGljOmV2ZW50Omc1LTIwMjYtMTAtMjI=",
+          "iCalUId": "synthetic-ical-g5-2026-10-22",
+          "seriesMasterId": "AAMkAGc3ludGhldGljOnNlcmllczpnNS10aHVyc2RheS1tYXRo",
+          "type": "occurrence",
+          "subject": "Mathematik mit Erika Mustermann",
+          "start": {
+            "dateTime": "2026-10-22T15:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2026-10-22T16:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "originalStart": "2026-10-22T15:00:00Z",
+          "isAllDay": false,
+          "isCancelled": false,
+          "isOnlineMeeting": false,
+          "onlineMeetingProvider": "unknown",
+          "location": {
+            "displayName": "",
+            "locationType": "default",
+            "uniqueIdType": "unknown",
+            "address": {},
+            "coordinates": {}
+          },
+          "categories": [],
+          "showAs": "busy",
+          "lastModifiedDateTime": "2026-11-02T18:04:11.2830000Z"
+        },
+        {
+          "@odata.etag": "W/\"ZXRhZzpnNS1hdXR1bW4tYmVmb3JlOjIwMjYtMTEtMDJUMTg6MDQ6MTE=\"",
+          "id": "AAMkAGc3ludGhldGljOmV2ZW50Omc1LWF1dHVtbi1iZWZvcmU=",
+          "iCalUId": "synthetic-ical-g5-autumn-before",
+          "seriesMasterId": null,
+          "type": "singleInstance",
+          "subject": "Physik mit Max Mustermann",
+          "start": {
+            "dateTime": "2026-10-24T22:30:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2026-10-24T23:30:00.0000000",
+            "timeZone": "UTC"
+          },
+          "originalStart": null,
+          "isAllDay": false,
+          "isCancelled": false,
+          "isOnlineMeeting": false,
+          "onlineMeetingProvider": "unknown",
+          "location": {
+            "displayName": "",
+            "locationType": "default",
+            "uniqueIdType": "unknown",
+            "address": {},
+            "coordinates": {}
+          },
+          "categories": [],
+          "showAs": "busy",
+          "lastModifiedDateTime": "2026-11-02T18:04:11.2830000Z"
+        },
+        {
+          "@odata.etag": "W/\"ZXRhZzpnNS1hdXR1bW4tYWZ0ZXI6MjAyNi0xMS0wMlQxODowNDoxMQ==\"",
+          "id": "AAMkAGc3ludGhldGljOmV2ZW50Omc1LWF1dHVtbi1hZnRlcg==",
+          "iCalUId": "synthetic-ical-g5-autumn-after",
+          "seriesMasterId": null,
+          "type": "singleInstance",
+          "subject": "Informatik mit Paula Beispiel",
+          "start": {
+            "dateTime": "2026-10-25T22:30:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2026-10-25T23:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "originalStart": null,
+          "isAllDay": false,
+          "isCancelled": false,
+          "isOnlineMeeting": false,
+          "onlineMeetingProvider": "unknown",
+          "location": {
+            "displayName": "",
+            "locationType": "default",
+            "uniqueIdType": "unknown",
+            "address": {},
+            "coordinates": {}
+          },
+          "categories": [],
+          "showAs": "busy",
+          "lastModifiedDateTime": "2026-11-02T18:04:11.2830000Z"
+        },
+        {
+          "@odata.etag": "W/\"ZXRhZzpnNS0yMDI2LTEwLTI5OjIwMjYtMTEtMDJUMTg6MDQ6MTE=\"",
+          "id": "AAMkAGc3ludGhldGljOmV2ZW50Omc1LTIwMjYtMTAtMjk=",
+          "iCalUId": "synthetic-ical-g5-2026-10-29",
+          "seriesMasterId": "AAMkAGc3ludGhldGljOnNlcmllczpnNS10aHVyc2RheS1tYXRo",
+          "type": "occurrence",
+          "subject": "Mathematik mit Erika Mustermann",
+          "start": {
+            "dateTime": "2026-10-29T16:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2026-10-29T17:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "originalStart": "2026-10-29T16:00:00Z",
+          "isAllDay": false,
+          "isCancelled": false,
+          "isOnlineMeeting": false,
+          "onlineMeetingProvider": "unknown",
+          "location": {
+            "displayName": "",
+            "locationType": "default",
+            "uniqueIdType": "unknown",
+            "address": {},
+            "coordinates": {}
+          },
+          "categories": [],
+          "showAs": "busy",
+          "lastModifiedDateTime": "2026-11-02T18:04:11.2830000Z"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,121 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/v1.0/users/lessons@example.org/calendars/AAMkAGc3ludGhldGljOmNhbGVuZGFyOmxlc3NvbnM=/calendarView",
+    "params": {
+      "startDateTime": "2026-11-22T23:00:00Z",
+      "endDateTime": "2026-12-13T23:00:00Z",
+      "$select": "id,iCalUId,seriesMasterId,type,subject,start,end,originalStart,isAllDay,isCancelled,isOnlineMeeting,onlineMeetingProvider,location,categories,showAs,lastModifiedDateTime",
+      "$top": "100"
+    },
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; odata.metadata=minimal; odata.streaming=true; IEEE754Compatible=false; charset=utf-8"
+    },
+    "body": {
+      "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('lessons@example.org')/calendars('AAMkAGc3ludGhldGljOmNhbGVuZGFyOmxlc3NvbnM=')/calendarView(id,iCalUId,seriesMasterId,type,subject,start,end,originalStart,isAllDay,isCancelled,isOnlineMeeting,onlineMeetingProvider,location,categories,showAs,lastModifiedDateTime)",
+      "value": [
+        {
+          "@odata.etag": "W/\"ZXRhZzpnMi0yMDI2LTExLTI0OjIwMjYtMTEtMDJUMTg6MDQ6MTE=\"",
+          "id": "AAMkAGc3ludGhldGljOmV2ZW50OmcyLTIwMjYtMTEtMjQ=",
+          "iCalUId": "synthetic-ical-g2-2026-11-24",
+          "seriesMasterId": "AAMkAGc3ludGhldGljOnNlcmllczpnMi10dWVzZGF5LW1hdGg=",
+          "type": "exception",
+          "subject": "Mathematik mit Max Mustermann",
+          "start": {
+            "dateTime": "2026-11-24T16:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2026-11-24T17:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "originalStart": "2026-11-24T15:00:00Z",
+          "isAllDay": false,
+          "isCancelled": false,
+          "isOnlineMeeting": false,
+          "onlineMeetingProvider": "unknown",
+          "location": {
+            "displayName": "",
+            "locationType": "default",
+            "uniqueIdType": "unknown",
+            "address": {},
+            "coordinates": {}
+          },
+          "categories": [],
+          "showAs": "busy",
+          "lastModifiedDateTime": "2026-11-02T18:04:11.2830000Z"
+        },
+        {
+          "@odata.etag": "W/\"ZXRhZzpnMi0yMDI2LTEyLTAxOjIwMjYtMTEtMjBUMDk6MTI6NDU=\"",
+          "id": "AAMkAGc3ludGhldGljOmV2ZW50OmcyLTIwMjYtMTItMDE=",
+          "iCalUId": "synthetic-ical-g2-2026-12-01",
+          "seriesMasterId": "AAMkAGc3ludGhldGljOnNlcmllczpnMi10dWVzZGF5LW1hdGg=",
+          "type": "exception",
+          "subject": "Mathematik mit Max Mustermann",
+          "start": {
+            "dateTime": "2026-12-03T14:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2026-12-03T15:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "originalStart": "2026-12-01T15:00:00Z",
+          "isAllDay": false,
+          "isCancelled": false,
+          "isOnlineMeeting": false,
+          "onlineMeetingProvider": "unknown",
+          "location": {
+            "displayName": "",
+            "locationType": "default",
+            "uniqueIdType": "unknown",
+            "address": {},
+            "coordinates": {}
+          },
+          "categories": [],
+          "showAs": "busy",
+          "lastModifiedDateTime": "2026-11-20T09:12:45.2830000Z"
+        },
+        {
+          "@odata.etag": "W/\"ZXRhZzpnMi0yMDI2LTEyLTA4OjIwMjYtMTEtMDJUMTg6MDQ6MTE=\"",
+          "id": "AAMkAGc3ludGhldGljOmV2ZW50OmcyLTIwMjYtMTItMDg=",
+          "iCalUId": "synthetic-ical-g2-2026-12-08",
+          "seriesMasterId": "AAMkAGc3ludGhldGljOnNlcmllczpnMi10dWVzZGF5LW1hdGg=",
+          "type": "occurrence",
+          "subject": "Mathematik mit Max Mustermann",
+          "start": {
+            "dateTime": "2026-12-08T15:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2026-12-08T16:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "originalStart": "2026-12-08T15:00:00Z",
+          "isAllDay": false,
+          "isCancelled": false,
+          "isOnlineMeeting": false,
+          "onlineMeetingProvider": "unknown",
+          "location": {
+            "displayName": "",
+            "locationType": "default",
+            "uniqueIdType": "unknown",
+            "address": {},
+            "coordinates": {}
+          },
+          "categories": [],
+          "showAs": "busy",
+          "lastModifiedDateTime": "2026-11-02T18:04:11.2830000Z"
+        }
+      ]
+    }
+  }
+}

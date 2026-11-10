@@ -1,0 +1,184 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/v1.0/users/lessons@example.org/calendars/AAMkAGc3ludGhldGljOmNhbGVuZGFyOmxlc3NvbnM=/calendarView",
+    "params": {
+      "startDateTime": "2026-12-06T23:00:00Z",
+      "endDateTime": "2026-12-13T23:00:00Z",
+      "$select": "id,iCalUId,seriesMasterId,type,subject,start,end,originalStart,isAllDay,isCancelled,isOnlineMeeting,onlineMeetingProvider,location,categories,showAs,lastModifiedDateTime",
+      "$top": "100"
+    },
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; odata.metadata=minimal; odata.streaming=true; IEEE754Compatible=false; charset=utf-8"
+    },
+    "body": {
+      "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('lessons@example.org')/calendars('AAMkAGc3ludGhldGljOmNhbGVuZGFyOmxlc3NvbnM=')/calendarView(id,iCalUId,seriesMasterId,type,subject,start,end,originalStart,isAllDay,isCancelled,isOnlineMeeting,onlineMeetingProvider,location,categories,showAs,lastModifiedDateTime)",
+      "value": [
+        {
+          "@odata.etag": "W/\"ZXRhZzpnNC10ZWFtczoyMDI2LTExLTAyVDE4OjA0OjEx\"",
+          "id": "AAMkAGc3ludGhldGljOmV2ZW50Omc0LXRlYW1z",
+          "iCalUId": "synthetic-ical-g4-teams",
+          "seriesMasterId": null,
+          "type": "singleInstance",
+          "subject": "Physik mit Max Mustermann",
+          "start": {
+            "dateTime": "2026-12-07T15:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2026-12-07T16:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "originalStart": null,
+          "isAllDay": false,
+          "isCancelled": false,
+          "isOnlineMeeting": true,
+          "onlineMeetingProvider": "teamsForBusiness",
+          "location": {
+            "displayName": "Microsoft Teams-Besprechung",
+            "locationType": "default",
+            "uniqueId": "Microsoft Teams-Besprechung",
+            "uniqueIdType": "private"
+          },
+          "categories": [
+            "Teams"
+          ],
+          "showAs": "busy",
+          "lastModifiedDateTime": "2026-11-02T18:04:11.2830000Z"
+        },
+        {
+          "@odata.etag": "W/\"ZXRhZzpnNC1waG9uZToyMDI2LTExLTAyVDE4OjA0OjEx\"",
+          "id": "AAMkAGc3ludGhldGljOmV2ZW50Omc0LXBob25l",
+          "iCalUId": "synthetic-ical-g4-phone",
+          "seriesMasterId": null,
+          "type": "singleInstance",
+          "subject": "Mathematik mit Lena Beispiel-Schmidt",
+          "start": {
+            "dateTime": "2026-12-08T17:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2026-12-08T17:30:00.0000000",
+            "timeZone": "UTC"
+          },
+          "originalStart": null,
+          "isAllDay": false,
+          "isCancelled": false,
+          "isOnlineMeeting": false,
+          "onlineMeetingProvider": "unknown",
+          "location": {
+            "displayName": "030 23125",
+            "locationType": "default",
+            "uniqueId": "030 23125",
+            "uniqueIdType": "private"
+          },
+          "categories": [
+            "Telefon"
+          ],
+          "showAs": "busy",
+          "lastModifiedDateTime": "2026-11-02T18:04:11.2830000Z"
+        },
+        {
+          "@odata.etag": "W/\"ZXRhZzpnNC1hbGwtZGF5OjIwMjYtMTEtMDJUMTg6MDQ6MTE=\"",
+          "id": "AAMkAGc3ludGhldGljOmV2ZW50Omc0LWFsbC1kYXk=",
+          "iCalUId": "synthetic-ical-g4-all-day",
+          "seriesMasterId": null,
+          "type": "singleInstance",
+          "subject": "Weihnachtsferien",
+          "start": {
+            "dateTime": "2026-12-10T00:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2026-12-11T00:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "originalStart": null,
+          "isAllDay": true,
+          "isCancelled": false,
+          "isOnlineMeeting": false,
+          "onlineMeetingProvider": "unknown",
+          "location": {
+            "displayName": "",
+            "locationType": "default",
+            "uniqueIdType": "unknown",
+            "address": {},
+            "coordinates": {}
+          },
+          "categories": [],
+          "showAs": "busy",
+          "lastModifiedDateTime": "2026-11-02T18:04:11.2830000Z"
+        },
+        {
+          "@odata.etag": "W/\"ZXRhZzpnNC1maXJzdC1tZWV0aW5nOjIwMjYtMTEtMDJUMTg6MDQ6MTE=\"",
+          "id": "AAMkAGc3ludGhldGljOmV2ZW50Omc0LWZpcnN0LW1lZXRpbmc=",
+          "iCalUId": "synthetic-ical-g4-first-meeting",
+          "seriesMasterId": null,
+          "type": "singleInstance",
+          "subject": "Kennenlernen mit Jonas Probe",
+          "start": {
+            "dateTime": "2026-12-11T16:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2026-12-11T16:30:00.0000000",
+            "timeZone": "UTC"
+          },
+          "originalStart": null,
+          "isAllDay": false,
+          "isCancelled": false,
+          "isOnlineMeeting": true,
+          "onlineMeetingProvider": "teamsForBusiness",
+          "location": {
+            "displayName": "Microsoft Teams-Besprechung",
+            "locationType": "default",
+            "uniqueId": "Microsoft Teams-Besprechung",
+            "uniqueIdType": "private"
+          },
+          "categories": [],
+          "showAs": "busy",
+          "lastModifiedDateTime": "2026-11-02T18:04:11.2830000Z"
+        },
+        {
+          "@odata.etag": "W/\"ZXRhZzpnNC1uby1wYXR0ZXJuOjIwMjYtMTEtMDJUMTg6MDQ6MTE=\"",
+          "id": "AAMkAGc3ludGhldGljOmV2ZW50Omc0LW5vLXBhdHRlcm4=",
+          "iCalUId": "synthetic-ical-g4-no-pattern",
+          "seriesMasterId": null,
+          "type": "singleInstance",
+          "subject": "Vorbereitung Klausur",
+          "start": {
+            "dateTime": "2026-12-12T10:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2026-12-12T11:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "originalStart": null,
+          "isAllDay": false,
+          "isCancelled": false,
+          "isOnlineMeeting": false,
+          "onlineMeetingProvider": "unknown",
+          "location": {
+            "displayName": "",
+            "locationType": "default",
+            "uniqueIdType": "unknown",
+            "address": {},
+            "coordinates": {}
+          },
+          "categories": [],
+          "showAs": "busy",
+          "lastModifiedDateTime": "2026-11-02T18:04:11.2830000Z"
+        }
+      ]
+    }
+  }
+}

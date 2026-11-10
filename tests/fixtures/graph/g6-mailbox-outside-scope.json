@@ -1,0 +1,32 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/v1.0/users/other@example.org/calendars",
+    "params": {
+      "$select": "id",
+      "$top": "1"
+    },
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "error": {
+        "code": "ErrorAccessDenied",
+        "message": "Access is denied. Check credentials and try again.",
+        "innerError": {
+          "date": "2026-11-09T22:41:03",
+          "request-id": "dddddddd-eeee-4fff-8aaa-bbbbbbbbbbbb",
+          "client-request-id": "dddddddd-eeee-4fff-8aaa-bbbbbbbbbbbb"
+        }
+      }
+    }
+  }
+}
