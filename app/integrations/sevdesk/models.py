@@ -7,6 +7,7 @@ so a person's name, address or bank data is never read where it is not needed; a
 value and a ``float`` are refused, never rounded.
 """
 
+from datetime import datetime
 from decimal import Decimal, DecimalException, Inexact, localcontext
 from typing import Annotated
 
@@ -111,3 +112,44 @@ class Part(SevdeskObject):
     price_cents: Money | None = Field(default=None, alias="price")
     tax_rate: Decimal | None = None
     status: int | None = None
+
+
+class InvoiceSequence(SevdeskObject):
+    """The ``SevSequence`` that numbers invoices: its format and the next number."""
+
+    format: str
+    next_sequence: int
+    type: str
+
+
+class Invoice(SevdeskObject):
+    invoice_number: str | None = None
+    status: int
+    contact: ObjectRef
+    contact_person: ObjectRef | None = None
+    invoice_date: datetime | None = None
+    tax_rule: ObjectRef | None = None
+    small_settlement: bool | None = None
+    sum_net_cents: Money | None = Field(default=None, alias="sumNet")
+    sum_gross_cents: Money | None = Field(default=None, alias="sumGross")
+    customer_internal_note: str | None = None
+    foot_text: str | None = Field(default=None, repr=False)
+    sev_client: ObjectRef | None = None
+
+
+class InvoicePosition(SevdeskObject):
+    invoice: ObjectRef
+    part: ObjectRef | None = None
+    unity: ObjectRef | None = None
+    quantity: Decimal
+    price_cents: Money | None = Field(default=None, alias="price")
+    tax_rate: Decimal | None = None
+    position_number: int | None = None
+    name: str | None = Field(default=None, repr=False)
+
+
+class SavedInvoice(SevdeskModel):
+    """What ``saveInvoice`` answers: the invoice and its positions."""
+
+    invoice: Invoice
+    positions: list[InvoicePosition] = Field(default_factory=list, alias="invoicePos")
