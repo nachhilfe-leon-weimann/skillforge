@@ -1,10 +1,11 @@
 """Walk the sevDesk spike against the synthetic trial account: `just sevdesk-spike [--step STEP ...]`.
 
 Only the maintainer runs it. It refuses unless ``SEVDESK__MODE=live``, ``SEVDESK__ACCOUNT=trial`` and the identity
-check passes. Every exchange goes through the recorder into ``tests/fixtures/sevdesk/``; every object it creates
-carries the run id - an invoice in ``customerInternalNote``, a contact in its name. A write is never retried: on
-an unknown outcome the step stops and names the run tag to look for in the trial. It lives in ``scripts/``, which
-the image does not contain, so it can never run from a deployed container.
+check passes; the recorder keeps nothing before that, then records every exchange, starting with the identity read
+again, into ``tests/fixtures/sevdesk/``. Every object it creates carries the run id - an invoice in
+``customerInternalNote`` and its texts, a contact in its name. A write is never retried: on an unknown outcome,
+an unreadable answer to a write included, the step stops and names the run tag to look for in the trial. It lives
+in ``scripts/``, which the image does not contain, so it can never run from a deployed container.
 """
 
 import argparse
@@ -15,17 +16,16 @@ import secrets
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from app.integrations.config import IntegrationAccount, IntegrationMode
 from app.integrations.errors import IntegrationError, IntegrationRejectedError, OutcomeUnknownError
 from app.integrations.recording import Recorder
-from app.integrations.sevdesk.client import SevdeskClient, sevdesk_http
+from app.integrations.sevdesk.client import SevdeskClient
 from app.integrations.sevdesk.config import SevdeskSettings
 from app.integrations.sevdesk.invoices import InvoiceDraft, PositionDraft
-from app.integrations.transport import InnerTransport, IntegrationHttp, PlannedRequest, Reply
+from app.integrations.transport import InnerTransport, PlannedRequest, Reply
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RECORD_DIR = REPO_ROOT / "tests" / "fixtures" / "sevdesk"
@@ -39,7 +39,6 @@ FOOT_TEXT = "Spike {run_id}: [%KUNDENNUMMER%] [%RECHNUNGSNUMMER%] [%ZAHLUNGSZIEL
 @dataclass
 class Spike:
     client: SevdeskClient
-    http: IntegrationHttp
     settings: SevdeskSettings
     run_id: str
     pdf_dir: Path
@@ -63,14 +62,14 @@ async def custom_fields(spike: Spike) -> None:
 
 
 async def discovery(spike: Spike) -> None:
-    for unity in _objects(await spike.http.read("/Unity")):
+    for unity in _objects(await spike.client.http.read("/Unity")):
         spike.out(f"unit {unity.get('id')}: {unity.get('name')}")
     for user in await spike.client.users():
         spike.out(f"user {user.id}")
     for part in await spike.client.parts():
         spike.out(f"part {part.id}: {part.name} (unit {part.unity.id if part.unity else '-'})")
     entries = _objects(
-        await spike.http.read("/Textparser/fetchDictionaryEntriesByType", params={"objectName": "Invoice"})
+        await spike.client.http.read("/Textparser/fetchDictionaryEntriesByType", params={"objectName": "Invoice"})
     )
     spike.out(f"invoice placeholders: {[entry.get('key') for entry in entries]}")
 
@@ -81,24 +80,26 @@ async def contact(spike: Spike) -> None:
         "familyname": spike.run_id,
         "category": {"id": CUSTOMER_CATEGORY_ID, "objectName": "Category"},
     }
-    created = _objects(_sent(await spike.http.write("POST", "/Contact", json=body)))
-    spike.contact_id = int(created[0]["id"])
+    spike.contact_id = _created_id(await spike.client.http.write("POST", "/Contact", json=body), "POST /Contact")
     spike.out(f"contact {spike.contact_id} created")
 
 
 async def invoice(spike: Spike) -> None:
     if spike.contact_id is None or spike.settings.hour_unit_id is None:
         raise SystemExit("invoice needs a contact (--contact-id or the contact step) and SEVDESK__HOUR_UNIT_ID")
+    today = date.today()
     draft = InvoiceDraft(
         contact_id=spike.contact_id,
-        invoice_date=date.today(),
+        invoice_date=today,
+        delivery_date=today.replace(day=1),
+        delivery_date_until=today,
         header=f"Spike {spike.run_id}",
-        tax_text="Spike tax text",
+        tax_text=f"Spike {spike.run_id} tax text",
         positions=(
             PositionDraft(
-                name="Spike position",
-                quantity=Decimal("1.5"),
-                price=Decimal("10.00"),
+                name=f"Spike {spike.run_id} position",
+                minutes=90,
+                price_cents=1000,
                 unity_id=spike.settings.hour_unit_id,
             ),
         ),
@@ -120,16 +121,20 @@ async def read_back(spike: Spike) -> None:
     spike.out(f"foot text as stored: {found.foot_text!r}")
     for position in await spike.client.invoice_positions(invoice_id):
         spike.out(f"position {position.id}: {position.quantity} x {position.price}, unit {position.unity}")
-    listed = _objects(await spike.http.read("/Invoice", params={"customerInternalNote": spike.tag, "limit": 1000}))
+    params = {"customerInternalNote": spike.tag, "limit": 1000}
+    listed = _objects(await spike.client.http.read("/Invoice", params=params))
     matching = await spike.client.find_invoices(spike.tag)
     spike.out(f"lookup by customerInternalNote: sevDesk listed {len(listed)}, {len(matching)} carry the tag")
 
 
 async def pdf(spike: Spike) -> None:
     invoice_id = _invoice_id(spike)
-    _sent(await spike.http.write("POST", f"/Invoice/{invoice_id}/render", json={"forceReload": True}))
+    where = f"POST /Invoice/{invoice_id}/render"
+    _readable(
+        _sent(await spike.client.http.write("POST", f"/Invoice/{invoice_id}/render", json={"forceReload": True})), where
+    )
     params = {"download": True, "preventSendBy": True}
-    document = _objects(await spike.http.read(f"/Invoice/{invoice_id}/getPdf", params=params))[0]
+    document = _objects(await spike.client.http.read(f"/Invoice/{invoice_id}/getPdf", params=params))[0]
     content = str(document["content"])
     data = base64.b64decode(content) if document.get("base64encoded") else content.encode()
     path = spike.pdf_dir / f"{spike.run_id}-invoice-{invoice_id}.pdf"
@@ -140,12 +145,13 @@ async def pdf(spike: Spike) -> None:
 
 async def delete(spike: Spike) -> None:
     invoice_id = _invoice_id(spike)
+    where = f"DELETE /Invoice/{invoice_id}"
     try:
-        reply = _sent(await spike.http.write("DELETE", f"/Invoice/{invoice_id}"))
+        reply = _readable(_sent(await spike.client.http.write("DELETE", f"/Invoice/{invoice_id}")), where)
     except IntegrationRejectedError as exc:
-        spike.out(f"DELETE /Invoice/{invoice_id} refused: HTTP {exc.status} {exc.remote_message!r}")
+        spike.out(f"{where} refused: HTTP {exc.status} {exc.remote_message!r}")
         return
-    spike.out(f"DELETE /Invoice/{invoice_id}: HTTP {reply.status}")
+    spike.out(f"{where}: HTTP {reply.status}")
 
 
 async def sequence(spike: Spike) -> None:
@@ -182,15 +188,14 @@ async def run(
         out(f"--pdf-dir must lie outside the repository: {pdf_dir}")
         return 1
     run_id = arguments.run_id or f"{datetime.now(UTC):%Y%m%dT%H%M%S}-{secrets.token_hex(2)}"
-    recorder = Recorder(arguments.record_dir)
-    recorder.step = "identity"
+    recorder = Recorder(arguments.record_dir, keep=run_id)
     out(f"run {run_id}")
     try:
-        async with (
-            SevdeskClient.connect(settings, observer=recorder, transport=transport) as client,
-            sevdesk_http(settings, observer=recorder, transport=transport) as http,
-        ):
-            spike = Spike(client, http, settings, run_id, pdf_dir, arguments.foot_text.format(run_id=run_id), out)
+        async with SevdeskClient.connect(settings, observer=recorder, transport=transport) as client:
+            recorder.arm()
+            recorder.step = "identity"
+            await client.account()
+            spike = Spike(client, settings, run_id, pdf_dir, arguments.foot_text.format(run_id=run_id), out)
             spike.contact_id, spike.invoice_id = arguments.contact_id, arguments.invoice_id
             for name in arguments.step or STEPS:
                 recorder.step = name
@@ -206,7 +211,7 @@ async def run(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m scripts.sevdesk_spike", description=__doc__)
+    parser = argparse.ArgumentParser(prog="python -m scripts.sevdesk_spike", description=__doc__, allow_abbrev=False)
     parser.add_argument("--step", action="append", choices=list(STEPS), help="Run only this step (repeatable).")
     parser.add_argument("--run-id", help="Reuse a run id instead of a new one.")
     parser.add_argument("--contact-id", type=int, help="The contact for the invoice step, without the contact step.")
@@ -221,6 +226,23 @@ def _sent[T](written: T | PlannedRequest) -> T:
     if isinstance(written, PlannedRequest):
         raise SystemExit("a write was only planned: the spike needs SEVDESK__MODE=live")
     return written
+
+
+def _readable(reply: Reply, where: str) -> Reply:
+    """A write's answer that can be read; otherwise the write went through with an unknown result."""
+    try:
+        reply.json()
+    except ValueError:
+        raise OutcomeUnknownError(f"{where} went through, but its answer is unreadable") from None
+    return reply
+
+
+def _created_id(written: Reply | PlannedRequest, where: str) -> int:
+    """The id of the object a write created; an answer without one leaves the outcome unknown."""
+    try:
+        return int(_objects(_readable(_sent(written), where))[0]["id"])
+    except IndexError, KeyError, TypeError, ValueError:
+        raise OutcomeUnknownError(f"{where} went through, but its answer names no created object") from None
 
 
 def _objects(reply: Reply) -> list[dict[str, Any]]:

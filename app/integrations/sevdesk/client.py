@@ -123,6 +123,12 @@ class SevdeskClient:
             field_setting_account_ids=_account_ids(field_settings),
         )
 
+    @property
+    def http(self) -> IntegrationHttp:
+        """The guarded HTTP client of the confirmed account, for the calls this client does not model (the spike's)."""
+        self._ensure_confirmed()
+        return self._http
+
     # --- reads ---
 
     async def account(self) -> Account:

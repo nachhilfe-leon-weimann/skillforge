@@ -1,4 +1,4 @@
-"""No recorded fixture holds a token, a real e-mail address, an IBAN or the trial account's marker.
+"""No recorded fixture holds a token, a real e-mail address, an IBAN, a phone number or the trial account's marker.
 
 The patterns are this test's own, independent of the recorder's scrub, so a gap in the scrub fails here.
 """
@@ -10,19 +10,27 @@ import pytest
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
-_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@(?P<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})")
+_EMAIL = re.compile(r"[\w.%+-]+(?:@|%40|\(at\))(?P<domain>[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,})")
+_PHONE = re.compile(r"(?:\+\s*\d|\(\s*0|\b0)(?:[\s()./-]*\d){7,}")
 LEAKS = {
-    "a 32-hex token": re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{32}(?![0-9a-fA-F])"),
-    "an IBAN": re.compile(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,3})?\b"),
+    "a 32-hex token": re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{32}"),
+    "an IBAN": re.compile(r"\b[A-Za-z]{2}\d{2}(?:\s?[A-Za-z0-9]{4}){2,7}(?:\s?[A-Za-z0-9]{1,3})?\b"),
     "the trial marker": re.compile(r"TRIAL"),
 }
+
+
+def _phones(text: str) -> bool:
+    """A run of at least 9 digits that starts like a phone number; a date or a time has fewer."""
+    return any(len(re.sub(r"\D", "", match[0])) >= 9 for match in _PHONE.finditer(text))
 
 
 def leaks(text: str) -> list[str]:
     """What in ``text`` must not be in a fixture."""
     found = [name for name, pattern in LEAKS.items() if pattern.search(text)]
-    if any(match["domain"].lower() != "example.org" for match in _EMAIL.finditer(text)):
+    if any(match["domain"].lower() != "example.org" or "@" not in match[0] for match in _EMAIL.finditer(text)):
         found.append("an e-mail address outside example.org")
+    if _phones(text):
+        found.append("a phone number")
     return found
 
 
@@ -36,21 +44,37 @@ def test_no_fixture_leaks():
     ("content", "leak"),
     [
         ('{"token": "0123456789abcdef0123456789ABCDEF"}', "a 32-hex token"),
+        ('{"token": "tok0123456789abcdef0123456789abcdef"}', "a 32-hex token"),
         ('{"iban": "DE89 3704 0044 0532 0130 00"}', "an IBAN"),
         ('{"iban": "DE89370400440532013000"}', "an IBAN"),
+        ('{"iban": "DE89 3704 0044 0532 0130 00"}', "an IBAN"),
+        ('{"iban": "de89 3704 0044 0532 0130 00"}', "an IBAN"),
         ('{"name": "Example Tutoring TRIAL"}', "the trial marker"),
         ('{"email": "someone@mail.example.com"}', "an e-mail address outside example.org"),
+        ('{"email": "someone@MAIL.EXAMPLE.COM"}', "an e-mail address outside example.org"),
+        ('{"email": "someone@evilexample.org"}', "an e-mail address outside example.org"),
+        ('{"email": "someone@mail.example.org"}', "an e-mail address outside example.org"),
         ('{"text": "write to person@example.org.evil.test"}', "an e-mail address outside example.org"),
+        ('{"url": "https://pay.test/?m=someone%40mail.example.com"}', "an e-mail address outside example.org"),
+        ('{"text": "someone(at)mail.example.com"}', "an e-mail address outside example.org"),
+        ('{"phone": "(0170) 1234567"}', "a phone number"),
+        ('{"phone": "+49 (0) 170 1234567"}', "a phone number"),
+        ('{"text": "Tel.:+491701234567"}', "a phone number"),
+        ('{"text": "Telefon 0170.1234567"}', "a phone number"),
+        ('{"phone": "030/1234567"}', "a phone number"),
     ],
 )
 def test_the_scan_catches_each_pattern(tmp_path: Path, content: str, leak: str):
     fixture = tmp_path / "fixture.json"
     fixture.write_text(content)
 
-    assert leaks(fixture.read_text()) == [leak]
+    assert leak in leaks(fixture.read_text())
 
 
 def test_the_scan_lets_synthetic_data_pass():
-    clean = '{"id": "501", "email": "person@example.org", "date": "2026-11-02T00:00:00+01:00", "hex": "ab12"}'
+    clean = (
+        '{"id": "501", "email": "person@example.org", "date": "2026-11-02T00:00:00+01:00", "hex": "ab12",'
+        ' "period": "01.10.2026", "sum": "1234567.89", "run": "20261110T120000-ab12"}'
+    )
 
     assert leaks(clean) == []

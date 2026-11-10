@@ -57,7 +57,11 @@ def trial_env_file(recipes: Recipes) -> Path:
     return recipes.env_file
 
 
-TRIAL_RECIPES = {"contract-sevdesk": ("contract-sevdesk",), "sevdesk-doctor trial": ("sevdesk-doctor", "trial")}
+TRIAL_RECIPES = {
+    "contract-sevdesk": ("contract-sevdesk",),
+    "sevdesk-doctor trial": ("sevdesk-doctor", "trial"),
+    "sevdesk-spike": ("sevdesk-spike",),
+}
 ALL_RECIPES = {**TRIAL_RECIPES, "sevdesk-doctor live": ("sevdesk-doctor", "live")}
 
 
@@ -229,11 +233,20 @@ def test_the_contract_run_without_a_trial_env_file_runs_nothing_and_passes(recip
     assert recipes.uv_calls() == []
 
 
-def test_the_doctor_without_a_trial_env_file_fails(recipes: Recipes):
-    result = recipes.run("sevdesk-doctor", "trial")
+@pytest.mark.parametrize("recipe", [("sevdesk-doctor", "trial"), ("sevdesk-spike",)], ids=["doctor", "spike"])
+def test_the_doctor_and_the_spike_without_a_trial_env_file_fail(recipe: tuple[str, ...], recipes: Recipes):
+    result = recipes.run(*recipe)
 
     assert result.returncode == 1 and "no trial configured" in result.stderr
     assert recipes.uv_calls() == []
+
+
+def test_the_spike_loads_the_trial_env_file(recipes: Recipes, trial_env_file):
+    assert recipes.run("sevdesk-spike", "--step", "version").returncode == 0
+
+    assert recipes.uv_calls() == [
+        f"SKILLFORGE_CONTRACT_RUN= uv run --env-file {trial_env_file} python -m scripts.sevdesk_spike --step version"
+    ]
 
 
 def test_the_contract_run_loads_the_trial_env_file_and_runs_the_contract_tests_only(recipes: Recipes, trial_env_file):

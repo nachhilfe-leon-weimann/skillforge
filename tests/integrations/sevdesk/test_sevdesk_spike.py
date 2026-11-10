@@ -8,14 +8,16 @@ import httpx
 import pytest
 
 from app.integrations.config import IntegrationAccount, IntegrationMode
-from scripts.sevdesk_spike import REPO_ROOT, STEPS, build_parser, run
-from tests.integrations.sevdesk.fake_sevdesk import TOKEN, FakeSevdesk, objects
+from scripts import sevdesk_spike
+from scripts.sevdesk_spike import STEPS, build_parser, run
+from tests.integrations.sevdesk.fake_sevdesk import TOKEN, TRIAL_COMPANY, FakeSevdesk, objects, page
 from tests.test_fixture_scan import leaks
 
 RUN_ID = "20261110T120000-ab12"
 TAG = f"skillforge-spike:{RUN_ID}"
 INVOICE = {"id": "501", "objectName": "Invoice", "status": "100", "contact": {"id": "21", "objectName": "Contact"}}
 PDF = b"%PDF-1.7 synthetic"
+HEX_TOKEN = "0123456789abcdef0123456789abcdef"
 
 
 @pytest.fixture
@@ -25,13 +27,13 @@ def trial(fake_sevdesk: FakeSevdesk) -> FakeSevdesk:
         ("GET", "/ContactCustomFieldSetting"): objects([{"id": "13", "name": "Zahlungsart"}]),
         ("GET", "/Unity"): objects([{"id": "12", "objectName": "Unity", "name": "Std."}]),
         ("GET", "/SevUser"): objects([{"id": "11", "objectName": "SevUser", "firstName": "Synthia"}]),
-        ("GET", "/Part"): objects([{"id": "31", "name": "Maths", "unity": {"id": "12", "objectName": "Unity"}}]),
+        ("GET", "/Part"): page([{"id": "31", "name": "Maths", "unity": {"id": "12", "objectName": "Unity"}}]),
         ("GET", "/Textparser/fetchDictionaryEntriesByType"): objects([{"key": "[%KUNDENNUMMER%]", "value": []}]),
         ("POST", "/Contact"): objects({"id": "21", "objectName": "Contact", "familyname": RUN_ID}, status=201),
         ("POST", "/Invoice/Factory/saveInvoice"): objects({"invoice": INVOICE, "invoicePos": []}, status=201),
-        ("GET", "/Invoice/501"): objects([{**INVOICE, "customerInternalNote": TAG}]),
-        ("GET", "/Invoice/501/getPositions"): objects([]),
-        ("GET", "/Invoice"): objects([{**INVOICE, "customerInternalNote": TAG}]),
+        ("GET", "/Invoice/501"): objects([{**INVOICE, "customerInternalNote": TAG, "footText": f"{TAG} {HEX_TOKEN}"}]),
+        ("GET", "/Invoice/501/getPositions"): page([]),
+        ("GET", "/Invoice"): page([{**INVOICE, "customerInternalNote": TAG}]),
         ("POST", "/Invoice/501/render"): httpx.Response(200, json={"pdf": None, "docId": "x"}),
         ("GET", "/Invoice/501/getPdf"): objects({
             "filename": "RE-1001.pdf",
@@ -86,11 +88,12 @@ async def test_a_full_walk_creates_tagged_objects_records_everything_and_saves_t
     assert pdf_request.url.params["preventSendBy"] == "true"
     assert (tmp_path / "pdf" / f"{RUN_ID}-invoice-501.pdf").read_bytes() == PDF
     fixtures = sorted((tmp_path / "fixtures").iterdir())
-    assert len(fixtures) == len(trial.requests)
+    assert len(fixtures) == len(trial.requests) - 1, "the first identity read is not recorded, its re-read is"
     assert "identity-01.json" in {fixture.name for fixture in fixtures}
     for fixture in fixtures:
         text = fixture.read_text()
-        assert TOKEN not in text and "Synthia" not in text and leaks(text) == []
+        assert TOKEN not in text and HEX_TOKEN not in text and "Synthia" not in text and leaks(text) == []
+    assert TAG in (tmp_path / "fixtures" / "read-back-10.json").read_text(), "the run's own texts stay"
 
 
 async def test_a_single_step_runs_alone(live_settings, trial, tmp_path):
@@ -98,6 +101,7 @@ async def test_a_single_step_runs_alone(live_settings, trial, tmp_path):
 
     assert code == 0
     assert trial.sent() == [
+        "GET /SevClient",
         "GET /SevClient",
         "GET /Invoice/501",
         "GET /Invoice/501/getPositions",
@@ -126,19 +130,52 @@ async def test_it_refuses_anything_but_live_mode_on_the_trial(live_settings, tri
     assert trial.requests == []
 
 
-async def test_it_stops_when_the_identity_check_fails(live_settings, trial, tmp_path):
-    trial.on("GET", "/SevClient", objects([{"id": "4711", "name": "Example Tutoring"}]))
+@pytest.mark.parametrize(
+    "account",
+    [{"id": "4711", "name": "Example Tutoring"}, {"id": "4712", "name": TRIAL_COMPANY}],
+    ids=["no trial marker", "another account"],
+)
+async def test_a_failed_identity_check_stops_the_walk_and_records_nothing(live_settings, trial, tmp_path, account):
+    trial.on("GET", "/SevClient", objects([account]))
 
     code, lines = await _spike(live_settings, trial, tmp_path)
 
-    assert code == 1 and lines[-1].startswith("stopped: sevDesk account 4711 is configured as trial")
+    assert code == 1 and lines[-1].startswith("stopped: ")
     assert trial.sent() == ["GET /SevClient"]
+    assert not (tmp_path / "fixtures").exists()
 
 
-async def test_the_pdf_never_lands_in_the_repository(live_settings, trial, tmp_path):
-    arguments = build_parser().parse_args(["--pdf-dir", str(REPO_ROOT / "tests"), "--record-dir", str(tmp_path)])
+UNREADABLE_WRITES = {
+    "a contact answer that is no JSON": ("POST", "/Contact", httpx.Response(201, text="<html>ok</html>")),
+    "a contact answer without an id": ("POST", "/Contact", objects({"objectName": "Contact"}, status=201)),
+    "a render answer that is no JSON": ("POST", "/Invoice/501/render", httpx.Response(200, text="rendered")),
+    "a delete answer that is no JSON": ("DELETE", "/Invoice/501", httpx.Response(200, text="deleted")),
+}
+
+
+@pytest.mark.parametrize(("method", "path", "answer"), UNREADABLE_WRITES.values(), ids=UNREADABLE_WRITES.keys())
+async def test_an_unreadable_answer_to_a_write_is_an_unknown_outcome(
+    live_settings, trial, tmp_path, method, path, answer
+):
+    trial.on(method, path, answer)
+
+    code, lines = await _spike(live_settings, trial, tmp_path)
+
+    assert code == 1 and lines[-1].startswith("outcome unknown, not retried") and TAG in lines[-1]
+    assert trial.sent(method).count(f"{method} {path}") == 1
+
+
+async def test_the_pdf_never_lands_in_the_repository(live_settings, trial, tmp_path, monkeypatch):
+    repository = tmp_path / "repository"
+    monkeypatch.setattr(sevdesk_spike, "REPO_ROOT", repository)
+    arguments = build_parser().parse_args([
+        "--pdf-dir",
+        str(repository / "tests"),
+        "--record-dir",
+        str(tmp_path / "fixtures"),
+    ])
     lines: list[str] = []
 
     assert await run(arguments, settings=live_settings, transport=trial.transport, out=lines.append) == 1
     assert lines[0].startswith("--pdf-dir must lie outside the repository")
-    assert trial.requests == []
+    assert trial.requests == [] and not repository.exists()
