@@ -62,8 +62,8 @@ _SENSITIVE_KEY_PARTS = (
     "note",
     "value",
 )
-_ACCOUNT = {"id": "0", "objectName": "SevClient"}
-"""The account every object belongs to; recorded as a placeholder."""
+ACCOUNT_ID = "0"
+"""The id of the account every object belongs to, wherever it is named; recorded as a placeholder."""
 
 _TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}(?:[T ][\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?")
 _EMAIL = re.compile(r"[\w.%+-]+(?:@|%40|\(at\))(?P<domain>[\w-]+(?:\.[\w-]+)*\.[a-z]{2,})", re.IGNORECASE)
@@ -161,10 +161,8 @@ class Scrubber:
         return data
 
     def _scrub_entry(self, key: str, value: object, parent: dict[str, object]) -> object:
-        if key == "sevClient" and isinstance(value, dict):
-            return _ACCOUNT
         if key == "id" and parent.get("objectName") == "SevClient":
-            return _ACCOUNT["id"]
+            return ACCOUNT_ID
         if self._sensitive(key, value, parent):
             return SCRUBBED
         return self._scrub(value)

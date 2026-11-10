@@ -181,6 +181,7 @@ def test_people_keep_only_ids_references_and_timestamps():
             "name2": "Examplova Family",
             "name3": "c/o Synthia Examplova",
             "name4": "Synthia",
+            "district": "Example District",
             "contact": {"id": "21", "objectName": "Contact"},
         },
         {"id": "21", "objectName": "Contact", "description": "Mother: Synthia Examplova", "customerNumber": "1001"},
@@ -200,6 +201,7 @@ def test_people_keep_only_ids_references_and_timestamps():
             "name2": "[SCRUBBED]",
             "name3": "[SCRUBBED]",
             "name4": "[SCRUBBED]",
+            "district": "[SCRUBBED]",
             "contact": {"id": "21", "objectName": "Contact"},
         },
         {"id": "21", "objectName": "Contact", "description": "[SCRUBBED]", "customerNumber": "[SCRUBBED]"},
@@ -247,8 +249,14 @@ def test_every_pattern_is_scrubbed_in_any_string():
 
     for name, value in PATTERNS.items():
         scrubbed = scrub.text(f"see {value} here")
-        assert leaks(scrubbed) == [], name
+        assert value not in scrubbed and leaks(scrubbed) == [], name
         assert not any(part in scrubbed for part in ("1234567", "Synthia", "0532", "MAIL.EXAMPLE", TOKEN)), name
+
+
+def test_a_long_text_is_recorded_by_size_only():
+    text = "Synthia Examplova wrote a long letter. " * 60
+
+    assert Scrubber().text(text) == f"[{len(text)} characters]"
 
 
 def test_dates_amounts_and_the_run_id_are_no_phone_number():
