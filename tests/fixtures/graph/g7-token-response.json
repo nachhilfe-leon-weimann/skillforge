@@ -12,7 +12,7 @@
       "scope": "https://graph.microsoft.com/.default",
       "grant_type": "client_credentials",
       "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-      "client_assertion": "[SCRUBBED]"
+      "client_assertion": "synthetic-client-assertion-g7"
     }
   },
   "response": {
@@ -24,7 +24,7 @@
       "token_type": "Bearer",
       "expires_in": 3599,
       "ext_expires_in": 3599,
-      "access_token": "[SCRUBBED]"
+      "access_token": "synthetic-access-token-g7"
     }
   }
 }

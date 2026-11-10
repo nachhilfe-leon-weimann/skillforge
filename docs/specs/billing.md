@@ -145,8 +145,8 @@ fixtures ([Fixture manifest](#fixture-manifest)).
 | What do today's invoices look like? | Observed on two redacted invoices, one per payment method: number `RE-<n>`; one position per lesson (name `<Fach>-Online`, the description of [Family-visible texts](#family-visible-texts), quantity `1,00`, unit `Std`); the § 19 line; a GiroCode and the bank block on both variants; the PayPal link rendered as `…/zahlung?re=<number>&betrag=<d,dd>%20EUR`. |
 | What does `/zahlung` accept? | Read in skillsite's code (`parsePaymentRequest` in `invoice-link.ts`): `re` matches `INVOICE_PATTERN` (letters, digits, `. _ - /`, at most 32 characters); `betrag` is an unambiguous euro figure (`90,00`, `90,00 EUR`, `1.234,56`, `90.00`; a bare `1.234` is refused) within `AMOUNT_LIMITS`. |
 | How is one mailbox opened to an app? | Documented (Microsoft Learn, "Role Based Access Control for Applications in Exchange Online"): it replaces Application Access Policies; Entra grants and Exchange grants are a union; a change takes 30 minutes to 2 hours to apply. Run: `exchange-rbac-calendar.ps1` set it up; the service principal pointer takes the object id of the enterprise application, not of the app registration (`AADServicePrincipalNotFound` otherwise). `Test-ServicePrincipalAuthorization` answers `InScope` true for the lesson mailbox and false for the other; the recorder's read of the other mailbox got `403` (G6). The app holds no application permission in Entra (the maintainer's statement). |
-| How does Graph return recurring lessons? | Documented: `calendarView` expands a series into occurrences. Run: 70 days held 63 single instances, 48 occurrences and 14 exceptions. An occurrence moved in Outlook keeps its `id`, `iCalUId` and `seriesMasterId` and becomes an `exception`; `originalStart` keeps the planned time (Q16, G2). |
-| What does a lesson event carry? | Run, on 125 events over 70 days: `categories` arrive (50 events had one); the late-cancellation category is `Abgesagt` (Q9). `isCancelled` was never true, no event was all-day, `showAs` was always `busy`. 44 Teams lessons carry `isOnlineMeeting` and `teamsForBusiness`; a "Teams" category only colours them. Durations: 15, 30, 45, 60 and 120 minutes. Titles: 122 `<subject> mit <name>`, 1 `Kennenlernen`, 2 without the pattern. |
+| How does Graph return recurring lessons? | Documented: `calendarView` expands a series into occurrences; `originalStart` holds an occurrence's planned start. Run: 70 days held 63 single instances, 48 occurrences and 14 exceptions. An occurrence moved in Outlook keeps its `id`, `iCalUId` and `seriesMasterId` and becomes an `exception` (Q16, G2). |
+| What does a lesson event carry? | Run, on 125 events over 70 days: `categories` arrive (50 events had at least one); the late-cancellation category is `Abgesagt` (Q9). `isCancelled` was never true, no event was all-day, `showAs` was always `busy`. 44 Teams meetings carry `isOnlineMeeting` and `teamsForBusiness`; a "Teams" category only colours them. Durations: 15, 30, 45, 60 and 120 minutes. Titles: 122 `<subject> mit <name>`, 1 `Kennenlernen`, 2 without the pattern. |
 | Is `httpx` installed? | Yes: `uv.lock` holds it through `fastapi[standard]`. |
 | How does a new schema get created? | `get_schemata` in `schemata.py` returns every model package; `migrations/env.py` creates its schema. |
 | What refuses the delete of a party? | `EXTERNAL_LINKS` in `app/services/crm/parties.py`: `(kind, model, still_linked)` rows that `_external_link_kinds` matches on `model.party_id`, answered as `party_in_use`. |
@@ -826,7 +826,7 @@ the script then only reads.
 | G4 | A Teams lesson, a phone appointment, an all-day entry, a `Kennenlernen` entry, a title without ` mit ` | The maintainer | SF4-2 | |
 | G5 | Lessons in the weeks of both clock changes | The maintainer | SF4-3 | |
 | G6 | The answer for a mailbox outside the restriction | The maintainer | SF4-1 | |
-| G7 | The token response and an error response, scrubbed | The maintainer | SF4-1 | |
+| G7 | The token response and an error response, in the documented shape | An agent | SF4-1 | |
 
 The trial lasts 14 days. A second trial is not established: do not plan on one, and ask sevDesk's support on the
 first day whether it can be extended. SF6 and SFP-2 are built on the recorded fixtures and on fault injection, not
@@ -902,8 +902,8 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   - [x] The maintainer ran the setup: the lesson mailbox is in scope, the other mailbox is not, and the app holds
         no application permission in Entra (the maintainer's statement, in the PR).
   - [x] The recorder's probe of a mailbox outside the restriction was refused (G6).
-  - [ ] Synthetic fixtures G1 to G7 are in the repository and pass the fixture scan; the maintainer compared them
-        with the recording and deleted it.
+  - [ ] Synthetic fixtures G1 to G7 are in the repository and pass the fixture scan; the maintainer compared G1 to
+        G5 with the recording and deleted it.
   - [x] Q9 and Q16 are answered in this spec, and "Verified behavior" says what was run.
 
 **SF1-1 - Integration foundation.**

@@ -16,11 +16,23 @@ What the summary showed:
   files phone appointments under a "Telefon" category.
 - Durations were 15, 30, 45, 60 and 120 minutes.
 
-Times are UTC with seven fractional digits, Graph's documented format when no time zone is asked for.
+How to read them:
+
+- Each file is a scenario of its own; their windows overlap. Do not chain them as successive reads of one
+  calendar, or lessons seem to vanish - only G2's two files are one range read twice.
+- Times are UTC with seven fractional digits. The record format keeps no `Prefer` header: a test that needs the
+  time zone the import asks for checks it on the outgoing request.
+- Some entries were not in the run and are there because the import must handle them: G4's all-day entry (its
+  shape follows the docs; key on `isAllDay`), G1's title in lower case, G3's event with two categories.
+- `originalStart` is missing on G1's single instances, as documented, and `null` on the others: treat both alike.
+- G4's phone number has eight digits only to stay under the fixture scan's rule; it sets no length rule.
+- G7's request body is the form the token endpoint takes, recorded as a mapping; its token and assertion are
+  synthetic strings a log test can search for.
 
 | File | Fixture | Shows |
 |---|---|---|
-| `g1-calendar-view-page-1.json`, `g1-calendar-view-page-2.json` | G1 | A `calendarView` read with `$select` (the recorder's `EVENT_FIELDS`) in two pages: the first carries `@odata.nextLink`, the second none. A title in lower case. |
+| `g1-calendars.json` | G1 | The mailbox's calendars with `id` and `name`, to find the lesson calendar by name (the recorder's `find_calendar_id` ran this read). |
+| `g1-calendar-view-page-1.json`, `g1-calendar-view-page-2.json` | G1 | A `calendarView` read with `$select` (the recorder's `EVENT_FIELDS`) in two pages: the first carries `@odata.nextLink`, the second none. |
 | `g2-series-first-read.json`, `g2-series-second-read.json` | G2 | The same range read twice; in between the occurrence of 2026-12-01 moved to 2026-12-03 and became an `exception`. `id`, `iCalUId` and `seriesMasterId` stay; `originalStart` keeps the planned time (Q16). |
 | `g3-late-cancellation.json` | G3 | A single lesson and an occurrence with the category `Abgesagt`; the occurrence became an `exception` by it. |
 | `g4-special-entries.json` | G4 | A Teams lesson, a phone appointment, an all-day entry, a `Kennenlernen` entry, a title without ` mit `. |

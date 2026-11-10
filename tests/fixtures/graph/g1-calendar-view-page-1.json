@@ -69,7 +69,6 @@
             "dateTime": "2026-11-17T17:15:00.0000000",
             "timeZone": "UTC"
           },
-          "originalStart": null,
           "isAllDay": false,
           "isCancelled": false,
           "isOnlineMeeting": false,
@@ -99,7 +98,6 @@
             "dateTime": "2026-11-18T14:45:00.0000000",
             "timeZone": "UTC"
           },
-          "originalStart": null,
           "isAllDay": false,
           "isCancelled": false,
           "isOnlineMeeting": false,

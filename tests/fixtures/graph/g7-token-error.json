@@ -12,7 +12,7 @@
       "scope": "https://graph.microsoft.com/.default",
       "grant_type": "client_credentials",
       "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-      "client_assertion": "[SCRUBBED]"
+      "client_assertion": "synthetic-client-assertion-g7"
     }
   },
   "response": {
@@ -22,13 +22,13 @@
     },
     "body": {
       "error": "invalid_client",
-      "error_description": "AADSTS700027: The certificate with identifier used to sign the client assertion is not registered on application. Trace ID: 3d0e8f4a-7c21-4b9e-a6d5-0f8e2c1b9a74 Correlation ID: 9b2f6e1d-4a3c-4e8b-b7f0-2c5d9a1e6f38 Timestamp: 2026-11-09 22:40:58Z",
+      "error_description": "AADSTS700027: The certificate with identifier used to sign the client assertion is not registered on application. Trace ID: eeeeeeee-ffff-4aaa-8bbb-cccccccccccc Correlation ID: ffffffff-aaaa-4bbb-8ccc-dddddddddddd Timestamp: 2026-11-09 22:40:58Z",
       "error_codes": [
         700027
       ],
       "timestamp": "2026-11-09 22:40:58Z",
-      "trace_id": "3d0e8f4a-7c21-4b9e-a6d5-0f8e2c1b9a74",
-      "correlation_id": "9b2f6e1d-4a3c-4e8b-b7f0-2c5d9a1e6f38",
+      "trace_id": "eeeeeeee-ffff-4aaa-8bbb-cccccccccccc",
+      "correlation_id": "ffffffff-aaaa-4bbb-8ccc-dddddddddddd",
       "error_uri": "https://login.microsoftonline.com/error?code=700027"
     }
   }

@@ -14,7 +14,7 @@ _EMAIL = re.compile(r"[\w.%+-]+(?:@|%40|\(at\))(?P<domain>[\w-]+(?:\.[\w-]+)*\.[
 _PHONE = re.compile(r"(?:\+\s*\d|\(\s*0|\b0)(?:[\s()./-]*\d){7,}")
 _DATE = re.compile(r"\b\d\d\.\d\d\.\d{4}\b|\b\d{4}-\d\d-\d\d\b")
 # The time of an ISO timestamp: Graph writes seven fractional digits ("T15:00:00.0000000"), no phone number.
-_ISO_TIME = re.compile(r"(?<=\d{4}-\d\d-\d\d)T\d\d:\d\d:\d\d(?:\.\d+)?")
+_ISO_TIME = re.compile(r"(?<=\d{4}-\d\d-\d\d)T\d\d:\d\d:\d\d(?:\.\d{1,7})?")
 LEAKS = {
     "a 32-hex token": re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{32}"),
     "an IBAN": re.compile(r"\b[A-Za-z]{2}\d{2}(?:\s?[A-Za-z0-9]{4}){2,7}(?:\s?[A-Za-z0-9]{1,3})?\b"),
