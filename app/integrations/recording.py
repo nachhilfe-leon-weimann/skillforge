@@ -1,8 +1,8 @@
 """The recorder: writes request/response pairs as JSON fixtures, scrubbed of anything that identifies someone.
 
 It is an ``Observer`` of ``IntegrationHttp`` and records nothing until it is armed - after the identity check passed.
-Each run writes into a directory of its own, named by its run id, and never overwrites a file. The scrub works in
-three layers:
+Each run writes into a directory of its own, named by its run id, and never overwrites a file. The scrub takes
+whole values first, then the patterns in every string:
 
 - objects of people and companies (``SevClient``, ``SevUser``, ``Contact``, ``ContactAddress``,
   ``CommunicationWay``) keep only ids, ``objectName``, timestamps, references and the few fields
@@ -10,11 +10,12 @@ three layers:
 - in every other object a string under a key that may hold a person's data or free text (a name, an address, bank
   or contact details, a text or a note) goes, unless the run sent exactly that string itself or it is a payment
   method - configuration objects (units, parts, custom field settings, sequences) keep their names;
-- a whole value that is a sevDesk placeholder (``[%RECHNUNGSNUMMER%]``) stays wherever it stands and is never
-  learned, so the placeholders in the run's own texts survive too;
+- a whole value that is a sevDesk placeholder (``[%RECHNUNGSNUMMER%]``) is no free text: it is never dropped or
+  learned as a value, so the placeholders in the run's own texts survive too - the patterns below still apply;
 - in every string left, keys and the request path included: e-mail addresses (to ``example.org``), IBANs, phone
   numbers, hex tokens, the trial marker, base64 blobs and every value a response revealed in a scrubbed place.
 
+An answer that is no readable JSON is recorded by size only; one nested too deep to scrub fails the recording.
 ``tests/test_fixture_scan.py`` checks the result with patterns of its own. Recorded fixtures are never edited.
 """
 
@@ -23,7 +24,7 @@ import re
 import secrets
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import SplitResult, parse_qsl, urlsplit
 
 from .transport import Exchange
 
@@ -207,7 +208,7 @@ class Scrubber:
 
     def _gone(self, value: object, learning: bool) -> str:
         if isinstance(value, str) and PLACEHOLDER.fullmatch(value):
-            return value
+            return self.text(value)
         if learning and _learnable(value) and value not in self._own and value not in PAYMENT_METHODS:
             self._known.add(str(value))
         return SCRUBBED
@@ -215,6 +216,10 @@ class Scrubber:
 
 def _is_timestamp(value: object) -> bool:
     return isinstance(value, str) and _TIMESTAMP.fullmatch(value) is not None
+
+
+class RecordingError(Exception):
+    """An exchange the recorder cannot scrub; its message names no value."""
 
 
 class Recorder:
@@ -248,7 +253,7 @@ class Recorder:
             with (self.directory / f"{self.step}-{self._count:02d}.json").open("x") as file:
                 file.write(record)
         except Exception as exc:
-            self.failure = self.failure or type(exc).__name__
+            self.failure = self.failure or (str(exc) if isinstance(exc, RecordingError) else type(exc).__name__)
             raise
 
     def record(self, exchange: Exchange) -> dict[str, object]:
@@ -257,8 +262,16 @@ class Recorder:
         params = dict(parse_qsl(url.query))
         try:
             response: object = json.loads(exchange.response_content)
-        except ValueError:
+        except ValueError, RecursionError:  # not JSON, or nested too deep for the parser
             response = f"[{len(exchange.response_content)} bytes {exchange.response_headers.get('content-type', '')}]"
+        try:
+            return self._scrubbed(exchange, url, params, response)
+        except RecursionError:
+            raise RecordingError("an exchange nested too deep to scrub") from None
+
+    def _scrubbed(
+        self, exchange: Exchange, url: SplitResult, params: dict[str, str], response: object
+    ) -> dict[str, object]:
         self._scrub.sent(params)
         self._scrub.sent(exchange.request_body)
         self._scrub.learn(response)

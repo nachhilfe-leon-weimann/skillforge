@@ -11,7 +11,7 @@ import pytest
 
 from app.integrations.config import IntegrationAccount, IntegrationMode
 from app.integrations.recording import RUN_ID as RUN_ID_FORMAT
-from app.integrations.recording import SCRUBBED, Recorder, Scrubber, new_run_id
+from app.integrations.recording import SCRUBBED, Recorder, RecordingError, Scrubber, new_run_id
 from app.integrations.transport import Exchange, IntegrationHttp
 from tests.test_fixture_scan import leaks
 
@@ -267,6 +267,21 @@ def test_a_placeholder_stays_and_is_never_learned():
     )
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("[%DE89370400440532013000%]", "[IBAN]"),
+        ("[%0123456789ABCDEF0123456789ABCDEF%]", "[TOKEN]"),
+        ("[%TRIAL%]", "[MARKER]"),
+    ],
+)
+def test_a_placeholder_still_passes_the_patterns(value: str, expected: str):
+    scrub = Scrubber()
+
+    assert expected in str(scrub({"objectName": "Invoice", "footText": value}))
+    assert expected in str(scrub({"objectName": "SevUser", "salutation": value}))
+
+
 def test_payment_methods_and_configuration_names_stay():
     scrubbed = Scrubber()([
         {"objectName": "ContactCustomField", "value": "PayPal", "contact": {"id": "21", "objectName": "Contact"}},
@@ -433,6 +448,31 @@ def test_an_existing_fixture_is_never_overwritten_and_the_failure_is_kept(tmp_pa
 
     assert recorder.failure == "FileExistsError"
     assert (tmp_path / RUN_ID / "exchange-01.json").read_text() == "recorded before\n"
+
+
+def test_an_answer_too_deep_to_parse_is_recorded_by_size_only(tmp_path: Path):
+    recorder = _recorder(tmp_path)
+    recorder.arm()
+    deep = b"[" * 100_000 + b"]" * 100_000
+
+    recorder(replace(_exchange(), response_content=deep))
+
+    recorded = json.loads(next((tmp_path / RUN_ID).iterdir()).read_text())
+    assert recorded["response"]["body"] == "[200000 bytes application/json]"
+
+
+def test_an_answer_too_deep_to_scrub_fails_the_recording_with_its_reason(tmp_path: Path):
+    recorder = _recorder(tmp_path)
+    recorder.arm()
+    deep: object = "Synthia"
+    for _ in range(700):
+        deep = {"objectName": "Invoice", "nested": deep}
+
+    with pytest.raises(RecordingError):
+        recorder(replace(_exchange(), response_content=json.dumps(deep).encode()))
+
+    assert recorder.failure == "an exchange nested too deep to scrub"
+    assert not (tmp_path / RUN_ID).exists()
 
 
 async def test_an_unarmed_recorder_writes_nothing(tmp_path: Path):
