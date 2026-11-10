@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0, SF1-1 and SF1-2 done; SP-CAL scripts written, not yet run. SP-SD freezes this spec after both spikes; until
+> Status: Draft - SF0, SF1-1, SF1-2 and SF1-2b done; SP-CAL scripts written, not yet run. SP-SD freezes this spec after both spikes; until
 > then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
@@ -912,12 +912,12 @@ write (`invoices.py`)._
   a `4xx` is `IntegrationRejectedError`; a failure in transit, a `5xx` or an unreadable `2xx` is
   `OutcomeUnknownError`.
 - _Acceptance criteria:_
-  - [ ] In `dry_run`, `saveInvoice` returns the planned request and the transport saw no write; a read is sent.
-  - [ ] A write that fails in transit, gets a `5xx` or an unreadable `2xx` raises `OutcomeUnknownError` and was
+  - [x] In `dry_run`, `saveInvoice` returns the planned request and the transport saw no write; a read is sent.
+  - [x] A write that fails in transit, gets a `5xx` or an unreadable `2xx` raises `OutcomeUnknownError` and was
         sent exactly once; a `4xx` raises `IntegrationRejectedError`.
   - [x] No call leaves before the identity check passed; a wrong account id and a trial whose company name lacks
         `TRIAL` each fail closed; `SEVDESK__ACCOUNT` defaults to `trial`.
-  - [ ] Numbers that arrive as strings parse (`"100"`, `"100.00"`); an amount never passes through `float`, in
+  - [x] Numbers that arrive as strings parse (`"100"`, `"100.00"`); an amount never passes through `float`, in
         either direction.
   - [x] The token appears in no log line, exception message or `repr`.
 
