@@ -96,7 +96,7 @@ async def test_a_client_not_built_by_connect_sends_nothing_but_the_identity_read
 LEAKY_FAILURES = {
     "a rejection": (
         httpx.Response(401, json={"error": {"message": f"Synthetic detail {TOKEN}"}}),
-        "IntegrationRejectedError",
+        "IntegrationRejectedError) (HTTP 401",
     ),
     "a protocol error": (httpx.LocalProtocolError(f"Illegal header value b'{TOKEN} '"), "IntegrationUnavailableError"),
 }

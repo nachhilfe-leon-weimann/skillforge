@@ -1,8 +1,11 @@
 """The doctor only reads, prints ids and configuration names, and never a person's data."""
 
+import sys
+
+import httpx
 import pytest
 
-from app.cli.sevdesk_doctor import build_parser, run
+from app.cli.sevdesk_doctor import build_parser, main, run
 from app.integrations.config import IntegrationAccount, IntegrationMode
 from app.integrations.guards import CONTRACT_RUN_ENV
 from app.integrations.sevdesk.config import SevdeskSettings
@@ -103,22 +106,39 @@ async def test_an_account_other_than_the_requested_one_is_refused_before_any_cal
     assert configured.requests == []
 
 
-async def test_discover_prints_each_candidate_without_personal_data(settings: SevdeskSettings, configured, capsys):
+DISCOVERED = {
+    "a trial": (objects([{"id": str(ACCOUNT_ID), "name": TRIAL_COMPANY}]), f"id={ACCOUNT_ID} TRIAL marker: yes"),
+    "no trial": (objects([{"id": "4712", "name": "Example Tutoring Company"}]), "id=4712 TRIAL marker: no"),
+    "a failure": (httpx.Response(401, json={"error": {"message": "Synthetic"}}), "unavailable ("),
+}
+
+
+@pytest.mark.parametrize(("answer", "expected"), DISCOVERED.values(), ids=DISCOVERED.keys())
+async def test_discover_prints_the_account_id_and_the_marker_but_never_the_company(
+    answer, expected: str, settings: SevdeskSettings, configured, capsys
+):
+    configured.on("GET", "/SevClient", answer)
     unchecked = settings.model_copy(update={"expected_account_id": None})
 
     code, lines = await _doctor(IntegrationAccount.TRIAL, unchecked, configured, discover=True)
 
     output = capsys.readouterr().out + "\n".join(lines)
     assert code == 0
-    assert lines == [
-        f"GET /SevClient: id={ACCOUNT_ID} company='{TRIAL_COMPANY}'",
-        f"GET /SevUser: sevClient id={ACCOUNT_ID}",
-        "GET /ContactCustomFieldSetting: nothing found",
-    ]
-    assert not any(value in output for value in PERSONAL[:3])
+    assert len(lines) == 1 and lines[0].startswith(f"GET /SevClient: {expected}")
+    assert "Example" not in output and not any(value in output for value in PERSONAL)
+    assert configured.sent() == ["GET /SevClient"]
 
 
-def test_the_parser_requires_an_account():
+def test_the_parser_requires_an_account_and_takes_no_abbreviation():
     assert build_parser().parse_args(["--account", "trial", "--discover"]).account is IntegrationAccount.TRIAL
-    with pytest.raises(SystemExit):
-        build_parser().parse_args([])
+    for arguments in ([], ["--acc", "trial"], ["--account", "trial", "--disc"]):
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(arguments)
+
+
+def test_main_refuses_to_run_in_ci(monkeypatch):
+    monkeypatch.setenv("CI", "true")
+    monkeypatch.setattr(sys, "argv", ["sevdesk_doctor", "--account", "trial"])
+
+    with pytest.raises(SystemExit, match="never runs in CI"):
+        main()

@@ -96,10 +96,11 @@ row, commit, call, record the outcome - there is no job queue.
   SkillForge does not use; `invoices.py` builds the `saveInvoice` body of a draft under § 19 UStG (`taxRule` 11)
   with its delivery date or period, from integer cents and minutes sent as exact decimal strings - never a float;
   a position keeps the quarter-hour rule (minutes in steps of 15, cents per hour divisible by 4).
-- **Tooling** for the maintainer, all calling sevDesk: `just sevdesk-doctor`
+- **Tooling** for the maintainer, all calling sevDesk and none in CI: `just sevdesk-doctor trial|live`
   ([`app/cli/sevdesk_doctor.py`](../app/cli/sevdesk_doctor.py)) checks the configured ids read-only and, with
-  `--discover`, prints the account id each candidate endpoint reports; `just contract-sevdesk` runs the `contract`
-  tests against the trial.
+  `--discover`, prints the account id the token belongs to and whether it carries the trial marker;
+  `just contract-sevdesk` runs the `contract` tests against the trial, skipping them once the trial expired. The
+  trial recipes load the trial's env file and refuse a shell that has `SEVDESK__*` variables of its own.
 
 ## Housekeeping worker
 
