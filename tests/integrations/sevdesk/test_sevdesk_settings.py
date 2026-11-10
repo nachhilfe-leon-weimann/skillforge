@@ -13,10 +13,23 @@ FIELDS = ("MODE", "ACCOUNT", "TOKEN", "EXPECTED_ACCOUNT_ID", "CONTACT_PERSON_ID"
 
 
 @pytest.fixture
-def clean_env(monkeypatch):
+def clean_env(monkeypatch, tmp_path):
+    """No ``SEVDESK__*`` variable, and a working directory without an env file: independent of the checkout."""
     for field in (*FIELDS, "PAYMENT_METHOD_FIELD_SETTING_ID"):
         monkeypatch.delenv(f"SEVDESK__{field}", raising=False)
+        monkeypatch.delenv(f"sevdesk__{field.lower()}", raising=False)
+    monkeypatch.chdir(tmp_path)
     return monkeypatch
+
+
+def test_nested_settings_read_no_env_file_when_the_app_settings_read_none(clean_env, tmp_path):
+    (tmp_path / ".env").write_text("SEVDESK__ACCOUNT=live\nSEVDESK__TOKEN=synthetic-from-a-file\n")
+
+    unread = Settings(_env_file=None).sevdesk
+    read = Settings().sevdesk
+
+    assert (unread.account, unread.token) == (IntegrationAccount.TRIAL, None)
+    assert read.account is IntegrationAccount.LIVE and read.token is not None
 
 
 def test_the_app_settings_load_without_any_sevdesk_variable(clean_env):
@@ -59,7 +72,9 @@ def test_an_empty_variable_means_unset(clean_env):
         assert sevdesk.payment_method_field_setting_id is None
 
 
-@pytest.mark.parametrize("token", ["", " ", "synthetic token", "synthetic-token\n"])
+@pytest.mark.parametrize(
+    "token", ["", " ", "synthetic token", "synthetic-token\n", "synthetic\ttoken", "synthetic-tökén", "synthetic\x7f"]
+)
 def test_an_empty_or_spaced_token_is_refused(clean_env, token: str):
     clean_env.setenv("SEVDESK__TOKEN", token)
 

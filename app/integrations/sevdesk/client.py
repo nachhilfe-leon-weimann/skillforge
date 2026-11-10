@@ -18,7 +18,7 @@ from app.integrations.errors import (
     IntegrationRejectedError,
     UnexpectedResponseError,
 )
-from app.integrations.transport import InnerTransport, IntegrationHttp, Observer, Params, Reply
+from app.integrations.transport import InnerTransport, IntegrationHttp, Observer, Params, Reply, path_template
 
 from .config import SevdeskSettings
 from .identity import verify_account
@@ -107,19 +107,19 @@ class SevdeskClient:
         return await self._get_list(SevUser, "/SevUser")
 
     async def get_user(self, user_id: int) -> SevUser | None:
-        return await self._get_by_id(SevUser, f"/SevUser/{user_id}")
+        return await self._get_by_id(SevUser, "/SevUser", user_id)
 
     async def get_unity(self, unity_id: int) -> Unity | None:
-        return await self._get_by_id(Unity, f"/Unity/{unity_id}")
+        return await self._get_by_id(Unity, "/Unity", unity_id)
 
     async def get_contact(self, contact_id: int) -> Contact | None:
-        return await self._get_by_id(Contact, f"/Contact/{contact_id}")
+        return await self._get_by_id(Contact, "/Contact", contact_id)
 
     async def custom_field_settings(self) -> list[CustomFieldSetting]:
         return await self._get_list(CustomFieldSetting, "/ContactCustomFieldSetting")
 
     async def get_custom_field_setting(self, setting_id: int) -> CustomFieldSetting | None:
-        return await self._get_by_id(CustomFieldSetting, f"/ContactCustomFieldSetting/{setting_id}")
+        return await self._get_by_id(CustomFieldSetting, "/ContactCustomFieldSetting", setting_id)
 
     async def contact_custom_fields(self, contact_id: int) -> list[ContactCustomField]:
         """The custom field values of one contact; filtered here too, in case sevDesk ignores the filter.
@@ -147,23 +147,27 @@ class SevdeskClient:
         return await self._http.read(path, params=params)
 
     async def _read(self, path: str, params: Params | None) -> object:
-        return _objects(await self._reply(path, params), f"GET {path}")
+        return _objects(await self._reply(path, params), _get(path))
 
     async def _get_one[M: SevdeskModel](self, model: type[M], path: str, params: Params | None = None) -> M:
-        return _one(model, await self._read(path, params), f"GET {path}")
+        return _one(model, await self._read(path, params), _get(path))
 
     async def _get_list[M: SevdeskModel](self, model: type[M], path: str, params: Params | None = None) -> list[M]:
-        return _many(model, await self._read(path, params), f"GET {path}")
+        return _many(model, await self._read(path, params), _get(path))
 
-    async def _get_by_id[M: SevdeskModel](self, model: type[M], path: str) -> M | None:
-        """The one object at ``path``, or ``None`` if sevDesk knows no such id (a 404 or an empty list); any other
-        rejection, a 401 among them, is raised."""
+    async def _get_by_id[M: SevdeskObject](self, model: type[M], collection: str, object_id: int) -> M | None:
+        """The object with ``object_id``, or ``None`` if sevDesk knows no such id (a 404 or an empty list); any
+        other rejection, a 401 among them, is raised. An answer with more than one object, or another one, is an
+        ``UnexpectedResponseError``: it must not pass for the object asked for."""
+        path = f"{collection}/{object_id}"
         try:
             found = await self._get_list(model, path)
         except IntegrationRejectedError as exc:
             if exc.status == 404:
                 return None
             raise
+        if len(found) > 1 or any(item.id != object_id for item in found):
+            raise UnexpectedResponseError(f"sevdesk {_get(path)}: the answer is not the object asked for")
         return found[0] if found else None
 
     async def _get_all[M: SevdeskObject](self, model: type[M], path: str, params: Params | None = None) -> list[M]:
@@ -173,7 +177,7 @@ class SevdeskClient:
         short of its ``total`` is an ``UnexpectedResponseError``: an incomplete list must not pass for a whole one.
         Whether sevDesk reports ``total`` on every listing is a spike check.
         """
-        where = f"GET {path}"
+        where = _get(path)
         items: list[M] = []
         seen: set[int] = set()
         for _ in range(MAX_PAGES):
@@ -191,6 +195,11 @@ class SevdeskClient:
                     raise UnexpectedResponseError(f"sevdesk {where}: {len(items)} objects listed of {total}")
                 return items
         raise UnexpectedResponseError(f"sevdesk {where}: more than {MAX_PAGES} pages")
+
+
+def _get(path: str) -> str:
+    """A read as an error message names it: the path's template, never an id (``GET /Contact/{id}``)."""
+    return f"GET {path_template(path)}"
 
 
 def error_message(reply: Reply) -> str | None:
@@ -228,6 +237,8 @@ def _page[M: SevdeskModel](model: type[M], reply: Reply, where: str) -> tuple[in
         body = reply.json()
     except ValueError:
         raise UnexpectedResponseError(f"sevdesk {where}: the response is not JSON") from None
+    if not isinstance(body, dict) or "total" not in body:
+        raise UnexpectedResponseError(f"sevdesk {where}: listing without countAll total")
     page = _validated(where, lambda: _Page.model_validate(body))
     return page.total, _many(model, page.objects, where)
 

@@ -9,6 +9,7 @@ from skillcore.logging.redaction import REDACTED
 
 from app.core.logging import LogFormat, LoggingSettings, LogLevel, configure_logging
 from app.integrations.errors import (
+    IntegrationError,
     IntegrationRejectedError,
     IntegrationUnavailableError,
     UnexpectedResponseError,
@@ -16,7 +17,7 @@ from app.integrations.errors import (
 from app.integrations.sevdesk import client as sevdesk_client
 from app.integrations.sevdesk.client import SevdeskClient
 from app.integrations.sevdesk.models import Contact, ContactCustomField, Part
-from app.integrations.transport import Exchange
+from app.integrations.transport import Exchange, Reply
 from tests.integrations.sevdesk.fake_sevdesk import ACCOUNT_ID, TOKEN, FakeSevdesk, objects, page
 
 PART = {"id": "31", "objectName": "Part", "name": "Maths", "price": "30", "taxRate": "0.0", "status": "100"}
@@ -29,15 +30,61 @@ def test_string_numbers_parse_into_strict_types():
     part = Part.model_validate(PART)
     contact = Contact.model_validate({"id": "21", "category": {"id": "3", "objectName": "Category"}})
 
-    assert (part.id, part.price, part.tax_rate, part.status) == (31, Decimal("30.00"), Decimal(0), 100)
-    assert str(part.price) == "30.00"
-    assert Part.model_validate({**PART, "price": None}).price is None
+    assert (part.id, part.price_cents, part.tax_rate, part.status) == (31, 3000, Decimal(0), 100)
+    assert type(part.price_cents) is int
+    assert Part.model_validate({**PART, "price": None}).price_cents is None
     assert contact.category is not None and (contact.id, contact.category.id) == (21, 3)
 
 
-@pytest.mark.parametrize("amount", ["30.005", "0.001", 0.1 + 0.2])
+@pytest.mark.parametrize(
+    ("euros", "cents"),
+    [
+        ("30", 3000),
+        ("30.00", 3000),
+        ("29.99", 2999),
+        ("0.25", 25),
+        ("-1.50", -150),
+        (30, 3000),
+        (Decimal("30.10"), 3010),
+        ("90071992547409.93", 9007199254740993),
+        (Decimal("90071992547409.93"), 9007199254740993),
+        ("9999999999999999999999999.99", 999999999999999999999999999),
+    ],
+)
+def test_an_amount_parses_into_exact_int_cents(euros: object, cents: int):
+    price = Part.model_validate({**PART, "price": euros}).price_cents
+
+    assert price == cents and type(price) is int
+
+
+def test_an_amount_read_from_a_response_body_stays_exact_above_2_to_the_53():
+    body = Reply(200, b'{"id": 31, "name": "Maths", "price": 90071992547409.93}').json()
+
+    assert Part.model_validate(body).price_cents == 9007199254740993 == 2**53 + 1
+
+
+@pytest.mark.parametrize("amount", ["30.005", "0.001", Decimal("0.001"), "1e-3"])
 def test_an_amount_below_a_cent_is_refused(amount: object):
     with pytest.raises(ValueError, match="below a cent"):
+        Part.model_validate({**PART, "price": amount})
+
+
+@pytest.mark.parametrize(
+    ("amount", "message"),
+    [
+        (30.0, "must not pass through float"),
+        (0.1 + 0.2, "must not pass through float"),
+        (True, "decimal string or a number"),
+        ([30], "decimal string or a number"),
+        ("thirty", "exact decimal number"),
+        ("sNaN", "exact decimal number"),
+        ("1" * 40 + ".01", "exact decimal number"),
+        ("NaN", "exact decimal number"),
+        ("Infinity", "exact decimal number"),
+    ],
+)
+def test_a_float_or_an_inexact_amount_is_refused(amount: object, message: str):
+    with pytest.raises(ValueError, match=message):
         Part.model_validate({**PART, "price": amount})
 
 
@@ -87,6 +134,22 @@ async def test_an_unknown_id_reads_as_none(settings, fake_sevdesk: FakeSevdesk):
     async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
         assert await client.get_contact(21) is None  # the fake answers 404
         assert await client.get_contact(22) is None
+
+
+WRONG_OBJECTS = {
+    "another object": objects([{"id": "22", "objectName": "Contact"}]),
+    "two objects": objects([{"id": "21", "objectName": "Contact"}, {"id": "22", "objectName": "Contact"}]),
+    "the object twice": objects([{"id": "21", "objectName": "Contact"}, {"id": "21", "objectName": "Contact"}]),
+}
+
+
+@pytest.mark.parametrize("answer", WRONG_OBJECTS.values(), ids=WRONG_OBJECTS.keys())
+async def test_a_read_by_id_that_answers_another_or_several_objects_is_refused(answer, settings, fake_sevdesk):
+    fake_sevdesk.on("GET", "/Contact/21", answer)
+
+    async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
+        with pytest.raises(UnexpectedResponseError, match=r"GET /Contact/\{id\}: the answer is not the object"):
+            await client.get_contact(21)
 
 
 async def test_a_single_object_reads_as_a_list_of_one(settings, fake_sevdesk: FakeSevdesk):
@@ -198,6 +261,14 @@ BROKEN_LISTINGS = {
 }
 
 
+async def test_a_listing_without_a_total_says_so(settings, fake_sevdesk: FakeSevdesk):
+    fake_sevdesk.on("GET", "/Part", objects([_part(1)]))
+
+    async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
+        with pytest.raises(UnexpectedResponseError, match="GET /Part: listing without countAll total"):
+            await client.parts()
+
+
 @pytest.mark.parametrize("answer", BROKEN_LISTINGS.values(), ids=BROKEN_LISTINGS.keys())
 async def test_an_incomplete_or_inconsistent_listing_is_refused(answer, settings, fake_sevdesk, monkeypatch):
     monkeypatch.setattr(sevdesk_client, "PAGE_LIMIT", 2)
@@ -259,3 +330,42 @@ async def test_the_token_appears_in_no_repr_log_or_error(
     tracebacks = ["".join(traceback.format_exception(error)) for error in errors]
     for text in (*texts, output, caplog.text, *tracebacks, *map(repr, errors)):
         assert TOKEN not in text
+
+
+async def test_no_id_appears_in_a_log_line_or_an_error_message(
+    settings, fake_sevdesk: FakeSevdesk, restore_logging, capsys, caplog
+):
+    configure_logging(LoggingSettings(level=LogLevel.DEBUG, format=LogFormat.JSON))
+    capsys.readouterr()
+    contact = 98765
+    fake_sevdesk.on("GET", f"/Contact/{contact}", httpx.Response(500, json={"error": {"message": "x"}}))
+    fake_sevdesk.on("GET", f"/SevUser/{contact}", objects([{"id": "1", "objectName": "SevUser"}]))
+    fake_sevdesk.on("GET", f"/Unity/{contact}", objects([{"id": str(contact), "objectName": "Unity", "name": None}]))
+    fake_sevdesk.on("GET", f"/ContactCustomFieldSetting/{contact}", httpx.Response(401, json={}))
+    fake_sevdesk.on("GET", "/ContactCustomField", page([]))
+    errors: list[Exception] = []
+
+    async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
+        for call in (
+            client.get_contact(contact),
+            client.get_user(contact),
+            client.get_unity(contact),
+            client.get_custom_field_setting(contact),
+            client.contact_custom_fields(contact),
+        ):
+            try:
+                await call
+            except IntegrationError as exc:
+                errors.append(exc)
+
+    output = capsys.readouterr().out
+    assert [type(error) for error in errors] == [
+        IntegrationUnavailableError,
+        UnexpectedResponseError,
+        UnexpectedResponseError,
+        IntegrationRejectedError,
+    ]
+    assert output.count("integration_request") == 6 and "/api/v1/Contact/{id}" in output
+    tracebacks = ["".join(traceback.format_exception(error)) for error in errors]
+    for text in (output, caplog.text, *tracebacks, *map(repr, errors)):
+        assert str(contact) not in text

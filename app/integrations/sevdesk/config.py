@@ -1,3 +1,4 @@
+import re
 from typing import Annotated
 
 from pydantic import AfterValidator, PositiveInt, SecretStr
@@ -7,11 +8,15 @@ from app.integrations.config import EmptyIsDefault, IntegrationSettings
 
 type AccountObjectId = Annotated[PositiveInt | None, EmptyIsDefault]
 
+_TOKEN = re.compile(r"[\x21-\x7e]+")
+"""Printable ASCII without whitespace: what an HTTP header can carry unchanged."""
+
 
 def _token(token: SecretStr) -> SecretStr:
-    value = token.get_secret_value()
-    if not value or value != "".join(value.split()):
-        raise ValueError("SEVDESK__TOKEN must be a token without whitespace; leave the variable out to unset it")
+    if not _TOKEN.fullmatch(token.get_secret_value()):
+        raise ValueError(
+            "SEVDESK__TOKEN must be printable ASCII without whitespace; leave the variable out to unset it"
+        )
     return token
 
 

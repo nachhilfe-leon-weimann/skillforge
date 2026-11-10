@@ -18,7 +18,8 @@ class Settings(CoreSettings):
     auth: AuthSettings
     db: DatabaseSettings
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
-    sevdesk: SevdeskSettings = Field(default_factory=SevdeskSettings)
+    # Nested settings come from this class's sources; the default reads no env file of its own.
+    sevdesk: SevdeskSettings = Field(default_factory=lambda: SevdeskSettings(_env_file=None))
 
 
 @lru_cache(maxsize=1)
