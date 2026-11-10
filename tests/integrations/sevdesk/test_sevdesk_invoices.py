@@ -390,7 +390,6 @@ SAVE_FAILURES = {
     "a 500 validation error": httpx.Response(500, json={"error": {"message": "Synthetic validation error"}}),
     "an unreadable success": httpx.Response(201, json={"objects": {"invoice": {"id": "501"}}}),
     "a success that is no JSON": httpx.Response(201, content=b"<html>saved</html>"),
-    "a success nested too deep to parse": httpx.Response(201, content=b"[" * 100_000 + b"]" * 100_000),
 }
 
 
@@ -400,6 +399,18 @@ async def test_a_failed_save_is_sent_once_and_its_outcome_unknown(answer, live_s
 
     async with SevdeskClient.connect(live_settings, transport=fake_sevdesk.transport) as client:
         with pytest.raises(OutcomeUnknownError):
+            await client.save_invoice(DRAFT)
+
+    assert fake_sevdesk.sent("POST") == ["POST /Invoice/Factory/saveInvoice"]
+
+
+async def test_a_success_nested_too_deep_to_parse_has_an_unknown_outcome(
+    live_settings, fake_sevdesk: FakeSevdesk, too_deep: bytes
+):
+    fake_sevdesk.on("POST", "/Invoice/Factory/saveInvoice", httpx.Response(201, content=too_deep))
+
+    async with SevdeskClient.connect(live_settings, transport=fake_sevdesk.transport) as client:
+        with pytest.raises(OutcomeUnknownError, match="the response is not JSON; the write went through"):
             await client.save_invoice(DRAFT)
 
     assert fake_sevdesk.sent("POST") == ["POST /Invoice/Factory/saveInvoice"]
