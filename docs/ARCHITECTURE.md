@@ -22,6 +22,7 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
         app/services/auth identity: accounts, clients and grants, tokens, sessions, Discord links
         app/services/crm  system of record: parties, roles, contact infos, relations, subjects
         app/services/system  health aggregation + worker heartbeats
+        app/integrations  the only way out to other systems (guarded HTTP transport)
         app/core          cross-cutting: auth, db, logging, config
                           `-> Postgres (schemas: core/geo/ext/auth/system)
 ```
@@ -58,6 +59,32 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
   guards; plus the secret, password and e-mail primitives),
   `db/` (async engine, sessions, models), `logging/` (structured logging via `skillcore`), `errors.py`
   (HTTP-agnostic error taxonomy), `config.py` (settings).
+
+## Integrations
+
+`app/integrations/` is the only place SkillForge calls another system; its rules for agents are in
+[`app/integrations/AGENTS.md`](../app/integrations/AGENTS.md). Services call it synchronously: write a pending
+row, commit, call, record the outcome - there is no job queue.
+
+- **One guarded transport.** `IntegrationHttp` in `transport.py` is the only module in `app/` that reaches for the
+  network. Every request passes `_GuardedTransport`, which refuses a URL outside the base URL and the host allowlist
+  (https, default port, no userinfo) and, under pytest, any real network unless the contract run targets a `trial`
+  account (`guards.py`). Tests use `httpx.MockTransport`; a socket guard in `tests/conftest.py` backs that up.
+  No retry (`NETWORK_RETRIES`), no redirect followed.
+- **Modes** (`IntegrationMode` in `config.py`): `dry_run`, the default, sends reads and returns a write as the
+  `PlannedRequest` it would have sent; `live` sends both. Under pytest `live` is refused except in the contract
+  run (`SKILLFORGE_CONTRACT_RUN=1`) against a `trial` account (`IntegrationAccount`).
+- **No retry.** A failed read is `IntegrationUnavailableError` and may be repeated by its caller; a write that may
+  have reached the remote system is `OutcomeUnknownError` and is never repeated - the service reconciles it. A
+  4xx is `IntegrationRejectedError`. These errors (`errors.py`) are internal, no `DomainError`: the service
+  decides what an API client sees.
+- **Nothing leaks.** The credential is passed as `credentials`, redacted in every `Exchange`; errors never chain
+  the httpx exception, which can carry the request and a header value. One `integration_request` log line per call
+  names the integration, method, path template, status and duration - never a header, a query or a body; httpx's
+  own request log is silenced. A log line or an error message names a path as its template (`path_template`:
+  `/Contact/{id}`), never an object's id.
+- **Layering.** `app/integrations/` imports only `app.core` and itself, and `app/core/` imports no integration
+  (`tests/integrations/test_integrations_architecture.py`).
 
 ## Housekeeping worker
 
