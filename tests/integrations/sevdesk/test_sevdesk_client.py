@@ -16,7 +16,7 @@ from app.integrations.errors import (
 )
 from app.integrations.sevdesk import client as sevdesk_client
 from app.integrations.sevdesk.client import SevdeskClient
-from app.integrations.sevdesk.models import Contact, ContactCustomField, Part
+from app.integrations.sevdesk.models import Account, Contact, ContactCustomField, Part
 from app.integrations.transport import Exchange, Reply
 from tests.integrations.sevdesk.fake_sevdesk import ACCOUNT_ID, TOKEN, FakeSevdesk, objects, page
 
@@ -259,6 +259,24 @@ BROKEN_LISTINGS = {
         [_part(int(request.url.params["offset"]) + 1), _part(int(request.url.params["offset"]) + 2)], total=99
     ),
 }
+
+
+DEEP = b"[" * 100_000 + b"]" * 100_000
+
+
+@pytest.mark.parametrize("path", ["/Part", "/Contact/21"])
+async def test_a_body_nested_too_deep_to_parse_is_unexpected(path: str, settings, fake_sevdesk: FakeSevdesk):
+    fake_sevdesk.on("GET", path, httpx.Response(200, content=DEEP, headers={"content-type": "application/json"}))
+
+    async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
+        with pytest.raises(UnexpectedResponseError, match="the response is not JSON"):
+            await (client.parts() if path == "/Part" else client.get_contact(21))
+
+
+def test_an_account_hides_its_company_name_in_its_repr():
+    account = Account.model_validate({"id": "4711", "objectName": "SevClient", "name": "Example Company TRIAL"})
+
+    assert "Example" not in repr(account) and "Example" not in str(account)
 
 
 async def test_a_listing_without_a_total_says_so(settings, fake_sevdesk: FakeSevdesk):
