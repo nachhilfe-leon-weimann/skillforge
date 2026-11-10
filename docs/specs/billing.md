@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0 and SF1-1 to SF1-3c done; SP-CAL run, Q9 and Q16 answered. SP-SD freezes this spec after both spikes; until
+> Status: Draft - SF0 and SF1-1 to SF1-3c done; SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
 > then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
@@ -902,7 +902,7 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   - [x] The maintainer ran the setup: the lesson mailbox is in scope, the other mailbox is not, and the app holds
         no application permission in Entra (the maintainer's statement, in the PR).
   - [x] The recorder's probe of a mailbox outside the restriction was refused (G6).
-  - [ ] Synthetic fixtures G1 to G7 are in the repository and pass the fixture scan; the maintainer compared G1 to
+  - [x] Synthetic fixtures G1 to G7 are in the repository and pass the fixture scan; the maintainer compared G1 to
         G5 with the recording and deleted it.
   - [x] Q9 and Q16 are answered in this spec, and "Verified behavior" says what was run.
 
