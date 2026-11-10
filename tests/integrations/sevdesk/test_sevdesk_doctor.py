@@ -107,26 +107,55 @@ async def test_an_account_other_than_the_requested_one_is_refused_before_any_cal
 
 
 DISCOVERED = {
-    "a trial": (objects([{"id": str(ACCOUNT_ID), "name": TRIAL_COMPANY}]), f"id={ACCOUNT_ID} TRIAL marker: yes"),
-    "no trial": (objects([{"id": "4712", "name": "Example Tutoring Company"}]), "id=4712 TRIAL marker: no"),
-    "a failure": (httpx.Response(401, json={"error": {"message": "Synthetic"}}), "unavailable ("),
+    "a trial": (
+        objects([{"id": str(ACCOUNT_ID), "name": TRIAL_COMPANY}]),
+        f"id={ACCOUNT_ID} TRIAL marker: yes",
+        {"id": "4713", "objectName": "SevClient"},
+        "sevClient ids 4713",
+    ),
+    "no trial": (
+        objects([{"id": "4712", "name": "Example Tutoring Company"}]),
+        "id=4712 TRIAL marker: no",
+        None,
+        "sevClient ids none",
+    ),
 }
 
 
-@pytest.mark.parametrize(("answer", "expected"), DISCOVERED.values(), ids=DISCOVERED.keys())
-async def test_discover_prints_the_account_id_and_the_marker_but_never_the_company(
-    answer, expected: str, settings: SevdeskSettings, configured, capsys
+@pytest.mark.parametrize(("answer", "expected", "owner", "owners"), DISCOVERED.values(), ids=DISCOVERED.keys())
+async def test_discover_sends_its_three_reads_and_prints_ids_and_the_marker_only(
+    answer, expected: str, owner: dict[str, str] | None, owners: str, settings: SevdeskSettings, configured, capsys
 ):
     configured.on("GET", "/SevClient", answer)
+    setting = {"id": "13", "objectName": "ContactCustomFieldSetting", "name": "Zahlungsart", "sevClient": owner}
+    configured.on("GET", "/ContactCustomFieldSetting", objects([setting]))
     unchecked = settings.model_copy(update={"expected_account_id": None})
 
     code, lines = await _doctor(IntegrationAccount.TRIAL, unchecked, configured, discover=True)
 
     output = capsys.readouterr().out + "\n".join(lines)
     assert code == 0
-    assert len(lines) == 1 and lines[0].startswith(f"GET /SevClient: {expected}")
-    assert "Example" not in output and not any(value in output for value in PERSONAL)
-    assert configured.sent() == ["GET /SevClient"]
+    assert lines == [
+        f"ok   GET /SevClient: {expected}",
+        f"ok   GET /SevUser: sevClient ids {ACCOUNT_ID}",
+        f"ok   GET /ContactCustomFieldSetting: {owners}",
+    ]
+    assert "Example" not in output and "Zahlungsart" not in output
+    assert not any(value in output for value in PERSONAL)
+    assert configured.sent() == ["GET /SevClient", "GET /SevUser", "GET /ContactCustomFieldSetting"]
+
+
+@pytest.mark.parametrize("failing", ["/SevClient", "/SevUser", "/ContactCustomFieldSetting"])
+async def test_a_failed_discover_read_fails_the_run_and_stops(failing: str, settings, configured):
+    configured.on("GET", failing, httpx.Response(401, json={"error": {"message": "Synthetic"}}))
+    unchecked = settings.model_copy(update={"expected_account_id": None})
+
+    code, lines = await _doctor(IntegrationAccount.TRIAL, unchecked, configured, discover=True)
+
+    assert code == 1
+    assert len(lines) == 1 and lines[0].startswith(f"FAIL discover: sevdesk GET /api/v1{failing} was rejected")
+    reads = ["GET /SevClient", "GET /SevUser", "GET /ContactCustomFieldSetting"]
+    assert configured.sent() == reads[: reads.index(f"GET {failing}") + 1]
 
 
 def test_the_parser_requires_an_account_and_takes_no_abbreviation():

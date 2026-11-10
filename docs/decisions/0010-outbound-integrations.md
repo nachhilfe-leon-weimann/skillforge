@@ -60,8 +60,9 @@ call leaves through one guarded transport.**
 8. **sevDesk has no dedicated API user.** The token is the token of the maintainer's own sevDesk user. It exists
    in two places only, the maintainer's password manager and the production configuration, and never anywhere an
    agent can reach. A separate trial account with synthetic data takes every write test; it lasts 14 days. Agents
-   reach it only through the two trial recipes - `just contract-sevdesk` and `just sevdesk-spike`, introduced by
-   SF1-3a and SF1-3b of `billing.md`, never in CI - and only after the maintainer's go in the session.
+   reach it only through the three trial recipes - `just sevdesk-doctor trial` and `just contract-sevdesk`, read
+   only, and `just sevdesk-spike`, introduced by SF1-3a and SF1-3b of `billing.md`, never in CI - and only after
+   the maintainer's go in the session. `just sevdesk-doctor live` is the maintainer's alone.
 9. **The Entra app `skillforge` is SkillForge's identity in Microsoft 365** - not an app for the calendar alone.
    Every feature adds its own Exchange "RBAC for Applications" role assignment, restricted by its own management
    scope; the first is `Application Calendars.Read` on the one lesson mailbox. The app never receives an org-wide
