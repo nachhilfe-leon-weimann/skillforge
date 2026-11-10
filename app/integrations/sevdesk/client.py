@@ -16,19 +16,33 @@ from app.integrations.errors import (
     IdentityCheckError,
     IntegrationRefusedError,
     IntegrationRejectedError,
+    OutcomeUnknownError,
     UnexpectedResponseError,
 )
-from app.integrations.transport import InnerTransport, IntegrationHttp, Observer, Params, Reply, path_template
+from app.integrations.transport import (
+    InnerTransport,
+    IntegrationHttp,
+    Observer,
+    Params,
+    PlannedRequest,
+    Reply,
+    path_template,
+)
 
 from .config import SevdeskSettings
 from .identity import verify_account
+from .invoices import InvoiceDraft, invoice_payload
 from .models import (
     Account,
     BookkeepingVersion,
     Contact,
     ContactCustomField,
     CustomFieldSetting,
+    Invoice,
+    InvoicePosition,
+    InvoiceSequence,
     Part,
+    SavedInvoice,
     SevdeskModel,
     SevdeskObject,
     SevUser,
@@ -135,6 +149,36 @@ class SevdeskClient:
 
     async def parts(self) -> list[Part]:
         return await self._get_all(Part, "/Part")
+
+    async def invoice_sequence(self) -> InvoiceSequence:
+        params = {"objectType": "Invoice", "type": "RE"}
+        return await self._get_one(InvoiceSequence, "/SevSequence/Factory/getByType", params)
+
+    async def get_invoice(self, invoice_id: int) -> Invoice | None:
+        return await self._get_by_id(Invoice, f"/Invoice/{invoice_id}")
+
+    async def invoice_positions(self, invoice_id: int) -> list[InvoicePosition]:
+        return await self._get_all(InvoicePosition, f"/Invoice/{invoice_id}/getPositions")
+
+    async def find_invoices(self, customer_internal_note: str) -> list[Invoice]:
+        """The invoices whose ``customerInternalNote`` equals the given one: the reconcile's lookup.
+
+        Whether sevDesk filters by that field is a spike question, so the result is filtered here as well.
+        """
+        params = {"customerInternalNote": customer_internal_note}
+        invoices = await self._get_all(Invoice, "/Invoice", params)
+        return [invoice for invoice in invoices if invoice.customer_internal_note == customer_internal_note]
+
+    # --- writes: sent only in live mode, never retried ---
+
+    async def save_invoice(self, draft: InvoiceDraft) -> SavedInvoice | PlannedRequest:
+        """Create a draft invoice with its positions (System 2.0 creates drafts only)."""
+        self._ensure_confirmed()
+        if self._settings.contact_person_id is None:
+            raise IntegrationRefusedError("SEVDESK__CONTACT_PERSON_ID is not set")
+        body = invoice_payload(draft, contact_person_id=self._settings.contact_person_id)
+        written = await self._http.write("POST", "/Invoice/Factory/saveInvoice", json=body)
+        return _written(SavedInvoice, written, "POST /Invoice/Factory/saveInvoice")
 
     # --- plumbing ---
 
@@ -263,3 +307,13 @@ def _validated[T](where: str, validate: Callable[[], T]) -> T:
     except ValidationError as exc:
         fields = sorted({".".join(map(str, error["loc"])) for error in exc.errors()})
         raise UnexpectedResponseError(f"sevdesk {where}: unexpected response at {fields}") from None
+
+
+def _written[M: SevdeskModel](model: type[M], written: Reply | PlannedRequest, where: str) -> M | PlannedRequest:
+    """A write's result; a write that went through but cannot be read has an unknown outcome."""
+    if isinstance(written, PlannedRequest):
+        return written
+    try:
+        return _one(model, _objects(written, where), where)
+    except UnexpectedResponseError as exc:
+        raise OutcomeUnknownError(f"{exc}; the write went through, its result is unknown") from None
