@@ -1,10 +1,10 @@
 """The one way out of SkillForge: an HTTP client bound to one integration's base URL, host allowlist and mode.
 
 The only module in ``app/`` that imports httpx (``tests/integrations/test_integrations_architecture.py``).
-Every request passes ``_GuardedTransport``, which refuses a host outside the allowlist and, under pytest,
-any real network. ``write`` sends nothing in ``dry_run`` and returns the ``PlannedRequest`` instead.
-Nothing is retried: a failed read may be repeated by its caller, a write never is - a write that may have
-reached the remote system is an ``OutcomeUnknownError`` for a later reconcile.
+Every request passes ``_GuardedTransport``, which refuses a URL outside the base URL and the host allowlist and,
+under pytest, any real network. ``write`` sends nothing in ``dry_run`` and returns the ``PlannedRequest`` instead.
+Nothing is retried and no redirect is followed: a failed read may be repeated by its caller, a write never is - a
+write that may have reached the remote system is an ``OutcomeUnknownError`` for a later reconcile.
 """
 
 import json as jsonlib
@@ -15,6 +15,7 @@ from types import TracebackType
 from typing import Literal, Self
 
 import httpx
+from skillcore.logging.redaction import REDACTED
 
 from app.core.logging import get_logger
 
@@ -32,8 +33,9 @@ type Params = Mapping[str, str | int | bool]
 type WriteMethod = Literal["POST", "PUT", "DELETE"]
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
-REDACTED = "[REDACTED]"
-_SECRET_HEADERS = frozenset({"authorization", "proxy-authorization", "cookie", "set-cookie"})
+NETWORK_RETRIES = 0
+"""httpx retries a failed connect this many times; never, so a write cannot go out twice."""
+_COOKIE_HEADERS = frozenset({"cookie", "set-cookie"})
 
 logger = get_logger(__name__)
 
@@ -52,7 +54,6 @@ class Reply:
     """A successful response."""
 
     status: int
-    content_type: str
     content: bytes = field(repr=False)
 
     def json(self) -> object:
@@ -62,7 +63,7 @@ class Reply:
 
 @dataclass(frozen=True, slots=True)
 class Exchange:
-    """One request and its response, as an observer such as the recorder sees it: secret headers redacted."""
+    """One request and its response, as an observer such as the recorder sees it: credentials and cookies redacted."""
 
     method: str
     url: str
@@ -77,21 +78,34 @@ type Observer = Callable[[Exchange], None]
 type ErrorMessage = Callable[[Reply], str | None]
 
 
-class _GuardedTransport(httpx.AsyncBaseTransport):
-    """Hands a request to the inner transport only if its host is allowed and the network may be used."""
+def network_transport() -> httpx.AsyncHTTPTransport:
+    """The transport to the network: no retries."""
+    return httpx.AsyncHTTPTransport(retries=NETWORK_RETRIES)
 
-    def __init__(self, inner: InnerTransport, allowed_hosts: frozenset[str]) -> None:
+
+class _GuardedTransport(httpx.AsyncBaseTransport):
+    """Hands a request to the inner transport only if its URL is allowed and the network may be used."""
+
+    def __init__(
+        self, inner: InnerTransport, *, base_url: httpx.URL, allowed_hosts: frozenset[str], account: IntegrationAccount
+    ) -> None:
         self._inner = inner
+        self._base_path = base_url.path.rstrip("/") + "/"
         self._allowed_hosts = allowed_hosts
+        self._account = account
 
     def check(self, request: httpx.Request) -> None:
-        if request.url.scheme != "https" or request.url.host not in self._allowed_hosts:
-            raise IntegrationRefusedError(f"host {request.url.host!r} is not on the allowlist")
+        url = request.url
+        if url.scheme != "https" or url.host not in self._allowed_hosts or url.port is not None or url.userinfo:
+            raise IntegrationRefusedError(f"host {url.host!r} is not on the allowlist")
+        segments = url.path.split("/")
+        if not url.path.startswith(self._base_path) or "." in segments or ".." in segments:
+            raise IntegrationRefusedError(f"path {url.path!r} lies outside the base URL")
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         self.check(request)
         if not isinstance(self._inner, httpx.MockTransport):
-            ensure_network_allowed()
+            ensure_network_allowed(self._account)
         return await self._inner.handle_async_request(request)
 
     async def aclose(self) -> None:
@@ -99,11 +113,11 @@ class _GuardedTransport(httpx.AsyncBaseTransport):
 
 
 class IntegrationHttp:
-    """An integration's HTTP client. Construct it per unit of work and close it (``async with``).
+    """An integration's HTTP client, used as ``async with``: it opens on enter and closes on exit.
 
-    ``headers`` may hold the credential: it goes into no log, no error, no ``repr`` and no ``Exchange``.
-    ``error_message`` extracts the remote system's error text from an error response. ``transport`` is
-    for tests (``httpx.MockTransport``); without it the request goes to the network.
+    ``credentials`` are headers such as ``Authorization``: they go into no log, no error, no ``repr`` and no
+    ``Exchange``. ``error_message`` extracts the remote system's error text from an error response. ``transport``
+    is for tests (``httpx.MockTransport``); without it the request goes to the network.
     """
 
     def __init__(
@@ -112,9 +126,10 @@ class IntegrationHttp:
         name: str,
         base_url: str,
         allowed_hosts: frozenset[str],
-        headers: Mapping[str, str],
         mode: IntegrationMode,
         account: IntegrationAccount,
+        headers: Mapping[str, str] | None = None,
+        credentials: Mapping[str, str] | None = None,
         error_message: ErrorMessage | None = None,
         observer: Observer | None = None,
         transport: InnerTransport | None = None,
@@ -124,24 +139,45 @@ class IntegrationHttp:
             ensure_live_allowed(account)
         self._name = name
         self._mode = mode
+        self._base_url = httpx.URL(base_url)
+        self._headers = {**(headers or {}), **(credentials or {})}
+        self._redacted = _COOKIE_HEADERS | {header.lower() for header in credentials or {}}
         self._error_message = error_message
         self._observer = observer
-        inner = transport if transport is not None else httpx.AsyncHTTPTransport(retries=0)
-        self._guard = _GuardedTransport(inner, allowed_hosts)
-        self._client = httpx.AsyncClient(
-            base_url=base_url, headers=dict(headers), transport=self._guard, timeout=timeout, follow_redirects=False
+        self._guard = _GuardedTransport(
+            transport if transport is not None else network_transport(),
+            base_url=self._base_url,
+            allowed_hosts=allowed_hosts,
+            account=account,
         )
+        self._timeout = timeout
+        self._opened: httpx.AsyncClient | None = None
 
     def __repr__(self) -> str:
         return f"IntegrationHttp(name={self._name!r}, mode={self._mode.value!r})"
 
     async def __aenter__(self) -> Self:
+        self._opened = httpx.AsyncClient(
+            base_url=self._base_url,
+            headers=self._headers,
+            transport=self._guard,
+            timeout=self._timeout,
+            follow_redirects=False,
+        )
         return self
 
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: TracebackType | None
     ) -> None:
-        await self._client.aclose()
+        if self._opened is not None:
+            await self._opened.aclose()
+            self._opened = None
+
+    @property
+    def _client(self) -> httpx.AsyncClient:
+        if self._opened is None:
+            raise RuntimeError(f"{self!r} is used outside its `async with` block")
+        return self._opened
 
     async def read(self, path: str, *, params: Params | None = None) -> Reply:
         """Send a GET; it goes out in every mode."""
@@ -165,15 +201,16 @@ class IntegrationHttp:
         try:
             response = await self._client.send(request)
         except httpx.RequestError as exc:
-            self._log(request, outcome="transport_error", started=started)
+            # No chaining: an httpx error can carry the request, its headers and a header value in its message.
+            failure = type(exc).__name__
+            self._log(request, outcome=failure, started=started)
             if write:
-                raise OutcomeUnknownError(f"{where} failed in transit; its outcome is unknown") from exc
-            raise IntegrationUnavailableError(f"{where} failed in transit") from exc
+                raise OutcomeUnknownError(f"{where} failed in transit ({failure}); its outcome is unknown") from None
+            raise IntegrationUnavailableError(f"{where} failed in transit ({failure})") from None
 
-        reply = Reply(response.status_code, response.headers.get("content-type", ""), response.content)
-        if self._observer is not None:
-            self._observer(_exchange(request, body, response))
-        self._log(request, outcome="response", started=started, status=reply.status)
+        self._log(request, outcome="response", started=started, status=response.status_code)
+        self._observe(request, body, response)
+        reply = Reply(response.status_code, response.content)
         if response.is_success:
             return reply
 
@@ -186,7 +223,30 @@ class IntegrationHttp:
             )
         raise IntegrationUnavailableError(f"{where} failed", status=reply.status, remote_message=remote_message)
 
-    def _log(self, request: httpx.Request, *, outcome: str, started: float | None = None, status: int = 0) -> None:
+    def _observe(self, request: httpx.Request, body: object, response: httpx.Response) -> None:
+        """Hand the exchange to the observer; its failure is logged and never hides the outcome of the call."""
+        if self._observer is None:
+            return
+        exchange = Exchange(
+            method=request.method,
+            url=str(request.url),
+            request_headers=self._redact(request.headers),
+            request_body=body,
+            status=response.status_code,
+            response_headers=self._redact(response.headers),
+            response_content=response.content,
+        )
+        try:
+            self._observer(exchange)
+        except Exception as exc:
+            logger.warning("integration_observer_failed", integration=self._name, error=type(exc).__name__)
+
+    def _redact(self, headers: httpx.Headers) -> dict[str, str]:
+        return {name: REDACTED if name.lower() in self._redacted else value for name, value in headers.items()}
+
+    def _log(
+        self, request: httpx.Request, *, outcome: str, started: float | None = None, status: int | None = None
+    ) -> None:
         """One line per request: never a header, a query or a body - they may hold the credential or personal data."""
         logger.info(
             "integration_request",
@@ -194,22 +254,6 @@ class IntegrationHttp:
             method=request.method,
             path=request.url.path,
             outcome=outcome,
-            status=status or None,
+            status=status,
             duration_ms=None if started is None else round((perf_counter() - started) * 1000),
         )
-
-
-def _exchange(request: httpx.Request, body: object, response: httpx.Response) -> Exchange:
-    return Exchange(
-        method=request.method,
-        url=str(request.url),
-        request_headers=_redacted(request.headers),
-        request_body=body,
-        status=response.status_code,
-        response_headers=_redacted(response.headers),
-        response_content=response.content,
-    )
-
-
-def _redacted(headers: httpx.Headers) -> dict[str, str]:
-    return {name: REDACTED if name.lower() in _SECRET_HEADERS else value for name, value in headers.items()}
