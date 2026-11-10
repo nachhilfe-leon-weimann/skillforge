@@ -573,13 +573,10 @@ async def test_discovery_prints_only_placeholders_as_they_are(live_settings, tri
     assert lines[-2:] == ["placeholder Invoice.A: [%KUNDENNUMMER%]", "placeholder Invoice.B: <not a placeholder>"]
 
 
-@pytest.mark.parametrize(
-    "answer",
-    [httpx.Response(200, text="<html>no JSON</html>"), httpx.Response(200, content=b"[" * 100_000 + b"]" * 100_000)],
-    ids=["no JSON", "too deep"],
-)
-async def test_an_unreadable_listing_stops_with_a_message(answer, live_settings, trial, tmp_path):
-    trial.on("GET", "/Part", answer)
+@pytest.mark.parametrize("too_deep_to_parse", [False, True], ids=["no JSON", "too deep"])
+async def test_an_unreadable_listing_stops_with_a_message(too_deep_to_parse, request, live_settings, trial, tmp_path):
+    body = request.getfixturevalue("too_deep") if too_deep_to_parse else b"<html>no JSON</html>"
+    trial.on("GET", "/Part", httpx.Response(200, content=body))
 
     code, lines = await _spike(live_settings, trial, tmp_path, "--step", "discovery")
 
