@@ -40,9 +40,10 @@
     PROPAGATION
       New objects can take a moment to become visible. The lookup retries cover only the checks
       (and the removal checks): an error of any Exchange call stops the run (each passes
-      -ErrorAction Stop); a rerun fixes a replication error, since the script reuses what exists. Test-ServicePrincipalAuthorization bypasses the permission cache, so it passes at once.
-      Real Graph calls see a change only after the cache resets: 30 minutes for an idle app, up to
-      2 hours for an active one.
+      -ErrorAction Stop); a rerun fixes a replication error, since the script reuses what exists.
+      Test-ServicePrincipalAuthorization bypasses the permission cache, so it passes at once. Real
+      Graph calls see a change only after the cache resets: 30 minutes for an idle app, up to 2 hours
+      for an active one.
 
     UNDO
       Run with -Remove (-Mailbox optional; with it, the scope's filter must name that mailbox). It
