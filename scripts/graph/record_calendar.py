@@ -4,13 +4,18 @@
 # ///
 """Record the lesson calendar as a pseudonymized fixture for the calendar-import slice.
 
-Only the maintainer runs this, on his own machine; agents never run it against Microsoft Graph and never
-see raw calendar data. It reads one calendar of one mailbox through Microsoft Graph with app-only client
+Only the maintainer runs this, on the maintainer's machine; agents never run it against Microsoft Graph and
+never see raw calendar data. It reads one calendar of one mailbox through Microsoft Graph with app-only client
 credentials (a certificate, no secret), pseudonymizes every event in memory and only then writes a JSON
 fixture and prints a summary that is safe to paste into an agent chat:
 
     uv run scripts/graph/record_calendar.py --env-file ~/.config/skillforge/graph-spike.env \\
-        --start 2026-09-01 --end 2026-10-31 --out ~/skillforge-spike [--probe-mailbox <other address>]
+        --start 2026-09-01 --end 2026-10-31 --out ~/skillforge-spike [--probe-mailbox <other address>] \\
+        [--subject <prefix> ...] [--category <label> ...]
+
+Names, ids and categories off the allowlist map to keyed pseudonyms that stay stable across recordings (the
+salt file). Dates move by a random whole number of weeks, drawn afresh for every recording and never stored
+or printed, so neither one fixture nor several of them reveal the real dates.
 
 The inline metadata above gives ``uv run`` its own environment, so the project gains no runtime dependency.
 The project environment has ``httpx`` but not ``msal``: the pure logic imports without it and the token
@@ -29,6 +34,7 @@ import re
 import secrets
 import stat
 import sys
+import tempfile
 import time
 import unicodedata
 from collections import Counter
@@ -82,6 +88,8 @@ EVENT_FIELDS = (
     "showAs",
     "lastModifiedDateTime",
 )
+# The fixture keeps the order of lastModifiedDateTime as a rank: the instant lies near the recording date.
+FIXTURE_EVENT_FIELDS = (*(field for field in EVENT_FIELDS if field != "lastModifiedDateTime"), "lastModifiedRank")
 ID_FIELDS = ("id", "iCalUId", "seriesMasterId")
 PASSTHROUGH_FIELDS = ("type", "isAllDay", "isCancelled", "isOnlineMeeting", "onlineMeetingProvider", "showAs")
 LOCATION_TYPES = frozenset({
@@ -139,11 +147,28 @@ SUBJECTS = (
     "VWL",
     "Statistik",
 )
+# Outlook's preset categories (English and German UI): colour labels that name nobody. Any other category is
+# pseudonymized unless --category names it.
+DEFAULT_CATEGORIES = (
+    "Red category",
+    "Orange category",
+    "Yellow category",
+    "Green category",
+    "Blue category",
+    "Purple category",
+    "Rote Kategorie",
+    "Orange Kategorie",
+    "Gelbe Kategorie",
+    "Grüne Kategorie",
+    "Blaue Kategorie",
+    "Lila Kategorie",
+)
 # Words Outlook or the maintainer put in front of a subject; they name no person.
 TITLE_MARKERS = ("Abgesagt", "Absage", "Canceled", "Cancelled")
 PREFIX_SEPARATORS = re.compile(r"[\s&+/,:\-]*")
 
 SUBJECT_PLACEHOLDER = "[subject]"
+CATEGORY_PLACEHOLDER = "[category]"
 UNMATCHED_PLACEHOLDER = "[unmatched]"
 SYNTHETIC_LOCATIONS = {
     "empty": "",
@@ -161,6 +186,8 @@ _UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
 _CONSONANTS = "bdfgklmnprstvz"
 _VOWELS = "aeiou"
 _PSEUDONYM_SYLLABLES = 5
+MIN_OFFSET_WEEKS = 52
+MAX_OFFSET_WEEKS = 520
 _PEM_CERTIFICATE = re.compile(r"-----BEGIN CERTIFICATE-----(.+?)-----END CERTIFICATE-----", re.DOTALL)
 
 # endregion
@@ -220,8 +247,9 @@ def load_config(env_file: Path) -> GraphConfig:
     missing = [key for key in CONFIG_KEYS if not values.get(key)]
     if missing:
         raise RecorderError(f"env file lacks {', '.join(missing)}")
-    if unknown := sorted(set(values) - set(CONFIG_KEYS)):
-        _warn(f"env file has unused keys: {', '.join(unknown)}")
+    if unknown := len(set(values) - set(CONFIG_KEYS)):
+        # Only the count: a stray line may be a pasted secret, and its "key" is then the secret itself.
+        _warn(f"env file has {unknown} unused key(s); they are ignored")
 
     config = GraphConfig(
         tenant_id=values["GRAPH__TENANT_ID"],
@@ -277,13 +305,14 @@ def acquire_token(config: GraphConfig) -> str:
     import msal  # ty: ignore[unresolved-import]
 
     certificate = config.certificate_path.read_text()
+    public_certificate = certificate_pem(certificate)
     try:
         app = msal.ConfidentialClientApplication(
             config.client_id,
             authority=f"{AUTHORITY_BASE_URL}/{config.tenant_id}",
             client_credential={
                 "private_key": config.private_key_path.read_text(),
-                "public_certificate": certificate_pem(certificate),
+                "public_certificate": public_certificate,
             },
         )
         result = app.acquire_token_for_client(scopes=[GRAPH_SCOPE])
@@ -291,6 +320,9 @@ def acquire_token(config: GraphConfig) -> str:
         raise RecorderError(
             f"MSAL refused the key or certificate ({type(error).__name__}); is the key an unencrypted PEM?"
         ) from None
+    except Exception as error:
+        # A network error's text names the authority URL, and with it the tenant id.
+        raise RecorderError(f"token request failed: {type(error).__name__}") from None
     if "access_token" not in result:
         # error_description carries tenant and trace ids; the code and the AADSTS numbers suffice to debug.
         codes = " ".join(str(code) for code in result.get("error_codes") or [])
@@ -485,16 +517,45 @@ def _graph_datetime(moment: datetime) -> str:
     return f"{moment:%Y-%m-%dT%H:%M:%S}.{moment.microsecond:06d}0"
 
 
-class Pseudonymizer:
-    """Keyed, deterministic replacements: the same salt maps the same input the same way across runs."""
+def random_week_offset() -> int:
+    """A fresh shift of 52 to 520 weeks either way; never derived from the salt, so recordings do not share it."""
+    weeks = MIN_OFFSET_WEEKS + secrets.randbelow(MAX_OFFSET_WEEKS - MIN_OFFSET_WEEKS + 1)
+    return weeks if secrets.randbelow(2) else -weeks
 
-    def __init__(self, salt: bytes, extra_subjects: Iterable[str] = ()) -> None:
+
+def last_modified_ranks(raw_events: Sequence[dict[str, Any]]) -> list[int | None]:
+    """Dense rank of ``lastModifiedDateTime`` (0 = earliest): the order survives, the instants do not."""
+    instants: list[datetime | None] = []
+    for raw in raw_events:
+        try:
+            instants.append(_parse_utc(raw["lastModifiedDateTime"]))
+        except KeyError, TypeError, ValueError:
+            instants.append(None)
+    rank = {moment: index for index, moment in enumerate(sorted({m for m in instants if m is not None}))}
+    return [None if moment is None else rank[moment] for moment in instants]
+
+
+def _category_key(category: str) -> str:
+    return " ".join(normalize_token(category).split())
+
+
+class Pseudonymizer:
+    """Keyed replacements: the same salt maps a name or id the same way across runs; the date shift is per run."""
+
+    def __init__(
+        self,
+        salt: bytes,
+        extra_subjects: Iterable[str] = (),
+        extra_categories: Iterable[str] = (),
+        *,
+        week_offset: int | None = None,
+    ) -> None:
         self._name_key = self._derive(salt, b"names")
         self._id_key = self._derive(salt, b"ids")
-        offset = int.from_bytes(self._derive(salt, b"date-offset")[:4])
-        self.week_offset = (52 + offset % 469) * (1 if offset & 1 << 31 else -1)  # +-52..520 weeks
+        self._week_offset = random_week_offset() if week_offset is None else week_offset
         kept = (*SUBJECTS, *TITLE_MARKERS, KENNENLERNEN, *extra_subjects)
         self._kept_words = {normalize_token(word) for text in kept for word in _WORD.findall(text)}
+        self._kept_categories = {_category_key(category) for category in (*DEFAULT_CATEGORIES, *extra_categories)}
         self._pseudonyms: dict[str, str] = {}
 
     @staticmethod
@@ -532,8 +593,11 @@ class Pseudonymizer:
         return pseudonym if word[0].islower() else pseudonym.capitalize()
 
     def pseudo_name(self, name: str) -> str:
-        """Replace every word, keep spaces, hyphens and punctuation: token count and shape survive."""
-        return _WORD.sub(lambda match: self._word(match.group()), name)
+        """Replace every word, keep spaces, hyphens and punctuation: token count and shape survive.
+
+        NFC first: a decomposed umlaut would split a word at its combining mark and leave the mark behind.
+        """
+        return _WORD.sub(lambda match: self._word(match.group()), unicodedata.normalize("NFC", name))
 
     def keeps_prefix(self, prefix: str) -> bool:
         words = _WORD.findall(prefix)
@@ -545,13 +609,20 @@ class Pseudonymizer:
 
     def pseudo_subject(self, subject: Any) -> str:
         """``<prefix> mit <name>`` keeps an allowlisted prefix and pseudonymizes the name; else a placeholder."""
-        subject = str(subject or "").strip()
+        subject = unicodedata.normalize("NFC", str(subject or "")).strip()
         separator = _NAME_SEPARATOR.search(subject)
         if separator is None or not subject[separator.end() :].strip():
             return UNMATCHED_PLACEHOLDER
         prefix = subject[: separator.start()]
         kept = prefix if self.keeps_prefix(prefix) else SUBJECT_PLACEHOLDER
         return f"{kept}{separator.group()}{self.pseudo_name(subject[separator.end() :])}"
+
+    def pseudo_category(self, category: Any) -> str:
+        """An allowlisted category stays; any other may name a person and becomes ``[category] <pseudonym>``."""
+        text = unicodedata.normalize("NFC", str(category)).strip()
+        if _category_key(text) in self._kept_categories:
+            return text
+        return f"{CATEGORY_PLACEHOLDER} {self.pseudo_name(text)}"
 
     # Dates
 
@@ -561,23 +632,25 @@ class Pseudonymizer:
             return value
         moment = datetime.fromisoformat(value["dateTime"]).replace(tzinfo=None)
         if all_day:
-            shifted = moment + timedelta(weeks=self.week_offset)
+            shifted = moment + timedelta(weeks=self._week_offset)
         else:
-            shifted = _shift_local(moment.replace(tzinfo=UTC), self.week_offset)
+            shifted = _shift_local(moment.replace(tzinfo=UTC), self._week_offset)
         return {"dateTime": _graph_datetime(shifted), "timeZone": value.get("timeZone", "UTC")}
 
     def shift_instant(self, value: Any) -> Any:
         if not isinstance(value, str) or not value:
             return value
-        return f"{_shift_local(_parse_utc(value), self.week_offset):%Y-%m-%dT%H:%M:%S}Z"
-
-    def shift_date(self, day: date) -> date:
-        return day + timedelta(weeks=self.week_offset)
+        return f"{_shift_local(_parse_utc(value), self._week_offset):%Y-%m-%dT%H:%M:%S}Z"
 
     # Events
 
-    def event(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def events(self, raw_events: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+        ranks = last_modified_ranks(raw_events)
+        return [self.event(raw, last_modified_rank=rank) for raw, rank in zip(raw_events, ranks, strict=True)]
+
+    def event(self, raw: dict[str, Any], *, last_modified_rank: int | None = None) -> dict[str, Any]:
         """A new event built from an allowlist of fields; anything unknown is dropped, nothing is copied blindly."""
+        categories = raw.get("categories")
         all_day = bool(raw.get("isAllDay"))
         location = raw.get("location")
         location = location if isinstance(location, dict) else {}
@@ -593,10 +666,10 @@ class Pseudonymizer:
                 "displayName": SYNTHETIC_LOCATIONS[classify_location(location)],
                 "locationType": location_type if location_type in LOCATION_TYPES else "default",
             },
-            "categories": [str(c) for c in raw.get("categories") or [] if c],
-            "lastModifiedDateTime": self.shift_instant(raw.get("lastModifiedDateTime")),
+            "categories": [self.pseudo_category(c) for c in categories if c] if isinstance(categories, list) else [],
+            "lastModifiedRank": last_modified_rank,
         }
-        return {field: out[field] for field in EVENT_FIELDS}
+        return {field: out[field] for field in FIXTURE_EVENT_FIELDS}
 
 
 def load_or_create_salt(path: Path) -> bytes:
@@ -665,7 +738,7 @@ def summarize(events: Sequence[dict[str, Any]], *, window_days: int, probe: str 
         minutes for e in events if not e.get("isAllDay") and (minutes := _duration_minutes(e)) is not None
     )
     lines = [
-        "SkillForge calendar spike - summary (check the categories before you share it)",
+        "SkillForge calendar spike - summary (pseudonymized; read it before you share it)",
         f"window: {window_days} days",
         f"events: {len(events)}",
         f"  lessons (<subject> mit <name>): {titles['lesson']}",
@@ -678,7 +751,7 @@ def summarize(events: Sequence[dict[str, Any]], *, window_days: int, probe: str 
         *_section("recurrence type", Counter(str(e.get("type")) for e in events)),
         *_section("show as", Counter(str(e.get("showAs")) for e in events)),
         *_section("location classes", Counter(classify_location(e["location"]) for e in events)),
-        *_section("categories (the maintainer's own labels, kept verbatim)", categories),
+        *_section(f"categories ({CATEGORY_PLACEHOLDER} = not on the allowlist, pseudonymized)", categories),
         *_section(f"subject prefixes ({SUBJECT_PLACEHOLDER} = not on the allowlist)", prefixes),
         *_section("durations in minutes (all-day excluded)", durations, by_key=True),
         f"probe of another mailbox: {f'restricted: {probe}' if probe else 'not run'}",
@@ -686,23 +759,37 @@ def summarize(events: Sequence[dict[str, Any]], *, window_days: int, probe: str 
     return "\n".join(lines)
 
 
+def _in_git_work_tree(path: Path) -> bool:
+    return path.is_relative_to(REPO_ROOT) or any((folder / ".git").exists() for folder in (path, *path.parents))
+
+
 def check_out_dir(out: Path, *, force: bool) -> Path:
-    """Refuse ``tests/`` (a later PR commits the reviewed fixture) and an existing fixture without ``--force``."""
+    """Refuse any git work tree (a later PR commits the reviewed fixture), a symlink and an unforced overwrite."""
     out = out.expanduser().resolve()
-    if out.is_relative_to(REPO_ROOT / "tests"):
-        raise RecorderError("--out lies inside the repository's tests/; write elsewhere and review the fixture first")
+    if _in_git_work_tree(out):
+        raise RecorderError("--out lies inside a git work tree; write outside every repository and review it first")
     fixture = out / FIXTURE_NAME
+    if fixture.is_symlink():
+        raise RecorderError(f"{FIXTURE_NAME} in --out is a symbolic link; remove it first")
     if fixture.exists() and not force:
         raise RecorderError(f"{FIXTURE_NAME} exists in --out; pass --force to overwrite it")
     return fixture
 
 
 def write_fixture(path: Path, document: dict[str, Any]) -> None:
+    """Write a fresh mode-600 file next to the target and rename it over: an old file's mode never survives."""
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump(document, handle, ensure_ascii=False, indent=2)
-        handle.write("\n")
+    if path.is_symlink():
+        raise RecorderError(f"{FIXTURE_NAME} in --out is a symbolic link; remove it first")
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{FIXTURE_NAME}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(document, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
 
 
 # endregion
@@ -711,15 +798,29 @@ def write_fixture(path: Path, document: dict[str, Any]) -> None:
 # region CLI
 
 
+def _iso_date(text: str) -> date:
+    """``date.fromisoformat`` whose error does not echo the value: it may be a real date."""
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError("expected YYYY-MM-DD") from None
+
+
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--env-file", type=Path, required=True, help="the Graph config (mode 600)")
-    parser.add_argument("--start", type=date.fromisoformat, required=True, help="first day, YYYY-MM-DD (Berlin)")
-    parser.add_argument("--end", type=date.fromisoformat, required=True, help="last day, inclusive, YYYY-MM-DD")
-    parser.add_argument("--out", type=Path, required=True, help="directory for the fixture (not inside tests/)")
+    parser.add_argument("--start", type=_iso_date, required=True, help="first day, YYYY-MM-DD (Berlin)")
+    parser.add_argument("--end", type=_iso_date, required=True, help="last day, inclusive, YYYY-MM-DD")
+    parser.add_argument("--out", type=Path, required=True, help="directory for the fixture (outside every git repo)")
     parser.add_argument("--force", action="store_true", help="overwrite an existing fixture")
     parser.add_argument("--probe-mailbox", help="another mailbox; expects 403 to prove the RBAC restriction")
     parser.add_argument("--subject", action="append", default=[], help="keep this subject prefix too (repeatable)")
+    parser.add_argument(
+        "--category",
+        action="append",
+        default=[],
+        help="keep this category verbatim too (repeatable); it must name nobody",
+    )
     parser.add_argument("--salt-file", type=Path, default=DEFAULT_SALT_FILE, help=argparse.SUPPRESS)
     return parser.parse_args(argv)
 
@@ -738,15 +839,16 @@ def main(
         config = load_config(args.env_file)
         if args.probe_mailbox and args.probe_mailbox.casefold() == config.mailbox.casefold():
             raise RecorderError("--probe-mailbox must name another mailbox")
-        pseudonymizer = Pseudonymizer(load_or_create_salt(args.salt_file), args.subject)
+        pseudonymizer = Pseudonymizer(load_or_create_salt(args.salt_file), args.subject, args.category)
 
         with GraphClient(token_provider(config), transport=transport, sleep=sleep) as client:
             calendar_id = find_calendar_id(client, config.mailbox, config.calendar_name)
             raw_events = fetch_events(client, config.mailbox, calendar_id, args.start, args.end)
             probe = probe_mailbox(client, args.probe_mailbox) if args.probe_mailbox else None
 
-        events = [pseudonymizer.event(raw) for raw in raw_events]
-        del raw_events  # from here on only pseudonymized data exists
+        events = pseudonymizer.events(raw_events)
+        del raw_events, pseudonymizer  # from here on only pseudonymized data exists, and no date offset
+        window_days = (args.end - args.start).days + 1
 
         write_fixture(
             fixture_path,
@@ -756,20 +858,23 @@ def main(
                     "recorder": "scripts/graph/record_calendar.py",
                     "pseudonymized": True,
                     "timeZone": "UTC",
-                    "window": {
-                        "start": pseudonymizer.shift_date(args.start).isoformat(),
-                        "end": pseudonymizer.shift_date(args.end).isoformat(),
-                    },
+                    # The length only: the window's dates would give the shift away.
+                    "windowDays": window_days,
+                    "dateShift": "a random whole number of weeks per recording, Europe/Berlin wall clock kept",
                     "selectedFields": list(EVENT_FIELDS),
                 },
                 "value": events,
             },
         )
+        print(summarize(events, window_days=window_days, probe=probe))
     except RecorderError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
+    except Exception as error:
+        # The type only: the text of an unexpected error may carry a real date, an address or a tenant id.
+        print(f"error: unexpected {type(error).__name__}; its message is withheld", file=sys.stderr)
+        return 1
 
-    print(summarize(events, window_days=(args.end - args.start).days + 1, probe=probe))
     # No path here: it names the home directory, and this output may be pasted along with the summary.
     print(f"\n{FIXTURE_NAME} written to --out; review it before it goes anywhere", file=sys.stderr)
     return 0
