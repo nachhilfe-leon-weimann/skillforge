@@ -70,7 +70,7 @@ them.
 | **F - Frozen rate** | The rate is frozen on each position when the preview is built. A later rate change touches no existing charge. | What the maintainer confirmed is what is billed. |
 | **G - Quarter-hour rule** | A rate in cents per hour is divisible by 4 and a lesson's minutes by 15. Every amount is then a whole cent. | No rounding code exists, so SkillForge and sevDesk agree to the cent by construction. No rate in use today breaks the rule. |
 | **H - Duration** | A lesson is billed with its planned calendar duration, correctable in 15-minute steps. One position per lesson, quantity = minutes / 60, computed per position and never across a sum. | The appointment is what was agreed, and the correction covers a lesson that ran differently. Arithmetic per position keeps rule G exact; a sum of rounded parts would not be. |
-| **I - Payer** | The payer is the party with a `pays_for` relation to the student, otherwise the student. A student has exactly one payer at a time. When the payer changes, the new one applies from a date and older lessons stay with the old one ([PD1](#open-until-the-maintainer-approves)). An authority that pays is a company party with `pays_for`. | The CRM already holds who pays (ADR 0007). |
+| **I - Payer** | The payer is the party with a `pays_for` relation to the student, otherwise the student. A student has exactly one payer at a time. When the payer changes, the new one applies from a date and older lessons stay with the old one ([PD1](#approved-by-the-maintainer)). An authority that pays is a company party with `pays_for`. | The CRM already holds who pays (ADR 0007). |
 | **J - Recipient** | The invoice goes to the payer's sevDesk contact (`ext.sevdesk_contact`). Without that link there is no draft. | sevDesk addresses an invoice to a contact, and the `ext` link is the one place a party meets its contact - nothing is looked up by name. |
 | **K - Payment method** | Read from the custom field "Zahlungsverfahren" of the sevDesk contact, with the values `PayPal` and `Überweisung`: read for the preview and frozen there. An empty or unknown value blocks. One method per payer; paying in advance is not a payment method. The maintainer switches the field to these two values before the cut-over. | sevDesk stays the home of how a customer pays; the PayPal link appears only for `PayPal`. |
 | **L - Dates and tax** | Invoice date: the day the draft is created. Delivery date: the lesson's day, or the range from the first to the last lesson. A lesson that has not ended is never billed. Payment term: 14 days for everyone. § 19 UStG: `taxRule` 11. | A normal sevDesk invoice refuses a delivery date after its invoice date. |
@@ -81,7 +81,7 @@ them.
 | **Q - Outbound writes** | Pending row, commit, call, outcome. A write is never retried. An unknown outcome is a state that a reconcile resolves. A sevDesk read error never changes money. | ADR 0010. |
 | **R - Number and reference** | The invoice number is sevDesk's. SkillForge writes its own reference into `customerInternalNote`, which the maintainer does not use. Fallback, only if placeholders do not resolve in a text set through the API ([Q2](#for-the-spikes)): the number is taken from sevDesk's own sequence when the draft is created. | The PayPal link needs the number; a number is never invented. |
 | **S - Credit account** | One credit account per payer, for every child the payer pays for, shown as a statement. Credit is money, not hours. A prepaid lesson is charged to the account when it is ticked and never appears on a normal invoice. Ticking is never blocked: the balance may go negative, and the minus carries into the next top-up. No balance is stored. An account closes only at balance 0. | Replaces a project and a budget per cycle. |
-| **T - Top-up** | A top-up is a normal invoice with positions "N x subject" at the child's rate, without a date. Credit counts once the invoice is issued (sevDesk status >= 200), with the amount sevDesk reports; payment is only a badge. The amount per family defaults to 100 EUR and is free on every top-up, small amounts included. The helper hints "ab 30 € Restguthaben" - read here as a remaining credit of 30 EUR or less ([M11](#for-the-maintainer)) - and the maintainer triggers the top-up. A prepaid family that wants single lessons for a while stays prepaid and gets a small top-up. | Today's practice. A draft is no invoice, so it is no credit. |
+| **T - Top-up** | A top-up is a normal invoice with positions "N x subject" at the child's rate, without a date. Credit counts once the invoice is issued (sevDesk status >= 200), with the amount sevDesk reports; payment is only a badge. The amount per family defaults to 100 EUR and is free on every top-up, small amounts included. The helper hints when the remaining credit is one hour or less at the highest rate valid today among the account's children ([M11](#for-the-maintainer)), and the maintainer triggers the top-up. A prepaid family that wants single lessons for a while stays prepaid and gets a small top-up. | Today's practice. A draft is no invoice, so it is no credit. _Amended 2026-11 by M11: the hint follows the children's rate instead of a fixed 30 EUR._ |
 | **U - No opening balance** | A prepaid family moves to SkillForge when its running cycle in the time tracker is used up: it starts at balance 0 with a new top-up. Nothing is computed from the tracker. | No figure has to be verified per family. |
 | **V - Authorities** | Lessons an authority pays for (BuT) are billed by hand in v1: they show as "bill manually" and get no draft. | Rare, and an authority may ask for an e-invoice ([L2](#recorded-not-resolved)). |
 | **W - What families see** | Nothing new in v1. The maintainer reads a balance from the statement when a family asks. | The admin helper comes first. |
@@ -93,20 +93,19 @@ them.
 
 The maintainer's decisions did not settle the points below. Each is a default with its reason.
 
-#### Open until the maintainer approves
+#### Approved by the maintainer
 
-Money logic, data protection and a change to an ADR are asked first ([`AGENTS.md`](../../AGENTS.md)). No slice
-builds on one of these rows before the maintainer approved it in the session; the last column is what the
-independent review of SF0 recommends.
+Money logic, data protection and a change to an ADR are asked first ([`AGENTS.md`](../../AGENTS.md)). The
+maintainer approved every row below in the review of SF0 (2026-11); the last column records the answer.
 
-| Topic | Proposal | Rationale | Review recommends |
+| Topic | Proposal | Rationale | Maintainer's answer |
 |---|---|---|---|
-| **PD1 - Payer on the lesson** | The payer is resolved when a lesson becomes billable - it is ticked, or a late cancellation is marked billable - and stored on it (`Lesson.payer_party_id`). Becoming billable again, or changing the student or the day, resolves afresh. When the stored payer differs from what the CRM resolves now, the preview shows the warning `payer_changed` and blocks nothing. The maintainer then chooses per lesson: keep - creating the draft from that preview, whose fingerprint covers the stored payer - or resolve afresh (`resolve-payer`). A billable lesson without a stored payer blocks (`payer_missing`). | Decision I wants the new payer "from a date", and `core.party_relation` carries no dates. Freezing when a lesson becomes billable keeps older lessons with the old payer; the warning makes every remaining case a visible choice. | Keep as a proposal with the warning; the maintainer decides whether "from a date" needs more than this. |
-| **PD3 - A lesson's own rate** | A lesson can carry its own rate in cents per hour, 0 included, under the same rule G. | One invariant for every amount. An own _total_ would not fit a quantity in hours. | Accept. |
-| **PD6 - Upstream errors** | A fourth category joins the API's error taxonomy: `UpstreamError`, mapped to 502. It is decided in [ADR 0010](../decisions/0010-outbound-integrations.md) (point 10), which amends [ADR 0006](../decisions/0006-error-envelope.md) once it is accepted. | Endpoints stay free of `try/except`; 502 says "not your request, not our bug". | Decide it in the ADR, not in the spec. |
-| **PD9 - Party references** | Billing tables reference `core.party(id)` with `ON DELETE RESTRICT`, never `core.student`, and join `EXTERNAL_LINKS`: a party with billing rows cannot be deleted. This amends decision K of [`crm-api.md`](crm-api.md), which guards a delete by `ext` links only. | Taking a student role away must not fail on a lesson, and a charge must not lose its party. | Accept - and decide how long billing data is kept and how a person's data is erased ([M10](#for-the-maintainer)). |
-| **PD12 - Credit entries** | `billing.prepaid_entry` knows two kinds: `topup`, always from a top-up invoice SkillForge created, and `adjustment`, a manual correction with a mandatory note. A top-up invoice written by hand in sevDesk is entered as an adjustment that names it in the note. | A correction needs a trail. With no opening balance (decision U) nothing else has to be registered from outside. Refunds are v1.1. | Accept in this form: no top-up "registered by number" in v1. |
-| **PD13 - Calendar data kept** | `calendar_event.title_name` is kept only while an occurrence waits for an assignment. It is never stored for all-day, phone and first-meeting occurrences and is cleared when the occurrence is assigned. Unassigned and dismissed occurrences are deleted 90 days after their start, with the next import. | A calendar title holds a name, sometimes of a person who never becomes a student. Keep what the next step needs, and no longer. | New with the review; the period is the maintainer's to set. |
+| **PD1 - Payer on the lesson** | The payer is resolved when a lesson becomes billable - it is ticked, or a late cancellation is marked billable - and stored on it (`Lesson.payer_party_id`). Becoming billable again, or changing the student or the day, resolves afresh. When the stored payer differs from what the CRM resolves now, the preview shows the warning `payer_changed` and blocks nothing. The maintainer then chooses per lesson: keep - creating the draft from that preview, whose fingerprint covers the stored payer - or resolve afresh (`resolve-payer`). A billable lesson without a stored payer blocks (`payer_missing`). | Decision I wants the new payer "from a date", and `core.party_relation` carries no dates. Freezing when a lesson becomes billable keeps older lessons with the old payer; the warning makes every remaining case a visible choice. | Approved: the warning and the choice per lesson are all "from a date" needs. |
+| **PD3 - A lesson's own rate** | A lesson can carry its own rate in cents per hour, 0 included, under the same rule G. | One invariant for every amount. An own _total_ would not fit a quantity in hours. | Approved; no flat price per lesson is needed. |
+| **PD6 - Upstream errors** | A fourth category joins the API's error taxonomy: `UpstreamError`, mapped to 502. It is decided in [ADR 0010](../decisions/0010-outbound-integrations.md) (point 10), which amends [ADR 0006](../decisions/0006-error-envelope.md) once it is accepted. | Endpoints stay free of `try/except`; 502 says "not your request, not our bug". | Approved, as point 10 of ADR 0010, which stays `Proposed` until SP-SD. |
+| **PD9 - Party references** | Billing tables reference `core.party(id)` with `ON DELETE RESTRICT`, never `core.student`, and join `EXTERNAL_LINKS`: a party with billing rows cannot be deleted. This amends decision K of [`crm-api.md`](crm-api.md), which guards a delete by `ext` links only. | Taking a student role away must not fail on a lesson, and a charge must not lose its party. | Approved, together with the retention answer of [M10](#for-the-maintainer). |
+| **PD12 - Credit entries** | `billing.prepaid_entry` knows two kinds: `topup`, always from a top-up invoice SkillForge created, and `adjustment`, a manual correction with a mandatory note. A top-up invoice written by hand in sevDesk is entered as an adjustment that names it in the note. | A correction needs a trail. With no opening balance (decision U) nothing else has to be registered from outside. Refunds are v1.1. | Approved in this form: no top-up "registered by number" in v1. |
+| **PD13 - Calendar data kept** | `calendar_event.title_name` is kept only while an occurrence waits for an assignment. It is never stored for all-day, phone and first-meeting occurrences and is cleared when the occurrence is assigned. Unassigned and dismissed occurrences are deleted 90 days after their start, with the next import. | A calendar title holds a name, sometimes of a person who never becomes a student. Keep what the next step needs, and no longer. | Approved with 90 days. |
 
 #### Defaults that stand
 
@@ -265,7 +264,6 @@ payer_party_id UUID NOT NULL
 opened_on DATE NOT NULL
 closed_on DATE NULL                                      -- exclusive
 default_topup_cents INTEGER NOT NULL DEFAULT 10000 CHECK (default_topup_cents BETWEEN 1 AND 500000)
-low_balance_cents INTEGER NOT NULL DEFAULT 3000
 note TEXT NULL
 UNIQUE (payer_party_id) WHERE closed_on IS NULL          -- uq_prepaid_account_payer_open
 
@@ -353,7 +351,8 @@ What happens to an occurrence, first match wins:
   vanishes. An appointment cancelled early is deleted from the calendar and so never shows.
 - **A ticked or charged lesson is never changed.** If its appointment moved, shrank or vanished, the import sets
   `changed` on the event and the maintainer decides.
-- **Names are kept only as long as needed** - **open**, PD13.
+- **Names are kept only as long as needed** (PD13): `title_name` only while an occurrence waits for an assignment;
+  unassigned and dismissed occurrences are deleted 90 days after their start.
 
 ## Pricing, charges and invoices
 
@@ -377,7 +376,7 @@ What happens to an occurrence, first match wins:
   | `lesson_not_open` | The lesson is not billable or already has an active charge. |
   | `lesson_not_ended` | The lesson ends after now. |
   | `payer_ambiguous` | The student has more than one payer. |
-  | `payer_missing` | The lesson is billable and has no stored payer (**open**, PD1). |
+  | `payer_missing` | The lesson is billable and has no stored payer (PD1). |
   | `no_sevdesk_contact` | The payer has no `ext.sevdesk_contact`. |
   | `payment_method_missing` | "Zahlungsverfahren" is empty or holds another value than `PayPal` or `Überweisung`. |
   | `manual_payer` | The payer is billed by hand. |
@@ -385,7 +384,7 @@ What happens to an occurrence, first match wins:
   | `subject_without_part` | No sevDesk part is configured for the lesson's subject. |
 
   A warning blocks nothing. The closed list has one code, `payer_changed`: the payer stored on a lesson is not the
-  one the CRM resolves now (**open**, PD1).
+  one the CRM resolves now (PD1).
 
 - **Payment method.** The contact's field is addressed by `SEVDESK__PAYMENT_METHOD_FIELD_SETTING_ID`; its values
   `PayPal` and `Überweisung` map to `payment_method` in one place, `app/services/billing/payment_methods.py`
@@ -404,7 +403,7 @@ What happens to an occurrence, first match wins:
   price and the description in the field `text`. The part's name is not overridden. The field list comes from the
   published description; fixture S11 is the truth and replaces it.
 - **Reference.** A short, neutral token: `SF-` and 8 hexadecimal digits, unique per invoice. Whether sevDesk prints
-  it on the PDF is **open** (S14); if it does, a family sees it, and the format is **pending approval**
+  it on the PDF is **open** (S14); if it does, a family sees it, and the maintainer decides the format again
   ([M8](#for-the-maintainer)).
 - **Payment link.** `payment_link(number, total_cents)` builds the `/zahlung` link of
   [Family-visible texts](#family-visible-texts). How the number gets into it is **open** (Q1 to Q3).
@@ -468,7 +467,7 @@ billing services translate them; no endpoint catches one.
 | `UnexpectedResponseError` - a body that does not parse | `sevdesk_unavailable` (502) | - |
 | `OutcomeUnknownError` - a write failed in transit, any other `5xx`, an unreadable `2xx` | - | Invoice `unknown`. |
 
-- The 502 category is **open** (PD6).
+- The 502 category is approved (PD6, ADR 0010 point 10).
 - An identity read that fails is an `IdentityCheckError` too, so `sevdesk_refused` tells the operator one of two
   things: the configuration does not fit the account, or sevDesk could not be asked. Either way nothing was sent.
 - Every error of the calendar client is `calendar_unavailable`.
@@ -505,9 +504,12 @@ billing services translate them; no endpoint catches one.
   badge; a top-up unpaid for more than 14 days is flagged.
 - **Adjustment.** A manual entry with a sign and a mandatory note - the one way to correct a balance by hand
   (PD12).
-- **Hint.** A balance of `low_balance_cents` or less is flagged, unless a top-up is pending.
+- **Hint.** A balance of one hour or less at the highest rate valid today among the account's children
+  (decision E) is flagged, unless a top-up is pending ([M11](#for-the-maintainer)). No threshold is stored.
 - **Closing** needs balance 0, checked under `FOR UPDATE`. A minus is settled by a remainder top-up first
-  ([M6](#for-the-maintainer)). After closing, lessons on or after `closed_on` - and lessons found later inside a
+  ([M6](#for-the-maintainer)): positions in quarter hours at each child's rate. If no such positions add up to the
+  minus exactly, the helper blocks and shows it instead of rounding, and the maintainer settles the minus with an
+  `adjustment`. After closing, lessons on or after `closed_on` - and lessons found later inside a
   closed window - go to the normal invoice.
 - **A lesson the maintainer cancels** is not charged and nothing is paid back: the credit stays (decision M).
   Refunds, reopening an account and closing with credit left are v1.1.
@@ -552,13 +554,31 @@ SkillForge never overrides it. Quantity: `minutes / 60` with two decimals (`1,00
 - Example with synthetic data: `Montag, 3. November 2025 / 14:00 – 15:00`.
 - A billable cancellation uses the same description (decision M).
 
-A top-up position has the subject's part as its name and quantity N. Its description is **open**: the maintainer
-reads it from a top-up invoice of today during SP-SD, and M4 proposes from there.
+A top-up position has the subject's part as its name and quantity N. Today's top-up invoices carry no
+description; from SkillForge's first top-up on it carries one (M4, approved). A remainder top-up (M6) uses the same.
+
+`TOPUP_POSITION_DESCRIPTION` - a top-up for one child:
+
+```text
+Vorauszahlung für kommende Unterrichtsstunden
+```
+
+`TOPUP_POSITION_DESCRIPTION_WITH_NAME` - a top-up for several children:
+
+```text
+<Vorname> / Vorauszahlung für kommende Unterrichtsstunden
+```
 
 ### Document title
 
-The title of the document is sevDesk's field `header`. What today's invoices show there, and whether a placeholder
-for the number resolves in it, is **open** (Q2, S14). No wording is proposed before that.
+The title of the document is sevDesk's field `header`. `DOCUMENT_TITLE`, as today's template has it (M9, approved):
+
+```text
+Rechnung Nr. [%DOKUMENTENNUMMER%]
+```
+
+sevDesk's UI resolves the placeholder (`Rechnung Nr. RE-0001`). Whether it resolves in a `header` set through the
+API is **open** (Q2, S14); if it does not, decision R's fallback fills in the number.
 
 ### § 19 line
 
@@ -572,25 +592,29 @@ Whether sevDesk prints the `taxText` SkillForge sends or its own line for tax ru
 
 ### Head text
 
-As rendered on today's invoices:
+Today's template in sevDesk, raw (M3). `[%VOLLEANREDE%]` is the full salutation (`Sehr geehrte Frau …`,
+`Sehr geehrter Herr …`):
 
 ```text
-Sehr geehrte {Anrede/Name},
+[%VOLLEANREDE%],
+
 vielen Dank für Ihren Auftrag und das damit verbundene Vertrauen!
 Nachfolgend finden Sie die Abrechnung der vereinbarten Leistungen im oben genannten Zeitraum:
 ```
 
-`{Anrede/Name}` is filled by sevDesk today. The raw text of the template with its placeholder is **open**: the
-maintainer copies it from sevDesk, and Q2 decides whether a placeholder works in a text set through the API.
-**Pending approval:** a top-up uses the same head text.
+A top-up uses the same head text, as today (approved, M3).
 
-`HEAD_TEXT` - the markup SkillForge sends; **pending approval**, and **open** on S15:
+`HEAD_TEXT` - the markup SkillForge sends; approved as today's look (M7), and **open** on S15:
 
 ```html
-Sehr geehrte {Anrede/Name},<br>
+{Vollanrede},<br>
+<br>
 vielen Dank für Ihren Auftrag und das damit verbundene Vertrauen!<br>
 Nachfolgend finden Sie die Abrechnung der vereinbarten Leistungen im oben genannten Zeitraum:
 ```
+
+`{Vollanrede}` stands for `[%VOLLEANREDE%]` if it resolves in a text set through the API (**open**, Q2, S15). If it
+does not, SkillForge has to build the salutation itself, which needs a new decision after SP-SD.
 
 ### Foot text
 
@@ -614,9 +638,9 @@ Rendered today, `Zahlungsverfahren:` is bold, its value italic - the link includ
 the due date is the invoice date plus 14 days.
 
 From SkillForge's first draft on the first line no longer comes from the contact's field: SkillForge writes
-`Überweisung` or `PayPal (Weiter mit PayPal)` itself (decided). Everything else below is **pending approval**: the
-wording stays word for word as today - a modernised wording is the maintainer's to give - and the markup is a
-proposal that S15 confirms or corrects (which tags sevDesk keeps, `<br>` or paragraphs).
+`Überweisung` or `PayPal (Weiter mit PayPal)` itself (decided). The rest keeps today's wording word for word
+(approved, M1); a modernised wording is the maintainer's to give. The markup is approved as today's look (M7): S15
+may change how it is written (which tags sevDesk keeps, `<br>` or paragraphs), never how it looks.
 
 `FOOT_TRANSFER`:
 
@@ -647,8 +671,8 @@ Mit freundlichen Grüßen<br>
 - The GiroCode and the bank block are printed by sevDesk on both variants today; whether they still appear under
   an own foot text, and whether they can be switched off for PayPal, is **open** (Q4).
 
-`TOPUP_CREDIT_SENTENCE` - **pending approval**, a proposal. One more line in the foot text of a top-up, before
-`Bei Rückfragen …`:
+`TOPUP_CREDIT_SENTENCE` - **pending approval**, deferred to SFP (M2): a proposal, not built before then; until
+then a top-up carries today's foot text. One more line in the foot text of a top-up, before `Bei Rückfragen …`:
 
 ```html
 Der Rechnungsbetrag wird Ihrem Guthaben gutgeschrieben und mit den kommenden Unterrichtsstunden verrechnet.<br>
@@ -674,7 +698,7 @@ Target shape, under `/api/v1/billing`, tag `billing`. R is `billing:read`, W is 
 | `PUT /students/{party_id}/rates/{valid_from}` | W | SF2-3 | Sets the rate from that day on; idempotent. |
 | `DELETE /students/{party_id}/rates/{valid_from}` | W | SF2-3 | Removes it; existing charges keep their frozen rate. |
 | `GET /students/{party_id}/payer` | R | SF3-1 | The resolved payer, whether a sevDesk contact is linked, whether billed by hand. |
-| `POST /lessons/{lesson_id}/resolve-payer` | W | SF3-1 | Resolves the payer of a billable lesson afresh (**open**, PD1). |
+| `POST /lessons/{lesson_id}/resolve-payer` | W | SF3-1 | Resolves the payer of a billable lesson afresh (PD1). |
 | `PUT`, `DELETE /parties/{party_id}/sevdesk-contact` | W | SF3-1 | Links or unlinks the party's sevDesk contact. |
 | `PUT`, `DELETE /parties/{party_id}/manual-billing` | W | SF3-1 | Marks or unmarks a payer as billed by hand. |
 | `GET`, `POST /calendar/aliases`, `DELETE /calendar/aliases/{alias_id}` | R, W, W | SF4-2 | The alias table. |
@@ -713,7 +737,7 @@ Closed. The classes live in `app/services/billing/errors.py`; the `code` is deri
 | `NotFoundError` (404) | `LessonNotFoundError`, `RateNotFoundError`, `CalendarEventNotFoundError`, `CalendarAliasNotFoundError`, `InvoiceNotFoundError`, `PrepaidAccountNotFoundError`, `PrepaidEntryNotFoundError` |
 | `ConflictError` (409) | `LessonAlreadyExistsError`, `LessonChargedError`, `CalendarAliasAlreadyExistsError`, `CalendarEventAlreadyAssignedError`, `SevdeskContactAlreadyLinkedError`, `PreviewOutdatedError`, `InvoiceStateError`, `PrepaidAccountAlreadyOpenError`, `PrepaidAccountNotSettledError`, `PrepaidAccountStartsBeforeLastCloseError`, `PrepaidEntryAlreadyVoidedError` |
 | `DomainValidationError` (422) | `UnknownStudentError`, `RateNotQuarterHourError`, `LessonNotBillableError`, `MixedPayersError`, `InvoiceBlockedError`, `PrepaidEntryNotVoidableError`, `TopupAmountOutOfRangeError` |
-| `UpstreamError` (502; **open**, PD6) | `SevdeskUnavailableError`, `SevdeskRefusedError`, `CalendarUnavailableError` |
+| `UpstreamError` (502; PD6) | `SevdeskUnavailableError`, `SevdeskRefusedError`, `CalendarUnavailableError` |
 
 - A preview never raises for a blocker: it lists them. `InvoiceBlockedError` answers a create whose preview has
   one - a lesson that is not open included.
@@ -757,8 +781,11 @@ repository.
 
 Every response shape SF1, SF6 and SFP-2 build on is recorded once, scrubbed, and never edited by hand - a changed
 shape is recorded again and the diff reviewed. sevDesk fixtures come from the trial account through the recorder
-of SF1-3b and live under `tests/fixtures/sevdesk/`; Graph fixtures come from the maintainer's run of the recorder
-of SP-CAL, pseudonymised, and live under `tests/fixtures/graph/`.
+of SF1-3b and live under `tests/fixtures/sevdesk/`; Graph fixtures are the exception: the maintainer runs the
+recorder of SP-CAL once, outside every work tree, and hands over its redacted summary; an agent builds G1 to G6 as
+synthetic fixtures of that shape under `tests/fixtures/graph/`, and G7 is the recorded token and error response,
+scrubbed. The maintainer compares them with the recording once and then deletes it: nothing recorded from the
+calendar enters the repository.
 
 "Script" is the spike script (`just sevdesk-spike`). It reads, creates synthetic contacts and drafts, and deletes
 nothing - except in S18. What changes an invoice after its creation the maintainer does by hand in the trial's UI;
@@ -864,15 +891,17 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   the repository and pseudonymises every event in memory - names, ids, and categories unless one is allowlisted
   with `--category` - with a fresh secret week offset per recording. It writes only outside any git work tree and
   prints a summary that is safe to paste. Agents write both scripts and never run them against Microsoft. The
-  maintainer runs them and hands over the fixture; an agent adds it under `tests/fixtures/graph/` once the fixture
-  scan of SF1-3b exists.
+  maintainer runs them once and hands over the redacted summary; an agent builds synthetic fixtures of its shape
+  under `tests/fixtures/graph/` (G7 scrubbed from the recording) once the fixture scan of SF1-3b exists, and the
+  maintainer deletes the recording after one comparison.
 - _Acceptance criteria:_
   - [ ] Both scripts exist; tests on synthetic events show that a fixture and a summary hold no name, address or
         id, and that the recorder refuses an output path inside a git work tree.
   - [ ] The maintainer ran the setup: the lesson mailbox is in scope, the other mailbox is not, and the app holds
         no application permission in Entra (the maintainer's statement, in the PR).
   - [ ] The recorder's probe of a mailbox outside the restriction was refused (G6).
-  - [ ] Fixtures G1 to G7 are in the repository, pseudonymised, and pass the fixture scan.
+  - [ ] Synthetic fixtures G1 to G6 and the scrubbed G7 are in the repository and pass the fixture scan; the
+        maintainer compared them with the recording and deleted it.
   - [ ] Q9 and Q16 are answered in this spec, and "Verified behavior" says what was run.
 
 **SF1-1 - Integration foundation.**
@@ -982,8 +1011,8 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   - [ ] Q1 to Q8, Q10 to Q15 and Q17 are answered, each naming its fixture.
   - [ ] Trial and real account both report bookkeeping system 2.0.
   - [ ] Every **pending approval** in [Family-visible texts](#family-visible-texts), every row of
-        [Open until the maintainer approves](#open-until-the-maintainer-approves) and every item of
-        [For the maintainer](#for-the-maintainer) is approved or replaced by the maintainer, in the session.
+        [Approved by the maintainer](#approved-by-the-maintainer) and every item of
+        [For the maintainer](#for-the-maintainer) is approved, deferred or replaced by the maintainer, in the session.
   - [ ] The status block says `Accepted`, ADR 0010 says `Accepted`, and no criterion below rests on an open point.
 
 **SF2-1 - Lesson and rate schema.** _Needs PD3 and PD9._
@@ -1083,7 +1112,7 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   - [ ] The output holds counts and row numbers, never a name or a contact id.
   - [ ] A path inside the repository is refused.
 
-**SF4-1 - Calendar client.** _After SP-CAL; needs M5._
+**SF4-1 - Calendar client.** _After SP-CAL. M5 is approved: `pyjwt[crypto]` joins the runtime dependencies here._
 
 - _Technique:_ a Graph client in `app/integrations/` over the guarded transport, with an allowlist of the Microsoft
   login host and the Graph host; a token for the app with this location's certificate, read from the PEM settings
@@ -1333,7 +1362,8 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   - [ ] A changed amount after issue warns; only `accept-sevdesk-amount` rebooks.
   - [ ] `mark-cancelled` on a top-up voids its credit.
   - [ ] Status 750 and 1000 show as a field; a top-up unpaid for more than 14 days is flagged; a balance of
-        `low_balance_cents` or less is flagged unless a top-up is pending.
+        one hour or less at the highest rate valid today among the account's children is flagged unless a top-up
+        is pending.
 
 ### Nice-to-have (P1)
 
@@ -1379,22 +1409,22 @@ None yet. SP-CAL and SP-SD move each answered question here, with the fixture th
 
 ### For the maintainer
 
-Next to these, the six rows of [Open until the maintainer approves](#open-until-the-maintainer-approves) wait for
-the same answer.
+The maintainer answered every item in the review of SF0 (2026-11), as the six rows of
+[Approved by the maintainer](#approved-by-the-maintainer).
 
-| Id | Point | Proposal |
+| Id | Point | Answer |
 |---|---|---|
-| M1 | The foot text SkillForge sets: the first line is decided; the rest is **pending approval**. | Keep today's wording word for word (`FOOT_TRANSFER`, `FOOT_PAYPAL`). |
-| M2 | The sentence about credit on a top-up, and where it stands: **pending approval**. | `TOPUP_CREDIT_SENTENCE`, before `Bei Rückfragen …`. |
-| M3 | The head text: its raw template with the placeholder is missing. A top-up's head text is **pending approval**. | The maintainer copies the template; a top-up uses the same head text. |
-| M4 | The description of a top-up position: **open** until the maintainer read it from a top-up invoice of today. | Then: as today; on a top-up for several children `<Vorname>`, if today's invoices do not say otherwise. |
-| M5 | How SkillForge gets its Graph token with a certificate. Signing the request needs `cryptography`, a new runtime dependency; Microsoft's own library (`msal`) brings its own HTTP client, past the guarded transport. | The token request goes through the guarded transport, signed with `pyjwt[crypto]`; the dependency is approved with the freeze. |
-| M6 | A remainder top-up whose amount is not a whole number of hours at the child's rate. | A position with a quantity in quarter hours on the subject's part; the wording as for any top-up. |
-| M7 | The markup of head and foot text (bold, italic, link, line breaks): **pending approval**, and **open** on S15. | The blocks `HEAD_TEXT`, `FOOT_TRANSFER`, `FOOT_PAYPAL` as written: today's look. |
-| M8 | The reference in `customerInternalNote`. If sevDesk prints it (S14), a family sees it: **pending approval**. | `SF-` and 8 hexadecimal digits - short, and it says nothing about the family. |
-| M9 | The document title (`header`): **open** (Q2, S14). | As today's invoices show it, once it is read. |
-| M11 | Confirm: the hint at low credit. The decided wording is "ab 30 € Restguthaben". | The helper hints when the remaining credit is 30 EUR or less (`low_balance_cents`, default 3000). |
-| M10 | Data protection: how long lessons, charges, invoices and calendar occurrences are kept, and what erasing a person means while a party with billing rows cannot be deleted (PD9). | v1 deletes no billing row; the maintainer sets the periods before the cut-over. Not built in v1 (P2). |
+| M1 | The foot text SkillForge sets after its first line. | Approved: today's wording word for word (`FOOT_TRANSFER`, `FOOT_PAYPAL`). |
+| M2 | The sentence about credit on a top-up. | Deferred to SFP: `TOPUP_CREDIT_SENTENCE` stays a proposal; until then a top-up carries today's foot text. |
+| M3 | The head text's raw template, and a top-up's head text. | Given: [Head text](#head-text) with `[%VOLLEANREDE%]`; a top-up uses the same head text, as today. |
+| M4 | The description of a top-up position. | Approved: `TOPUP_POSITION_DESCRIPTION`, and `TOPUP_POSITION_DESCRIPTION_WITH_NAME` for several children; today's top-ups carry none. |
+| M5 | How SkillForge gets its Graph token with a certificate. Signing the request needs `cryptography`, a new runtime dependency; Microsoft's own library (`msal`) brings its own HTTP client, past the guarded transport. | Approved: the token request goes through the guarded transport, signed with `pyjwt[crypto]`; the dependency is added with SF4-1. |
+| M6 | A remainder top-up whose amount is not a whole number of hours at the child's rate. | Approved: positions in quarter hours at each child's rate, described as any top-up. If none add up to the minus exactly, the helper blocks instead of rounding and the maintainer settles it with an `adjustment`; SFP works the case out. |
+| M7 | The markup of head and foot text (bold, italic, link, line breaks); **open** on S15. | Approved as today's look: S15 may change how the blocks are written, not how they look; a visible difference is asked again. |
+| M8 | The reference in `customerInternalNote`. If sevDesk prints it (S14), a family sees it. | Approved: `SF-` and 8 hexadecimal digits. If S14 shows it printed, the maintainer decides again. |
+| M9 | The document title (`header`). | Approved: as today, `DOCUMENT_TITLE`; whether its placeholder resolves through the API is **open** (Q2, S14). |
+| M11 | The hint at low credit. | Changed: the helper hints at one hour or less at the highest rate valid today among the account's children; no threshold is stored. |
+| M10 | Data protection: how long lessons, charges, invoices and calendar occurrences are kept, and what erasing a person means while a party with billing rows cannot be deleted (PD9). | Approved: v1 deletes no billing row; the maintainer sets the periods before the cut-over. Not built in v1 (P2). |
 
 ### Recorded, not resolved
 
@@ -1405,6 +1435,9 @@ These are observations, not legal advice, and no slice depends on them.
   maintainer cancels, and "no refund in v1" do not quite match that wording.
 - **L2 - E-invoices for authorities.** Whether an authority that pays for a student (BuT) requires an e-invoice
   (XRechnung) is unclear. v1 bills those lessons by hand (decision V).
+- **L3 - Privacy text.** Before the first real invoice, the privacy text should mention lessons and billing data
+  in SkillForge, the read of the lesson calendar through Microsoft Graph, and the periods of M10. It is a legal
+  text: it changes only on the maintainer's request.
 
 ## Timeline / phasing
 
@@ -1416,7 +1449,7 @@ No slice waits for a merge: dependent PRs form a stack ([`AGENTS.md`](../../AGEN
 | **SF1-1**, **SF1-2**, **SF1-3a**, **SF1-3b** | SF0, each the one before | One stack. |
 | **SP-CAL** | SF0 | The scripts can start at once; its fixture PR needs the scan of SF1-3b. |
 | **SP-SD** | SF1-3b | The maintainer creates the trial only when SF1-3b is merged, so its 14 days are not spent waiting. Freezes the spec. |
-| **SF2-1**, **SF2-2**, **SF2-3** | SF0, PD3, PD9; each the one before | Can run beside SF1 once the two proposals are approved. |
+| **SF2-1**, **SF2-2**, **SF2-3** | SF0, PD3, PD9; each the one before | Can run beside SF1; both proposals are approved. |
 | **SF3-1**, **SF3-2** | SF2-2, PD1 | |
 | **SF4-1** | SP-CAL, SF1-1, M5 | |
 | **SF4-2** | SF2-1, Q9 | |
