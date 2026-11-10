@@ -261,12 +261,9 @@ BROKEN_LISTINGS = {
 }
 
 
-DEEP = b"[" * 100_000 + b"]" * 100_000
-
-
 @pytest.mark.parametrize("path", ["/Part", "/Contact/21"])
-async def test_a_body_nested_too_deep_to_parse_is_unexpected(path: str, settings, fake_sevdesk: FakeSevdesk):
-    fake_sevdesk.on("GET", path, httpx.Response(200, content=DEEP, headers={"content-type": "application/json"}))
+async def test_a_body_nested_too_deep_to_parse_is_unexpected(path: str, settings, fake_sevdesk: FakeSevdesk, too_deep):
+    fake_sevdesk.on("GET", path, httpx.Response(200, content=too_deep, headers={"content-type": "application/json"}))
 
     async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
         with pytest.raises(UnexpectedResponseError, match="the response is not JSON"):
