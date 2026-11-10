@@ -93,7 +93,8 @@ row, commit, call, record the outcome - there is no job queue.
   failed read included, is an `IdentityCheckError`, and an unconfirmed client refuses every other call. A listing
   is read whole or refused (`countAll` total, no repeated id, at most `MAX_PAGES`). The models (`models.py`) parse
   sevDesk's string-typed numbers and booleans into strict types, hold amounts in whole cents and read no field
-  SkillForge does not use.
+  SkillForge does not use; `invoices.py` builds the `saveInvoice` body of a draft under § 19 UStG (`taxRule` 11)
+  with its delivery date or period, from integer cents and minutes sent as exact decimal strings - never a float.
 
 ## Housekeeping worker
 
