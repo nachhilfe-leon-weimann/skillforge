@@ -1,6 +1,9 @@
 """The guarded transport: allowlist, no network under pytest, dry_run, no retry, outcome unknown, no secret leaks."""
 
 import json
+import subprocess
+import sys
+import traceback
 
 import httpx
 import pytest
@@ -36,30 +39,56 @@ class Recorded:
         return self._response
 
 
-def _http(handler: Recorded | None = None, *, mode=IntegrationMode.LIVE, **kwargs) -> IntegrationHttp:
+def _http(
+    handler: Recorded | None = None, *, mode=IntegrationMode.LIVE, account=IntegrationAccount.TRIAL, **kwargs
+) -> IntegrationHttp:
     return IntegrationHttp(
         name="example",
         base_url=BASE_URL,
         allowed_hosts=frozenset({"api.example.org"}),
-        headers={"Authorization": TOKEN},
+        headers={"Accept": "application/json"},
+        credentials={"Authorization": TOKEN},
         mode=mode,
-        account=IntegrationAccount.TRIAL,
+        account=account,
         transport=httpx.MockTransport(handler) if handler else None,
         **kwargs,
     )
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def contract_run(monkeypatch):
-    """Live mode needs the contract run under pytest; tests that check the refusal remove it again."""
+    """Live mode needs the contract run under pytest."""
     monkeypatch.setenv(CONTRACT_RUN_ENV, "1")
+
+
+@pytest.fixture
+def network(monkeypatch) -> list[httpx.Request]:
+    """Stands in for the socket, so a broken guard fails a test instead of reaching the network."""
+    reached: list[httpx.Request] = []
+
+    async def handle(self, request: httpx.Request) -> httpx.Response:
+        reached.append(request)
+        return httpx.Response(200, json={})
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", handle)
+    return reached
 
 
 # --- guards ---
 
+FOREIGN_URLS = [
+    "https://elsewhere.example.org/v1/x",
+    "https://api.example.org.evil.test/v1/x",
+    "https://evilapi.example.org/v1/x",
+    "http://api.example.org/v1/x",
+    "https://api.example.org:8443/v1/x",
+    "https://user:secret@api.example.org/v1/x",
+]
 
-@pytest.mark.parametrize("url", ["https://elsewhere.example.org/v1/x", "http://api.example.org/v1/x"])
-async def test_a_host_outside_the_allowlist_is_refused_before_sending(url: str):
+
+@pytest.mark.usefixtures("contract_run")
+@pytest.mark.parametrize("url", FOREIGN_URLS)
+async def test_a_url_outside_the_allowlist_is_refused_before_sending(url: str):
     handler = Recorded()
 
     async with _http(handler) as http:
@@ -71,69 +100,128 @@ async def test_a_host_outside_the_allowlist_is_refused_before_sending(url: str):
     assert handler.requests == []
 
 
+@pytest.mark.usefixtures("contract_run")
+@pytest.mark.parametrize(
+    "path", ["/../admin", "/x/../../admin", "https://api.example.org/admin", "https://api.example.org/v10/x"]
+)
+async def test_a_path_outside_the_base_url_is_refused(path: str):
+    handler = Recorded()
+
+    async with _http(handler) as http:
+        with pytest.raises(IntegrationRefusedError, match="outside the base URL"):
+            await http.read(path)
+
+    assert handler.requests == []
+
+
 async def test_a_dry_run_write_to_a_foreign_host_is_refused_too():
     async with _http(Recorded(), mode=IntegrationMode.DRY_RUN) as http:
         with pytest.raises(IntegrationRefusedError, match="allowlist"):
-            await http.write("POST", "https://elsewhere.example.org/x", json={})
+            await http.write("POST", "https://elsewhere.example.org/v1/x", json={})
 
 
-async def test_real_network_is_refused_under_pytest(monkeypatch):
-    monkeypatch.delenv(CONTRACT_RUN_ENV)
-    # Stands in for the socket, so a broken guard fails this test instead of reaching the network.
-    reached: list[httpx.Request] = []
-
-    async def network(self, request: httpx.Request) -> httpx.Response:
-        reached.append(request)
-        return httpx.Response(200)
-
-    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", network)
-
+async def test_real_network_is_refused_under_pytest(network):
     async with _http(None, mode=IntegrationMode.DRY_RUN) as http:
         with pytest.raises(IntegrationRefusedError, match="real network"):
             await http.read("/anything")
 
-    assert reached == []
+    assert network == []
 
 
-def test_the_network_guard_opens_only_for_the_contract_run(monkeypatch):
-    ensure_network_allowed()  # the fixture set the contract run
+@pytest.mark.usefixtures("contract_run")
+async def test_the_contract_run_opens_the_network_for_a_trial_account_only(network):
+    """A dry_run read in the contract run must not reach a live account."""
+    async with _http(None, mode=IntegrationMode.DRY_RUN, account=IntegrationAccount.LIVE) as http:
+        with pytest.raises(IntegrationRefusedError, match="trial account only"):
+            await http.read("/anything")
+    assert network == []
+
+    async with _http(None, mode=IntegrationMode.DRY_RUN) as http:
+        await http.read("/anything")
+    assert [request.url.path for request in network] == ["/v1/anything"]
+
+
+def test_the_network_guard_opens_only_for_the_contract_run_on_a_trial(monkeypatch):
+    with pytest.raises(IntegrationRefusedError):
+        ensure_network_allowed(IntegrationAccount.TRIAL)
+
+    monkeypatch.setenv(CONTRACT_RUN_ENV, "1")
+    ensure_network_allowed(IntegrationAccount.TRIAL)
+    with pytest.raises(IntegrationRefusedError):
+        ensure_network_allowed(IntegrationAccount.LIVE)
 
     monkeypatch.setenv(CONTRACT_RUN_ENV, "true")
     with pytest.raises(IntegrationRefusedError):
-        ensure_network_allowed()
+        ensure_network_allowed(IntegrationAccount.TRIAL)
 
 
-def test_live_mode_is_refused_under_pytest_without_the_contract_run(monkeypatch):
-    monkeypatch.delenv(CONTRACT_RUN_ENV)
+def test_a_subprocess_of_a_test_counts_as_under_pytest():
+    code = "from app.integrations.guards import running_under_pytest; print(running_under_pytest())"
 
+    assert subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout == "True\n"
+
+
+def test_a_test_run_with_the_contract_flag_but_without_the_contract_marker_fails_loudly(monkeypatch):
+    monkeypatch.setenv(CONTRACT_RUN_ENV, "1")
+    command = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "tests/integrations/test_integrations_architecture.py",
+        "-p",
+        "no:cacheprovider",
+    ]
+
+    result = subprocess.run(command, capture_output=True, text=True)
+
+    assert result.returncode == pytest.ExitCode.USAGE_ERROR
+    assert "it is for `pytest -m contract` only" in result.stderr
+
+
+def test_live_mode_is_refused_under_pytest_without_the_contract_run():
     with pytest.raises(IntegrationRefusedError, match="live mode"):
         _http(Recorded())
 
 
+@pytest.mark.usefixtures("contract_run")
 def test_live_mode_is_refused_under_pytest_for_a_live_account():
     with pytest.raises(IntegrationRefusedError, match="trial account only"):
         ensure_live_allowed(IntegrationAccount.LIVE)
     with pytest.raises(IntegrationRefusedError, match="trial account only"):
-        IntegrationHttp(
-            name="example",
-            base_url=BASE_URL,
-            allowed_hosts=frozenset({"api.example.org"}),
-            headers={},
-            mode=IntegrationMode.LIVE,
-            account=IntegrationAccount.LIVE,
-            transport=httpx.MockTransport(Recorded()),
-        )
+        _http(Recorded(), account=IntegrationAccount.LIVE)
 
 
+@pytest.mark.usefixtures("contract_run")
 def test_live_mode_is_allowed_under_pytest_only_in_the_contract_run_for_a_trial_account():
     ensure_live_allowed(IntegrationAccount.TRIAL)
     _http(Recorded())
 
 
-def test_dry_run_needs_no_contract_run(monkeypatch):
-    monkeypatch.delenv(CONTRACT_RUN_ENV)
-
+def test_dry_run_needs_no_contract_run():
     _http(Recorded(), mode=IntegrationMode.DRY_RUN)
+
+
+async def test_the_network_transport_never_retries_and_no_redirect_is_followed(monkeypatch):
+    built: list[dict] = []
+
+    class Spy(httpx.AsyncHTTPTransport):
+        def __init__(self, **kwargs) -> None:
+            built.append(kwargs)
+            super().__init__(**kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", Spy)
+    http = _http(None, mode=IntegrationMode.DRY_RUN)
+
+    assert built == [{"retries": 0}]
+    async with http:
+        assert http._client.follow_redirects is False
+
+
+async def test_the_client_is_used_inside_its_block_only():
+    http = _http(Recorded(), mode=IntegrationMode.DRY_RUN)
+
+    with pytest.raises(RuntimeError, match="outside its `async with` block"):
+        await http.read("/Things")
 
 
 # --- modes ---
@@ -151,6 +239,7 @@ async def test_a_dry_run_write_returns_the_planned_request_and_sends_nothing():
     assert isinstance(read, Reply) and read.json() == {"ok": True}
 
 
+@pytest.mark.usefixtures("contract_run")
 async def test_a_live_write_is_sent():
     handler = Recorded(httpx.Response(201, json={"id": "7"}))
 
@@ -167,6 +256,7 @@ async def test_a_live_write_is_sent():
 # --- failures: never retried, a write's outcome is unknown ---
 
 
+@pytest.mark.usefixtures("contract_run")
 @pytest.mark.parametrize(
     "failure",
     [
@@ -182,20 +272,35 @@ async def test_a_write_that_fails_in_transit_is_not_retried_and_its_outcome_is_u
     handler = Recorded(raises=failure)
 
     async with _http(handler) as http:
-        with pytest.raises(OutcomeUnknownError, match="outcome is unknown"):
+        with pytest.raises(OutcomeUnknownError, match="outcome is unknown") as raised:
             await http.write(method, "/Things", json={})
 
     assert len(handler.requests) == 1
+    assert type(failure).__name__ in str(raised.value)
+    assert raised.value.__cause__ is None and raised.value.__suppress_context__
 
 
+@pytest.mark.usefixtures("contract_run")
 async def test_a_read_that_fails_in_transit_is_unavailable_and_not_retried():
     handler = Recorded(raises=httpx.ConnectError("refused"))
 
     async with _http(handler) as http:
-        with pytest.raises(IntegrationUnavailableError):
+        with pytest.raises(IntegrationUnavailableError, match="ConnectError"):
             await http.read("/Things")
 
     assert len(handler.requests) == 1
+
+
+@pytest.mark.usefixtures("contract_run")
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+async def test_a_redirected_write_is_neither_followed_nor_a_success(status: int):
+    handler = Recorded(httpx.Response(status, headers={"Location": f"{BASE_URL}/Elsewhere"}))
+
+    async with _http(handler) as http:
+        with pytest.raises(OutcomeUnknownError):
+            await http.write("POST", "/Things", json={})
+
+    assert [request.url.path for request in handler.requests] == ["/v1/Things"]
 
 
 def _message(reply: Reply) -> str | None:
@@ -205,6 +310,7 @@ def _message(reply: Reply) -> str | None:
     return None
 
 
+@pytest.mark.usefixtures("contract_run")
 @pytest.mark.parametrize(
     ("write", "status", "error"),
     [
@@ -229,6 +335,19 @@ async def test_an_error_status_maps_to_the_error_model(write: bool, status: int,
     assert len(handler.requests) == 1
 
 
+@pytest.mark.usefixtures("contract_run")
+async def test_a_failing_observer_never_hides_the_outcome_of_a_write():
+    handler = Recorded(httpx.Response(201, json={"id": "7"}))
+
+    def observer(exchange: Exchange) -> None:
+        raise OSError("disk full")
+
+    async with _http(handler, observer=observer) as http:
+        reply = await http.write("POST", "/Things", json={})
+
+    assert isinstance(reply, Reply) and reply.status == 201
+
+
 # --- the credential stays inside ---
 
 
@@ -238,7 +357,8 @@ def restore_logging():
     configure_logging(LoggingSettings())
 
 
-async def test_the_credential_appears_in_no_repr_log_error_or_exchange(restore_logging, capsys, caplog):
+@pytest.mark.usefixtures("contract_run")
+async def test_the_credential_appears_in_no_repr_log_error_traceback_or_exchange(restore_logging, capsys, caplog):
     # Configured inside the test: the handler writes to the stream that is current when it is set up.
     configure_logging(LoggingSettings(level=LogLevel.DEBUG, format=LogFormat.JSON))
     capsys.readouterr()
@@ -252,13 +372,17 @@ async def test_the_credential_appears_in_no_repr_log_error_or_exchange(restore_l
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/timeout"):
             raise httpx.ReadTimeout("timed out", request=request)
+        if request.url.path.endswith("/protocol"):
+            # h11 names the offending header value - the raw token - in its message.
+            raise httpx.LocalProtocolError(f"Illegal header value b'{TOKEN} '", request=request)
         return next(responses)
 
     http = IntegrationHttp(
         name="example",
         base_url=BASE_URL,
         allowed_hosts=frozenset({"api.example.org"}),
-        headers={"Authorization": TOKEN},
+        headers={"Accept": "application/json"},
+        credentials={"Authorization": TOKEN},
         mode=IntegrationMode.LIVE,
         account=IntegrationAccount.TRIAL,
         observer=exchanges.append,
@@ -266,16 +390,22 @@ async def test_the_credential_appears_in_no_repr_log_error_or_exchange(restore_l
     )
     async with http:
         await http.read("/Things")
-        for call in (http.write("POST", "/Things", json={}), http.write("PUT", "/timeout", json={})):
+        for call in (
+            http.write("POST", "/Things", json={}),
+            http.write("PUT", "/timeout", json={}),
+            http.write("PUT", "/protocol", json={}),
+        ):
             try:
                 await call
             except OutcomeUnknownError as exc:
                 errors.append(exc)
 
     output = capsys.readouterr().out
-    assert output.count("integration_request") == 3
-    assert len(errors) == 2
-    for text in (repr(http), output, caplog.text, *map(str, errors), *map(repr, errors), *map(repr, exchanges)):
+    assert output.count("integration_request") == 4
+    assert len(errors) == 3
+    tracebacks = ["".join(traceback.format_exception(error)) for error in errors]
+    for text in (repr(http), output, caplog.text, *tracebacks, *map(repr, errors), *map(repr, exchanges)):
         assert TOKEN not in text
     assert exchanges[0].request_headers["authorization"] == "[REDACTED]"
+    assert exchanges[0].request_headers["accept"] == "application/json"
     assert exchanges[0].response_headers["set-cookie"] == "[REDACTED]"

@@ -66,9 +66,11 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
 [`app/integrations/AGENTS.md`](../app/integrations/AGENTS.md). Services call it synchronously: write a pending
 row, commit, call, record the outcome - there is no job queue.
 
-- **One guarded transport.** `IntegrationHttp` in `transport.py` is the only module in `app/` that imports
-  `httpx`. Every request passes `_GuardedTransport`, which refuses a host outside the client's allowlist and,
-  under pytest, any real network (`guards.py`); tests use `httpx.MockTransport`.
+- **One guarded transport.** `IntegrationHttp` in `transport.py` is the only module in `app/` that reaches for the
+  network. Every request passes `_GuardedTransport`, which refuses a URL outside the base URL and the host allowlist
+  (https, default port, no userinfo) and, under pytest, any real network unless the contract run targets a `trial`
+  account (`guards.py`). Tests use `httpx.MockTransport`; a socket guard in `tests/conftest.py` backs that up.
+  No retry (`NETWORK_RETRIES`), no redirect followed.
 - **Modes** (`IntegrationMode` in `config.py`): `dry_run`, the default, sends reads and returns a write as the
   `PlannedRequest` it would have sent; `live` sends both. Under pytest `live` is refused except in the contract
   run (`SKILLFORGE_CONTRACT_RUN=1`) against a `trial` account (`IntegrationAccount`).
@@ -76,8 +78,9 @@ row, commit, call, record the outcome - there is no job queue.
   have reached the remote system is `OutcomeUnknownError` and is never repeated - the service reconciles it. A
   4xx is `IntegrationRejectedError`. These errors (`errors.py`) are internal, no `DomainError`: the service
   decides what an API client sees.
-- **Nothing leaks.** The credential sits in the client's headers only; one `integration_request` log line per
-  call names the integration, method, path, status and duration - never a header, a query or a body.
+- **Nothing leaks.** The credential is passed as `credentials`, redacted in every `Exchange`; errors never chain
+  the httpx exception, which can carry the request and a header value. One `integration_request` log line per call
+  names the integration, method, path, status and duration - never a header, a query or a body.
 
 ## Housekeeping worker
 

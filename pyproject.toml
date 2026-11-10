@@ -67,7 +67,7 @@ pythonpath   = ["."]
 
 markers = [
     "db: tests that require a database connection",
-    "contract: read-only tests against a synthetic trial account, run only with SKILLFORGE_CONTRACT_RUN=1",
+    "contract: tests against a synthetic trial account; run only with SKILLFORGE_CONTRACT_RUN=1 and -m contract",
 ]
 
 [tool.ty.terminal]
