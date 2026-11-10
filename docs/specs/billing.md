@@ -74,14 +74,14 @@ them.
 | **J - Recipient** | The invoice goes to the payer's sevDesk contact (`ext.sevdesk_contact`). Without that link there is no draft. | sevDesk addresses an invoice to a contact, and the `ext` link is the one place a party meets its contact - nothing is looked up by name. |
 | **K - Payment method** | Read from the custom field "Zahlungsverfahren" of the sevDesk contact, with the values `PayPal` and `Überweisung`: read for the preview and frozen there. An empty or unknown value blocks. One method per payer; paying in advance is not a payment method. The maintainer switches the field to these two values before the cut-over. | sevDesk stays the home of how a customer pays; the PayPal link appears only for `PayPal`. |
 | **L - Dates and tax** | Invoice date: the day the draft is created. Delivery date: the lesson's day, or the range from the first to the last lesson. A lesson that has not ended is never billed. Payment term: 14 days for everyone. § 19 UStG: `taxRule` 11. | A normal sevDesk invoice refuses a delivery date after its invoice date. |
-| **M - Cancellations** | A late cancellation or a no-show is never billable by itself. It shows as cancelled, and the maintainer makes it billable per lesson with one click; it is then the same position as any lesson. A lesson the maintainer cancelled costs nothing, and its replacement is a normal lesson. | The maintainer decides each case himself. |
+| **M - Cancellations** | A late cancellation or a no-show is never billable by itself. It shows as cancelled, and the maintainer makes it billable per lesson with one click; it is then the same position as any lesson. A lesson the maintainer cancelled costs nothing, and its replacement is a normal lesson. | Each case is the maintainer's own decision. |
 | **N - Calendar** | Lessons come from one Microsoft 365 calendar, read through Microsoft Graph without a signed-in user. Titles follow `<Fach> mit <Vorname Nachname>`. Lessons are online (Discord or Teams), cost the same and all count. A phone appointment and the free first meeting (`Kennenlernen mit <Name>`) are never proposed as a lesson but can be added by hand. A title without ` mit ` shows as unassigned; there is no ignore list. An alias table maps calendar names to students. | The lesson calendar holds lessons and first meetings only. Names can carry typos or belong to a student not yet in the CRM. |
 | **O - One charge per lesson** | One table, `billing.lesson_charge`, holds invoice positions and prepaid debits alike. A unique index allows one active charge per lesson. "Billed" is derived from it and never stored. | The database rules out a lesson charged twice, not service discipline. |
 | **P - Corrections** | A correction voids a charge and books a new one. An issued invoice never changes: a Storno happens in sevDesk and is recorded in SkillForge with one click, which reopens its lessons. A lesson with charge history is never hard-deleted. The calendar import never changes a ticked or charged lesson; it flags the difference. | Every charge keeps its trail. |
 | **Q - Outbound writes** | Pending row, commit, call, outcome. A write is never retried. An unknown outcome is a state that a reconcile resolves. A sevDesk read error never changes money. | ADR 0010. |
 | **R - Number and reference** | The invoice number is sevDesk's. SkillForge writes its own reference into `customerInternalNote`, which the maintainer does not use. Fallback, only if placeholders do not resolve in a text set through the API ([Q2](#for-the-spikes)): the number is taken from sevDesk's own sequence when the draft is created. | The PayPal link needs the number; a number is never invented. |
 | **S - Credit account** | One credit account per payer, for every child the payer pays for, shown as a statement. Credit is money, not hours. A prepaid lesson is charged to the account when it is ticked and never appears on a normal invoice. Ticking is never blocked: the balance may go negative, and the minus carries into the next top-up. No balance is stored. An account closes only at balance 0. | Replaces a project and a budget per cycle. |
-| **T - Top-up** | A top-up is a normal invoice with positions "N x subject" at the child's rate, without a date. Credit counts once the invoice is issued (sevDesk status >= 200), with the amount sevDesk reports; payment is only a badge. The amount per family defaults to 100 EUR and is free on every top-up, small amounts included. From 30 EUR of remaining credit downwards the helper hints; the maintainer triggers the top-up. A prepaid family that wants single lessons for a while stays prepaid and gets a small top-up. | Today's practice. A draft is no invoice, so it is no credit. |
+| **T - Top-up** | A top-up is a normal invoice with positions "N x subject" at the child's rate, without a date. Credit counts once the invoice is issued (sevDesk status >= 200), with the amount sevDesk reports; payment is only a badge. The amount per family defaults to 100 EUR and is free on every top-up, small amounts included. The helper hints "ab 30 € Restguthaben" - read here as a remaining credit of 30 EUR or less ([M11](#for-the-maintainer)) - and the maintainer triggers the top-up. A prepaid family that wants single lessons for a while stays prepaid and gets a small top-up. | Today's practice. A draft is no invoice, so it is no credit. |
 | **U - No opening balance** | A prepaid family moves to SkillForge when its running cycle in the time tracker is used up: it starts at balance 0 with a new top-up. Nothing is computed from the tracker. | No figure has to be verified per family. |
 | **V - Authorities** | Lessons an authority pays for (BuT) are billed by hand in v1: they show as "bill manually" and get no draft. | Rare, and an authority may ask for an e-invoice ([L2](#recorded-not-resolved)). |
 | **W - What families see** | Nothing new in v1. The maintainer reads a balance from the statement when a family asks. | The admin helper comes first. |
@@ -101,10 +101,10 @@ independent review of SF0 recommends.
 
 | Topic | Proposal | Rationale | Review recommends |
 |---|---|---|---|
-| **PD1 - Payer on the lesson** | The payer is resolved when a lesson is ticked and stored on it (`Lesson.payer_party_id`). Ticking again, or changing the student or the day, resolves afresh. When the stored payer differs from what the CRM resolves now, the preview reports the blocker `payer_changed`, and the maintainer keeps the stored payer or resolves the lesson afresh, per lesson. | Decision I wants the new payer "from a date", and `core.party_relation` carries no dates. Freezing at the tick keeps older ticked lessons with the old payer; the blocker makes every remaining case a visible choice. | Keep as a proposal with the blocker; the maintainer decides whether "from a date" needs more than this. |
+| **PD1 - Payer on the lesson** | The payer is resolved when a lesson becomes billable - it is ticked, or a late cancellation is marked billable - and stored on it (`Lesson.payer_party_id`). Becoming billable again, or changing the student or the day, resolves afresh. When the stored payer differs from what the CRM resolves now, the preview shows the warning `payer_changed` and blocks nothing. The maintainer then chooses per lesson: keep - creating the draft from that preview, whose fingerprint covers the stored payer - or resolve afresh (`resolve-payer`). A billable lesson without a stored payer blocks (`payer_missing`). | Decision I wants the new payer "from a date", and `core.party_relation` carries no dates. Freezing when a lesson becomes billable keeps older lessons with the old payer; the warning makes every remaining case a visible choice. | Keep as a proposal with the warning; the maintainer decides whether "from a date" needs more than this. |
 | **PD3 - A lesson's own rate** | A lesson can carry its own rate in cents per hour, 0 included, under the same rule G. | One invariant for every amount. An own _total_ would not fit a quantity in hours. | Accept. |
 | **PD6 - Upstream errors** | A fourth category joins the API's error taxonomy: `UpstreamError`, mapped to 502. It is decided in [ADR 0010](../decisions/0010-outbound-integrations.md) (point 10), which amends [ADR 0006](../decisions/0006-error-envelope.md) once it is accepted. | Endpoints stay free of `try/except`; 502 says "not your request, not our bug". | Decide it in the ADR, not in the spec. |
-| **PD9 - Party references** | Billing tables reference `core.party(id)` with `ON DELETE RESTRICT`, never `core.student`, and join `EXTERNAL_LINKS`: a party with billing rows cannot be deleted. | Taking a student role away must not fail on a lesson, and a charge must not lose its party. | Accept - and decide how long billing data is kept and how a person's data is erased ([M10](#for-the-maintainer)). |
+| **PD9 - Party references** | Billing tables reference `core.party(id)` with `ON DELETE RESTRICT`, never `core.student`, and join `EXTERNAL_LINKS`: a party with billing rows cannot be deleted. This amends decision K of [`crm-api.md`](crm-api.md), which guards a delete by `ext` links only. | Taking a student role away must not fail on a lesson, and a charge must not lose its party. | Accept - and decide how long billing data is kept and how a person's data is erased ([M10](#for-the-maintainer)). |
 | **PD12 - Credit entries** | `billing.prepaid_entry` knows two kinds: `topup`, always from a top-up invoice SkillForge created, and `adjustment`, a manual correction with a mandatory note. A top-up invoice written by hand in sevDesk is entered as an adjustment that names it in the note. | A correction needs a trail. With no opening balance (decision U) nothing else has to be registered from outside. Refunds are v1.1. | Accept in this form: no top-up "registered by number" in v1. |
 | **PD13 - Calendar data kept** | `calendar_event.title_name` is kept only while an occurrence waits for an assignment. It is never stored for all-day, phone and first-meeting occurrences and is cleared when the occurrence is assigned. Unassigned and dismissed occurrences are deleted 90 days after their start, with the next import. | A calendar title holds a name, sometimes of a person who never becomes a student. Keep what the next step needs, and no longer. | New with the review; the period is the maintainer's to set. |
 
@@ -120,7 +120,7 @@ them.
 | **PD5 - Payers billed by hand** | A payer is marked in `billing.manual_payer`. Their lessons show as "bill manually" and never reach a draft. | Decision V needs a marker, and "company" is not one: companies also get normal invoices. |
 | **PD7 - Refresh only reads** | A refresh updates status, number, sums and the drift flag. It never voids a charge - not on a 404 either. Voiding is an explicit action, `mark-cancelled` or `discard`, and each first reads from sevDesk that the invoice is cancelled or gone. | A read error never changes money (decision Q), and one click must not undo a charge sevDesk still holds. |
 | **PD8 - Billing scopes need a password** | `billing:read` and `billing:write` do not join `VOUCHED_SCOPES`. | A token the bot vouched for should not move money ([ADR 0009](../decisions/0009-bot-owns-its-discord-workflows.md), point 6). |
-| **PD10 - `dry_run` create** | In `dry_run`, creating a draft stores nothing and sends nothing. It answers `200` with a `PlannedDraft`: the planned invoice and the `saveInvoice` request it would have sent. `201` and an invoice row exist only for a create that was sent; `invoice_state` has no value for a dry run. | No row claims a draft that does not exist. |
+| **PD10 - `dry_run` create** | In `dry_run`, creating a draft stores nothing and sends nothing. It answers `200` with a `PlannedDraft`: the planned invoice and the `saveInvoice` request it would have sent. `201` and an invoice row exist only outside `dry_run`; `invoice_state` has no value for a dry run. | No row claims a draft that does not exist. |
 | **PD11 - Command-line stage** | The command-line stage is a client of the billing API with a person's token (`scripts/billing_cli.py`), not a second path into the services. | The real sevDesk token exists only in production (ADR 0010); the same routes then serve the portal. |
 
 ## Verified behavior
@@ -196,7 +196,7 @@ minutes INTEGER NOT NULL CHECK (minutes > 0 AND minutes % 15 = 0)  -- ck_lesson_
 status lesson_status NOT NULL DEFAULT 'planned'
 billable BOOLEAN NOT NULL DEFAULT false                  -- ck_lesson_billable_status: only when held or cancelled
 rate_cents_per_hour INTEGER NULL                         -- the lesson's own rate (PD3), same CHECK as billing.rate
-payer_party_id UUID NULL                                 -- SF3-1; set when ticked (PD1)
+payer_party_id UUID NULL                                 -- SF3-1; set when the lesson becomes billable (PD1)
 calendar_event_id UUID NULL UNIQUE                       -- SF4-3; NULL for a lesson added by hand
 note TEXT NULL
 UNIQUE (student_party_id, starts_at)                     -- uq_lesson_student_start: no lesson twice
@@ -286,6 +286,19 @@ UNIQUE (invoice_id) WHERE voided_at IS NULL
 No table stores a balance, a "billed" flag or a link from a lesson to its invoice: all three are derived from
 active charges and entries.
 
+Every column that references a party has its row in `EXTERNAL_LINKS`, and the delete guard reports its kind:
+
+| Column | Kind | Slice |
+|---|---|---|
+| `lesson.student_party_id` | `lesson` | SF2-1 |
+| `rate.student_party_id` | `rate` | SF2-1 |
+| `lesson.payer_party_id` | `lesson_payer` | SF3-1 |
+| `manual_payer.party_id` | `manual_payer` | SF3-1 |
+| `calendar_alias.student_party_id` | `calendar_alias` | SF4-2 |
+| `invoice.payer_party_id` | `invoice` | SF5-3 |
+| `lesson_charge.student_party_id` | `lesson_charge` | SF5-3 |
+| `prepaid_account.payer_party_id` | `prepaid_account` | SFP-1a |
+
 ### A lesson's life
 
 | Status | Means | Billable |
@@ -296,7 +309,8 @@ active charges and entries.
 | `not_held` | Did not take place and costs nothing. | no |
 
 - A lesson is **open** when it is billable, has ended and has no active charge.
-- Setting `billable` on a `planned` or `not_held` lesson is refused (`lesson_not_billable`).
+- Setting `billable` on a `planned` or `not_held` lesson is refused (`lesson_not_billable`); moving a billable
+  lesson to `planned` or `not_held` clears `billable`.
 - A lesson with an active charge on an invoice cannot be edited (`lesson_charged`); the invoice is discarded or
   cancelled first. A lesson with an active prepaid charge can: the charge follows ([Credit accounts](#credit-accounts)).
 - There is no delete route. "Remove" in a screen is `not_held`. Only the calendar import deletes, and only a
@@ -355,20 +369,23 @@ What happens to an occurrence, first match wins:
 - **Route.** `route_lesson(lesson, payer, accounts)` answers `invoice`, `manual` (PD5) or, from SFP-1a, `prepaid`. The
   same pure function serves the tick and the preview, so no lesson falls between two rules.
 - **Preview.** `POST /invoices/preview` takes lesson ids of one payer and returns the planned invoice: positions,
-  texts, dates, the total, the frozen payment method, a fingerprint, and every blocker at once. Blockers are a
-  closed list:
+  texts, dates, the total, the frozen payment method, a fingerprint, every blocker at once, and warnings. Blockers are
+  a closed list:
 
   | Code | Means |
   |---|---|
   | `lesson_not_open` | The lesson is not billable or already has an active charge. |
   | `lesson_not_ended` | The lesson ends after now. |
   | `payer_ambiguous` | The student has more than one payer. |
-  | `payer_changed` | The payer stored on the lesson is not the one the CRM resolves now (**open**, PD1). |
+  | `payer_missing` | The lesson is billable and has no stored payer (**open**, PD1). |
   | `no_sevdesk_contact` | The payer has no `ext.sevdesk_contact`. |
   | `payment_method_missing` | "Zahlungsverfahren" is empty or holds another value than `PayPal` or `Überweisung`. |
   | `manual_payer` | The payer is billed by hand. |
   | `prepaid_payer` | The lesson belongs to a credit account (SFP-1a). |
   | `subject_without_part` | No sevDesk part is configured for the lesson's subject. |
+
+  A warning blocks nothing. The closed list has one code, `payer_changed`: the payer stored on a lesson is not the
+  one the CRM resolves now (**open**, PD1).
 
 - **Payment method.** The contact's field is addressed by `SEVDESK__PAYMENT_METHOD_FIELD_SETTING_ID`; its values
   `PayPal` and `Überweisung` map to `payment_method` in one place, `app/services/billing/payment_methods.py`
@@ -400,10 +417,13 @@ What happens to an occurrence, first match wins:
   the token must belong to and is what the identity check enforces. `MODE` (`dry_run` or `live`) says whether
   writes leave. Production runs `ACCOUNT=live`, first with `MODE=dry_run`; the trial recipes run `ACCOUNT=trial`
   with `MODE=live`. `ACCOUNT` defaults to `trial`, so a real token without it fails closed.
-- **Without a token** - `just seed-demo`, checks of the admin screens, the test of the command-line stage - the
-  billing services get a fake sevDesk client instead of the real one. SF5-4 defines the one place the client is
-  injected and the fake behind it; `just seed-demo` fills the fake with synthetic contacts, payment methods and
-  parts. The fake is never used when a token is configured.
+- **The fake is an explicit mode.** `SEVDESK__MODE=fake` gives the billing services a fake sevDesk client instead
+  of the real one. SF1 builds `IntegrationMode` with `dry_run` and `live`; `fake` is SF5-4's addition, with the
+  one place the client is injected. The mode is refused together with `SEVDESK__ACCOUNT=live`. `just seed-demo`,
+  the checks of the admin screens and the test of the command-line stage set it, and `just seed-demo` fills the
+  fake with synthetic contacts, payment methods and parts.
+- **A missing token selects nothing.** Without a token and without `fake`, every sevDesk call is
+  `sevdesk_refused`. A production that lost its token refuses; it never stores an invoice with a fake id.
 
 ### Invoice states
 
@@ -417,21 +437,23 @@ What happens to an occurrence, first match wins:
 | `cancelled` | The maintainer cancelled the invoice in sevDesk, and SkillForge read that from sevDesk. The charges are voided. | Final. |
 | `discarded` | A draft the maintainer deleted in sevDesk, and SkillForge read that it is gone. The charges are voided. | Final. |
 
-- **`failed` needs proof.** Only two answers prove that nothing was created: a `4xx`
-  (`IntegrationRejectedError`), and a `5xx` whose body matches the validation error recorded in S21 - until S21 is
-  recorded, no `5xx` counts. A refusal before the request left (`IntegrationRefusedError`) is `failed` too. Every
-  other answer - any other status, a lost connection, a `2xx` that cannot be read (`OutcomeUnknownError`) - is
-  `unknown`.
+- **`failed` needs proof.** Only two answers prove that nothing was created: a `4xx`, and a `5xx` whose body
+  matches the validation error recorded in S21. The client decides it: both raise `IntegrationRejectedError`. Until
+  SF6-1 teaches the client the recorded shape, every `5xx` on a write is `OutcomeUnknownError`. A refusal before
+  the request left (`IntegrationRefusedError`) is `failed` too. Every other answer - any other `5xx`, a lost
+  connection, a `2xx` that cannot be read (`OutcomeUnknownError`) - is `unknown`.
 - **Reconcile** looks for the reference in sevDesk. How - a filter on `customerInternalNote`, or listing the
-  contact's drafts created after the pending row and matching the note - is **open** (Q10).
+  contact's drafts created after the pending row and matching the note - is **open** (Q10). "Finds nothing"
+  becomes `failed` only if the listing is proven complete; a listing that may be cut off leaves the invoice
+  `unknown`.
 - **Refresh** reads status, number, positions and sums. It sets `drift` when positions or the sum differ from the
   snapshot, and it changes no charge (PD7).
 - **`discard` and `mark-cancelled` read first.** After the identity check, `discard` reads the draft and proceeds
-  only if sevDesk answers that it does not exist; `mark-cancelled` reads the invoice and proceeds only if sevDesk
-  reports it as cancelled (the shape is **open**, Q12). Anything else is `invoice_state`; a read that fails changes
-  nothing.
-- **Drift on a draft** means the maintainer edited it in sevDesk. He makes sevDesk match again, or deletes the draft
-  there, discards it here and creates a new one.
+  only if sevDesk answers that it does not exist (the shape is **open**, Q17); `mark-cancelled` reads the invoice
+  and proceeds only if sevDesk reports it as cancelled (the shape is **open**, Q12). Anything else is
+  `invoice_state`; a read that fails changes nothing.
+- **Drift on a draft** means the maintainer edited it in sevDesk. The way out is to make sevDesk match again, or to
+  delete the draft there, discard it here and create a new one.
 
 ### Errors from an integration
 
@@ -441,12 +463,15 @@ billing services translate them; no endpoint catches one.
 | Integration error | On a read | On `saveInvoice` |
 |---|---|---|
 | `IntegrationRefusedError`, `IdentityCheckError` - mode, allowlist or identity said no; nothing was sent | `sevdesk_refused` (502) | Invoice `failed`. |
-| `IntegrationRejectedError` - a `4xx` | `sevdesk_unavailable` (502) | Invoice `failed`. |
+| `IntegrationRejectedError` - a `4xx`; on a write also a `5xx` with the body of S21 (SF6-1) | `sevdesk_unavailable` (502) | Invoice `failed`. |
 | `IntegrationUnavailableError` - a read failed | `sevdesk_unavailable` (502) | - |
 | `UnexpectedResponseError` - a body that does not parse | `sevdesk_unavailable` (502) | - |
-| `OutcomeUnknownError` - a write failed in transit, a `5xx`, an unreadable `2xx` | - | Invoice `unknown`. |
+| `OutcomeUnknownError` - a write failed in transit, any other `5xx`, an unreadable `2xx` | - | Invoice `unknown`. |
 
-The 502 category is **open** (PD6). The calendar client's errors map the same way to `calendar_unavailable`.
+- The 502 category is **open** (PD6).
+- An identity read that fails is an `IdentityCheckError` too, so `sevdesk_refused` tells the operator one of two
+  things: the configuration does not fit the account, or sevDesk could not be asked. Either way nothing was sent.
+- Every error of the calendar client is `calendar_unavailable`.
 
 ## Credit accounts
 
@@ -494,7 +519,7 @@ This section is the single source of every German text a family sees. The billin
 them; family-visible German text lives nowhere else (the exception in [`AGENTS.md`](../../AGENTS.md)). A block
 marked **pending approval** is a proposal: it is not built before the maintainer approved it in the session.
 
-What is _not_ family-visible text and lives elsewhere:
+What is _not_ family-visible text and lives elsewhere - German words included, because they are matching data:
 
 - **Match tokens** - `mit`, `Kennenlernen`, `Telefon`, the late-cancellation category
   (`app/services/billing/calendar_rules.py`); `Zahlungsverfahren`, `PayPal`, `Überweisung` as sevDesk reports them
@@ -649,7 +674,7 @@ Target shape, under `/api/v1/billing`, tag `billing`. R is `billing:read`, W is 
 | `PUT /students/{party_id}/rates/{valid_from}` | W | SF2-3 | Sets the rate from that day on; idempotent. |
 | `DELETE /students/{party_id}/rates/{valid_from}` | W | SF2-3 | Removes it; existing charges keep their frozen rate. |
 | `GET /students/{party_id}/payer` | R | SF3-1 | The resolved payer, whether a sevDesk contact is linked, whether billed by hand. |
-| `POST /lessons/{lesson_id}/resolve-payer` | W | SF3-1 | Resolves the lesson's payer afresh (**open**, PD1). |
+| `POST /lessons/{lesson_id}/resolve-payer` | W | SF3-1 | Resolves the payer of a billable lesson afresh (**open**, PD1). |
 | `PUT`, `DELETE /parties/{party_id}/sevdesk-contact` | W | SF3-1 | Links or unlinks the party's sevDesk contact. |
 | `PUT`, `DELETE /parties/{party_id}/manual-billing` | W | SF3-1 | Marks or unmarks a payer as billed by hand. |
 | `GET`, `POST /calendar/aliases`, `DELETE /calendar/aliases/{alias_id}` | R, W, W | SF4-2 | The alias table. |
@@ -708,7 +733,7 @@ repository.
 
 | Setting | Slice | Meaning |
 |---|---|---|
-| `SEVDESK__MODE` | SF1-2 | `dry_run` (default) or `live`: whether writes leave. |
+| `SEVDESK__MODE` | SF1-2 | `dry_run` (default) or `live`: whether writes leave. From SF5-4 also `fake`: the fake client, refused with `SEVDESK__ACCOUNT=live`. |
 | `SEVDESK__ACCOUNT` | SF1-2 | `trial` (default) or `live`: which account the token must belong to. |
 | `SEVDESK__TOKEN` | SF1-2 | The API token; a secret. |
 | `SEVDESK__EXPECTED_ACCOUNT_ID` | SF1-2 | The identity the account must report before any other call. |
@@ -716,9 +741,9 @@ repository.
 | `SEVDESK__HOUR_UNIT_ID` | SF1-2 | The unit `Std`. |
 | `SEVDESK__PAYMENT_METHOD_FIELD_SETTING_ID` | SF1-2 | The custom field "Zahlungsverfahren". |
 | `SEVDESK__PART_IDS` | SF5-4 | Subject label to sevDesk part id (PD4). |
-| `GRAPH__MODE` | SF4-1 | As for sevDesk; the calendar client only reads. |
+| `GRAPH__MODE` | SF4-1 | As for sevDesk. The calendar client has no write - its token request is declared a read - so both values behave alike today. |
 | `GRAPH__TENANT_ID`, `GRAPH__CLIENT_ID` | SF4-1 | The Entra app `skillforge`. |
-| `GRAPH__CERTIFICATE_PEM`, `GRAPH__PRIVATE_KEY_PEM` | SF4-1 | This location's credential as PEM text in secret settings; no file is mounted. |
+| `GRAPH__CERTIFICATE_PEM`, `GRAPH__PRIVATE_KEY_PEM` | SF4-1 | This location's credential in secret settings: the PEM text, base64-encoded into one line. No file is mounted. |
 | `GRAPH__MAILBOX`, `GRAPH__CALENDAR_NAME` | SF4-1 | The one lesson calendar. |
 | `BILLING__DEFAULT_RATE_CENTS_PER_HOUR` | SF2-1 | The default rate; default `3000`. |
 
@@ -765,6 +790,7 @@ the script then only reads.
 | S22 | `invoiceNumber` on one draft, on a second draft, after issue | Script; the maintainer issues in the UI | SF6-1 | Q1 |
 | S23 | Two drafts created back to back, each with a number from S8; issued in either order: are the numbers kept | Script; the maintainer opens and issues in the UI | SF6-1 | Q3 |
 | S24 | `deliveryDate` and `deliveryDateUntil` around midnight and both clock changes: which day sevDesk shows | Script | SF6-1 | Q15 |
+| S25 | A draft deleted in the UI: `GET /Invoice/{id}` and the contact's invoice list afterwards | The maintainer deletes in the UI; script reads | SF6-2 | Q17 |
 | G1 | A `calendarView` page of the lesson calendar with its paging link; the selected fields | The maintainer | SF4-1 | |
 | G2 | A series: an occurrence, a moved occurrence, the same range read twice | The maintainer | SF4-3 | Q16 |
 | G3 | A lesson cancelled late, with its category | The maintainer | SF4-2, SF4-3 | Q9 |
@@ -802,8 +828,10 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
       `app.api.v1.billing` or `app.integrations`.
 - [ ] `app/services/billing/` imports `app.core`, `app.integrations`, `app.services.crm` and itself (architecture
       test, from SF2-2 on).
-- [ ] No real name, e-mail address, token, tenant id or account id in code, tests, fixtures, logs or docs; the
-      fixture scan of SF1-3b is green.
+- [ ] Every foreign key from `billing` into `core.party` has its row in `EXTERNAL_LINKS`: a test walks the
+      metadata (from SF2-1 on), so a new column without a row fails.
+- [ ] No real name, e-mail address, token, tenant id or id of a real account in code, tests, fixtures, logs or
+      docs; the fixture scan of SF1-3b is green.
 - [ ] No name, calendar title, contact id or token in a log line or an error message.
 - [ ] Every route follows the API conventions; `openapi.json` is regenerated, never edited.
 - [ ] `just check-all` is green on every slice that touches the database, auth or money, `just check` on the
@@ -842,7 +870,7 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   - [ ] Both scripts exist; tests on synthetic events show that a fixture and a summary hold no name, address or
         id, and that the recorder refuses an output path inside a git work tree.
   - [ ] The maintainer ran the setup: the lesson mailbox is in scope, the other mailbox is not, and the app holds
-        no application permission in Entra (his statement, in the PR).
+        no application permission in Entra (the maintainer's statement, in the PR).
   - [ ] The recorder's probe of a mailbox outside the restriction was refused (G6).
   - [ ] Fixtures G1 to G7 are in the repository, pseudonymised, and pass the fixture scan.
   - [ ] Q9 and Q16 are answered in this spec, and "Verified behavior" says what was run.
@@ -897,10 +925,10 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   checks that every configured id exists, prints ids and object kinds only - never a person's name. Its
   `--discover` mode is how the expected account id is first learned: it reads `GET /SevClient`, `GET /SevUser` and
   `GET /ContactCustomFieldSetting`, and prints the candidate client ids and "TRIAL: yes/no". It is the one path
-  that reads before an expected id is configured. The live run is the maintainer's, from his own terminal. The
-  recipe `just contract-sevdesk`: loads `~/.config/skillforge/sevdesk-trial.env`, sets the contract run, runs
-  `pytest -m contract`. It refuses in CI and when any `SEVDESK__*` variable is already set in the shell; a `401`
-  on the identity read skips with "trial expired".
+  that reads before an expected id is configured. The live run is the maintainer's, from the maintainer's
+  own terminal. The recipe `just contract-sevdesk`: loads `~/.config/skillforge/sevdesk-trial.env`, sets the
+  contract run, runs `pytest -m contract`. It refuses in CI and when any `SEVDESK__*` variable is already set in
+  the shell; a `401` on the identity read skips with "trial expired".
 - _Acceptance criteria:_
   - [ ] The doctor sends only reads and prints ids and kinds - no name, address or e-mail of a person (test on a
         synthetic response).
@@ -910,6 +938,8 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
         absent from CI.
   - [ ] `just contract-sevdesk` refuses in CI and with a `SEVDESK__*` variable already set; without the env file,
         or with a `401` on the identity read, it ends with a skip message and exit code 0.
+  - [ ] The agent guide says it in these words: agents run the trial recipes only after the maintainer's go in
+        the session.
 
 **SF1-3b - Recorder and spike.**
 
@@ -927,7 +957,8 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
         recorder's output for a response that held all five.
   - [ ] A field that is not on the allowlist of a person or company object does not reach a fixture.
   - [ ] The recorder writes nothing before the identity check passed.
-  - [ ] `just sevdesk-spike` refuses `SEVDESK__ACCOUNT=live`, CI, and a `SEVDESK__*` variable already set.
+  - [ ] `just sevdesk-spike` refuses `SEVDESK__ACCOUNT=live`, CI, and a `SEVDESK__*` variable already set; the
+        agent guide's rule - only after the maintainer's go in the session - names this recipe too.
   - [ ] The spike script sends every write once and tags it with the run id; its one `DELETE` targets a draft the
         same run created.
 
@@ -937,17 +968,18 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   `just sevdesk-doctor --discover`. The trial holds synthetic data only: a company name that contains `TRIAL`,
   § 19, a payment term of 14 days, the custom field "Zahlungsverfahren" with its two values and a public example
   IBAN. After the maintainer's go in the session, an agent runs `just sevdesk-spike`, records the manifest and
-  writes the answers into this spec; the maintainer does the manifest's UI steps (send, edit, cancel, issue) in
-  the trial. What only the real account can show - the raw templates, a top-up invoice of today, the ids - the
-  maintainer reads himself (`just sevdesk-doctor --account live`) and passes on without personal data. Then the
-  spec is frozen: open questions move to [Decided](#decided-formerly-open-questions), every proposal becomes a
+  writes the answers into this spec; the maintainer does the manifest's UI steps (send, edit, cancel, issue,
+  delete a draft) in the trial. What only the real account can show - the raw templates, a top-up invoice of
+  today, the ids - the maintainer reads in person (`just sevdesk-doctor --account live`) and passes on without
+  personal data. Then the spec is frozen: open questions move to
+  [Decided](#decided-formerly-open-questions), every proposal becomes a
   decision or is replaced, the status becomes `Accepted`, and so does ADR 0010's status line - with ADR 0006's
   status line gaining "amended by 0010".
 - _Acceptance criteria:_
-  - [ ] Every row S1 to S24 has a scrubbed fixture, or a written reason why it could not be recorded; the scan is
+  - [ ] Every row S1 to S25 has a scrubbed fixture, or a written reason why it could not be recorded; the scan is
         green.
   - [ ] Every created object carries the run id, and the script's log shows one request per write.
-  - [ ] Q1 to Q8 and Q10 to Q15 are answered, each naming its fixture.
+  - [ ] Q1 to Q8, Q10 to Q15 and Q17 are answered, each naming its fixture.
   - [ ] Trial and real account both report bookkeeping system 2.0.
   - [ ] Every **pending approval** in [Family-visible texts](#family-visible-texts), every row of
         [Open until the maintainer approves](#open-until-the-maintainer-approves) and every item of
@@ -963,14 +995,18 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   **The delete guard**, under the CRM's conventions: an `EXTERNAL_LINKS` row is `(kind, model, still_linked)`
   today and `_external_link_kinds` matches `model.party_id`. Billing tables reference the party through
   `student_party_id` and `payer_party_id`, so from this slice on a row names its column
-  (`SevdeskContact.party_id`, `Lesson.student_party_id`, `Rate.student_party_id`). `PartyInUseError`'s
-  client-visible detail speaks of "external systems"; it becomes "Party is still in use", followed by the kinds,
-  and the code stays `party_in_use`. The comment in `delete_party` that every foreign key into `core.party`
-  cascades is corrected: billing's are `RESTRICT`, and the guard is what answers before the database does.
+  (`SevdeskContact.party_id`, `Lesson.student_party_id`, `Rate.student_party_id`), and a test walks the metadata
+  for billing columns without a row. `PartyInUseError`'s client-visible detail speaks of "external systems"; it
+  becomes "Party is still in use", followed by the kinds, and the code stays `party_in_use`. The class's
+  docstring, the comment on `EXTERNAL_LINKS` and the comment in `delete_party` - every foreign key into
+  `core.party` cascades - are corrected: billing's are `RESTRICT`, and the guard is what answers before the
+  database does. [`crm-api.md`](crm-api.md) gets an **Amended** line: decision K and the `PartyInUseError` row of
+  its error catalog.
 - _Tests that change:_ the admin role's scope set in `tests/auth/test_roles.py`;
+  `test_seed_default_scopes_is_idempotent` in `tests/db/test_auth_service.py`;
   `test_the_models_define_the_five_schemas` in `tests/db/models/test_schemata.py`; `_APPLICATION_SCHEMAS` in
-  `tests/db/test_migration_apply.py`; the guard's kinds and its detail text in
-  `tests/db/crm/test_crm_party_delete_api.py`.
+  `tests/db/test_migration_apply.py`; `LINKS` and the detail text in
+  `tests/db/crm/test_crm_party_delete_api.py`; `PARTY_IN_USE` in `tests/api/test_crm_error_contract.py`.
 - _Acceptance criteria:_
   - [ ] Upgrade, downgrade by one and upgrade again pass in `tests/db/test_migration_apply.py`.
   - [ ] The database refuses a rate not divisible by 4 and a lesson's minutes not divisible by 15
@@ -991,8 +1027,9 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   `billing`.
 - _Acceptance criteria:_
   - [ ] A tick sets `held` and `billable`; a `cancelled` lesson is billable only after the maintainer said so;
-        `billable` on a `planned` or `not_held` lesson is `lesson_not_billable` (and `ck_lesson_billable_status`
-        holds in the database).
+        `billable` on a `planned` or `not_held` lesson is `lesson_not_billable`, and moving a
+        billable lesson to `planned` or `not_held` clears the flag (`ck_lesson_billable_status` holds in the
+        database).
   - [ ] Minutes not divisible by 15 are a `422`; a second lesson of one student at one start is
         `lesson_already_exists`.
   - [ ] The list filters by Berlin days: a lesson late in the evening belongs to its Berlin day, in summer and in
@@ -1018,14 +1055,17 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
 
 - _Technique:_ `resolve_payer` in a new `app/services/crm/payers.py` - a CRM read under the CRM's conventions,
   importing only `app.core` and the CRM. In billing: `app/services/billing/payers.py` stores the payer on a lesson
-  when it is ticked, resolves it afresh on request (`resolve-payer`), is the one writer of `ext.sevdesk_contact`,
-  and keeps `billing.manual_payer` (PD5); the payer routes; one revision; `Lesson.payer_party_id` joins
-  `EXTERNAL_LINKS`.
-- _Tests that change:_ `NOT_AGGREGATE_WRITES` in `tests/db/crm/test_crm_write_services.py` gains `resolve_payer`.
+  when it becomes billable - ticked, or a late cancellation marked billable - resolves it afresh on request
+  (`resolve-payer`), is the one writer of `ext.sevdesk_contact`,
+  and keeps `billing.manual_payer` (PD5); the payer routes; one revision; `Lesson.payer_party_id` and
+  `ManualPayer.party_id` join `EXTERNAL_LINKS`.
+- _Tests that change:_ `NOT_AGGREGATE_WRITES` in `tests/db/crm/test_crm_write_services.py` gains `resolve_payer`;
+  `LINKS` in `tests/db/crm/test_crm_party_delete_api.py` gains `lesson_payer` and `manual_payer`.
 - _Acceptance criteria:_
   - [ ] No `pays_for`: the student. One: that party, a company included. Two: ambiguous.
-  - [ ] A ticked lesson keeps its payer when `pays_for` changes afterwards; a new tick or `resolve-payer` resolves
-        afresh.
+  - [ ] A lesson gets its payer when it becomes billable: by a tick, and by a late cancellation marked billable.
+  - [ ] A billable lesson keeps its payer when `pays_for` changes afterwards; becoming billable again, or
+        `resolve-payer`, resolves afresh.
   - [ ] Only `app/services/billing/payers.py` writes `ext.sevdesk_contact` (architecture test).
   - [ ] A contact already linked to another party, or a second contact for one party, is
         `sevdesk_contact_already_linked`.
@@ -1048,18 +1088,24 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
 - _Technique:_ a Graph client in `app/integrations/` over the guarded transport, with an allowlist of the Microsoft
   login host and the Graph host; a token for the app with this location's certificate, read from the PEM settings
   ([M5](#for-the-maintainer)); `calendarView` of the configured calendar with the fields of G1, paged by
-  `@odata.nextLink`, times in UTC. Before its first read the client resolves the configured calendar in the
-  configured mailbox and refuses to work if it is missing.
+  `@odata.nextLink`, times in UTC. The token request is a POST that changes nothing; the client declares it a read.
+  The identity check: before any other read the client reads the configured mailbox and resolves the configured
+  calendar in it; if the mailbox answers with another address, or the calendar is missing, it refuses to work
+  (`IdentityCheckError`).
 - _Acceptance criteria:_
   - [ ] Every test runs on fixtures G1 to G7 through a mocked transport.
   - [ ] Paging reads to the end; a `429` is repeated as `Retry-After` says, a `403` is not.
   - [ ] Only the fields of G1 are requested.
+  - [ ] No calendar read leaves before the identity check passed; a mailbox with another address and a missing
+        calendar each fail closed.
   - [ ] Certificate, key and token appear in no log line or exception.
 
 **SF4-2 - Title rules, matching, aliases.**
 
 - _Technique:_ `app/services/billing/calendar_rules.py`, pure: the table, the match tokens and the matching of
-  [Calendar import](#calendar-import); `billing.calendar_alias` with its revision and routes.
+  [Calendar import](#calendar-import); `billing.calendar_alias` with its revision and routes;
+  `CalendarAlias.student_party_id` joins `EXTERNAL_LINKS`.
+- _Tests that change:_ `LINKS` in `tests/db/crm/test_crm_party_delete_api.py` gains `calendar_alias`.
 - _Acceptance criteria:_
   - [ ] One test per row of the table, on synthetic titles: a Teams lesson is kept; phone, all-day, `Kennenlernen`
         and a title without ` mit ` propose no lesson.
@@ -1116,7 +1162,9 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
 **SF5-3 - Charges and open lessons.**
 
 - _Technique:_ `Invoice` and `LessonCharge` with their revision; `route_lesson`; `GET /billable-lessons` in
-  `app/services/billing/invoices.py`; `LessonChargedError` on lesson edits.
+  `app/services/billing/invoices.py`; `LessonChargedError` on lesson edits; `Invoice.payer_party_id` and
+  `LessonCharge.student_party_id` join `EXTERNAL_LINKS`.
+- _Tests that change:_ `LINKS` in `tests/db/crm/test_crm_party_delete_api.py` gains `invoice` and `lesson_charge`.
 - _Acceptance criteria:_
   - [ ] A second active charge for one lesson violates `uq_lesson_charge_active`; a voided charge frees the lesson.
   - [ ] Every open lesson appears in `GET /billable-lessons` exactly once, with its route (`invoice` or `manual`).
@@ -1128,25 +1176,29 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
 
 - _Technique:_ `POST /invoices/preview`: blockers, fingerprint (PD2), the payment method read through the sevDesk
   client (`app/services/billing/payment_methods.py`), `SEVDESK__PART_IDS`. The one place the sevDesk client is
-  injected into the billing services, and a fake client behind it for work without a token
-  ([sevDesk in `dry_run` and without a token](#sevdesk-in-dry_run-and-without-a-token)); `just seed-demo` fills
-  the fake. `UpstreamError` in `app/core/errors.py` with its 502 in `STATUS_BY_ERROR`, and the mapping of
-  [Errors from an integration](#errors-from-an-integration).
+  injected into the billing services, and the mode `fake` with its fake client
+  ([sevDesk in `dry_run` and without a token](#sevdesk-in-dry_run-and-without-a-token)); `just seed-demo` sets
+  the mode and fills the fake. `UpstreamError` in `app/core/errors.py` with its 502 in `STATUS_BY_ERROR`, and the
+  mapping of [Errors from an integration](#errors-from-an-integration).
 - _Tests that change:_ `tests/test_errors.py` and `tests/api/test_common_errors.py`, only where they list the
   categories, to add the fourth.
 - _Acceptance criteria:_
   - [ ] The preview changes no row. The same state gives the same fingerprint; a changed rate, duration, payer or
         payment method gives another.
-  - [ ] Every blocker of the closed list is reported, several at once (one test per code).
+  - [ ] Every blocker of the closed list is reported, several at once (one test per code); `payer_changed` is
+        reported as a warning and blocks nothing; a kept payer and a re-resolved one give different fingerprints.
   - [ ] Lessons of two payers are `mixed_payers`.
   - [ ] A failed read is `502 sevdesk_unavailable`, a refusal `502 sevdesk_refused`; neither stores anything, and
         no endpoint catches an integration error (architecture test).
-  - [ ] The fake client is used only when no token is configured (test for both sides).
+  - [ ] The fake client is used only with `SEVDESK__MODE=fake`; that mode is refused with `SEVDESK__ACCOUNT=live`;
+        without a token and without it, a sevDesk call is `sevdesk_refused` and nothing is stored (one test each).
 
 **SF6-1 - Create the draft.**
 
 - _Technique:_ `POST /invoices` as in [Pricing, charges and invoices](#pricing-charges-and-invoices): fingerprint,
-  pending row and charges, commit, one call, outcome, read-back; `GET /invoices...`. The create service takes the
+  pending row and charges, commit, one call, outcome, read-back; `GET /invoices...`. The sevDesk client learns the
+  validation-error body recorded in S21: a `5xx` on a write with that body raises `IntegrationRejectedError`, any
+  other `5xx` stays `OutcomeUnknownError`. The create service takes the
   `Database`, not the request's `DBSession`, and opens two short sessions; the billing architecture test names
   this route as the one that may.
 - _Tests that change:_ none - and no scenario or golden file.
@@ -1154,9 +1206,10 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   - [ ] The pending row and its charges are committed before the transport sees the request (a second session
         reads them inside the mocked call).
   - [ ] `saveInvoice` is sent exactly once per create: on success, on an error and on a lost connection.
-  - [ ] `failed` only on proof: a `4xx`, a refusal before sending, or a `5xx` with the body of S21. A lost
-        connection, any other `5xx` and an unreadable `2xx` give `unknown` and keep the charges (one test each).
-  - [ ] Two creates for one lesson at the same time: one wins, the other is refused before any call.
+  - [ ] `failed` only on proof: a `4xx`, a refusal before sending, or a `5xx` with the body of S21 - which the
+        client, not the service, recognises. A lost connection, any other `5xx` and an unreadable `2xx` give
+        `unknown` and keep the charges (one test each).
+  - [ ] Two creates for one lesson at the same time: one wins, the other is `lesson_charged` before any call.
   - [ ] An outdated fingerprint is `preview_outdated`: nothing stored, nothing sent.
   - [ ] The request equals each scenario's planned request (SF5-1).
   - [ ] The read-back sum equals the local total to the cent; a difference sets `drift` (S19).
@@ -1174,8 +1227,9 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   - [ ] Refresh never changes a charge - not on a `404`, a `401` or a `5xx` (one test each).
   - [ ] Refresh sets `drift` when positions or the sum differ, and names the difference (S16).
   - [ ] No route changes the charges or the snapshot of an issued invoice, except `mark-cancelled`.
-  - [ ] `discard` voids only after sevDesk answered that the draft does not exist; a draft that still exists is
-        `invoice_state`, a failed read is a `502`, and neither changes a charge.
+  - [ ] `discard` voids only after sevDesk answered that the draft does not exist (S25); a draft that still exists
+        is `invoice_state`, a failed read is a `502`, and neither changes a charge.
+  - [ ] `discard` on an issued invoice is `invoice_state`, whatever sevDesk says.
   - [ ] `mark-cancelled` voids only after sevDesk reported the invoice as cancelled (S17); otherwise
         `invoice_state`; a failed read changes nothing.
   - [ ] The sevDesk client offers no call that sends, enshrines, cancels, books or deletes (architecture test).
@@ -1188,7 +1242,7 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   the sevDesk settings with the ids from the doctor, the Graph certificate and key as PEM secrets, and
   `billing:read` and `billing:write` as delegated grants of the login clients - the portal's backend-for-frontend
   and the command-line stage (`just bootstrap-client`). The maintainer sets it, runs the doctor on the real
-  account, ships the release and creates the first real draft himself.
+  account, ships the release and creates the first real draft in person.
 - _Acceptance criteria:_
   - [ ] "Operating" exists and names every state a draft can be left in.
   - [ ] `.env.example` lists every setting of [Configuration](#configuration) without a real value.
@@ -1210,13 +1264,14 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   - [ ] A correction row that matches no lesson stops the run before the first change.
   - [ ] Password and client secret come from a prompt or the environment, never from an argument, and are never
         printed.
-  - [ ] A test runs it end to end against the app in-process with demo data and the fake sevDesk client.
+  - [ ] A test runs it end to end against the app in-process with demo data and `SEVDESK__MODE=fake`.
 
 **SFP-1a - Credit accounts.** _After SF6-2; needs PD12. The slices before it hold no prepaid code._
 
 - _Technique:_ `PrepaidAccount` and `PrepaidEntry` with their revision; the account routes; `route_lesson` answers
-  `prepaid`, and the preview reports `prepaid_payer`.
-- _Tests that change:_ the preview and `GET /billable-lessons` tests of SF5-3 and SF5-4 gain the route `prepaid`.
+  `prepaid`, and the preview reports `prepaid_payer`; `PrepaidAccount.payer_party_id` joins `EXTERNAL_LINKS`.
+- _Tests that change:_ the preview and `GET /billable-lessons` tests of SF5-3 and SF5-4 gain the route `prepaid`;
+  `LINKS` in `tests/db/crm/test_crm_party_delete_api.py` gains `prepaid_account`.
 - _Acceptance criteria:_
   - [ ] One open account per payer; a new one starts on or after the last close.
   - [ ] A lesson whose Berlin day lies in the window of its payer's account routes to `prepaid`; outside it, to
@@ -1313,13 +1368,14 @@ None yet. SP-CAL and SP-SD move each answered question here, with the fixture th
 | Q7 | Is `GET /SevClient` the read that yields the account's identity and company name, and does its id equal the client id on `SevUser` and `ContactCustomFieldSetting`? | The identity check of SF1-2, which is built on it. | SP-SD (S2) |
 | Q8 | Does the trial run bookkeeping system 2.0 with the functions of "Buchhaltung Pro", like the real account? | Whether trial fixtures speak for the real account. | SP-SD (S1), the doctor on both accounts |
 | Q9 | The exact name of the Outlook category for a late cancellation, and whether Graph delivers `categories` for the lesson calendar. | The cancelled row of [Calendar import](#calendar-import). | SP-CAL (G3) |
-| Q10 | The real name and matching of the `customerInternalNote` filter; otherwise the list of a contact's drafts by creation time. | Reconcile. | SP-SD (S20) |
+| Q10 | The real name and matching of the `customerInternalNote` filter; otherwise the list of a contact's drafts by creation time. Is that listing complete - paging, limits, drafts included? | Reconcile: "finds nothing" may only mean `failed` if the listing is complete. | SP-SD (S20) |
 | Q11 | Does `DELETE` work on a draft although it is not documented? | Whether a draft could ever be cleaned up through the API; v1 does not rely on it. | SP-SD (S18) |
 | Q12 | How does a cancelled invoice read: the original's status, the cancellation invoice's shape? | What `mark-cancelled` must read before it voids; v1.1 detection. | SP-SD (S17) |
 | Q13 | Does the maintainer's way of sending move an invoice to status 200? | Credit at issue; SFP-3. | SP-SD (S13) |
 | Q14 | How are amounts typed in responses, and what do error bodies look like - is a validation error a `5xx` with a recognisable body? | The client's parsing; which `5xx` proves a rejection. | SP-SD (S19, S21) |
 | Q15 | How does sevDesk read the time zone of `deliveryDate`? Which delivery date does a top-up carry today? | The request's dates; `delivery_from` on a top-up. | SP-SD (S24); a top-up invoice of today, read by the maintainer |
 | Q16 | Which Graph id stays the same when an occurrence of a series moves? | `calendar_event.external_id`. | SP-CAL (G2) |
+| Q17 | How does a draft read after the maintainer deleted it in the UI: the answer of `GET /Invoice/{id}`, and is it gone from the contact's list? | What `discard` must read before it voids. | SP-SD (S25) |
 
 ### For the maintainer
 
@@ -1337,6 +1393,7 @@ the same answer.
 | M7 | The markup of head and foot text (bold, italic, link, line breaks): **pending approval**, and **open** on S15. | The blocks `HEAD_TEXT`, `FOOT_TRANSFER`, `FOOT_PAYPAL` as written: today's look. |
 | M8 | The reference in `customerInternalNote`. If sevDesk prints it (S14), a family sees it: **pending approval**. | `SF-` and 8 hexadecimal digits - short, and it says nothing about the family. |
 | M9 | The document title (`header`): **open** (Q2, S14). | As today's invoices show it, once it is read. |
+| M11 | Confirm: the hint at low credit. The decided wording is "ab 30 € Restguthaben". | The helper hints when the remaining credit is 30 EUR or less (`low_balance_cents`, default 3000). |
 | M10 | Data protection: how long lessons, charges, invoices and calendar occurrences are kept, and what erasing a person means while a party with billing rows cannot be deleted (PD9). | v1 deletes no billing row; the maintainer sets the periods before the cut-over. Not built in v1 (P2). |
 
 ### Recorded, not resolved
@@ -1365,7 +1422,7 @@ No slice waits for a merge: dependent PRs form a stack ([`AGENTS.md`](../../AGEN
 | **SF4-2** | SF2-1, Q9 | |
 | **SF4-3** | SF4-1, SF4-2, SF2-2, PD13 | |
 | **SF5-1** | the freeze | |
-| **SF5-2**, **SF5-3**, **SF5-4** | SF5-1, each the one before; SF5-4 also SF3-1, SF1-2 and PD6 | |
+| **SF5-2**, **SF5-3**, **SF5-4** | SF5-1, each the one before; SF5-3 also SF3-1; SF5-4 also SF1-2 and PD6 | |
 | **SF6-1**, **SF6-2** | SF5-4 | |
 | **SF7** | SF6-2, SF4-3 | The release that carries the slices so far. |
 | **SF-CLI** | SF7 | The maintainer can bill from here on; the admin screens follow. |
@@ -1407,7 +1464,7 @@ They are absolute. A slice that cannot keep one stops and reports.
 | 9 | Times are stored in UTC and billed in `Europe/Berlin`, daylight saving included. | Tests in the weeks of both clock changes (SF2-2, SF4-3, SF5-1). |
 | 10 | After a create, the sum read back equals the local sum to the cent - or the invoice is flagged. | Read-back test (SF6-1). |
 | 11 | Scenarios and golden fixtures change only in their own PR, never together with money logic. A recorded fixture is recorded again, never edited. | The independent review: the diff of a logic PR holds no scenario, golden or recorded file. |
-| 12 | The reviewer runs the mutation probes himself: the session that reviews a money PR breaks each named rule again and sees the named test fail. | The review's conclusion in the PR. |
+| 12 | The reviewer runs the mutation probes in person: the session that reviews a money PR breaks each named rule again and sees the named test fail. | The review's conclusion in the PR. |
 | 13 | A sevDesk read error never changes money, and no charge is voided on a click alone: sevDesk is read first. | Refresh, discard and cancel tests (SF6-2, SFP-2b). |
 | 14 | A lesson with charge history is never hard-deleted. | No delete route (SF2-2); import tests (SF4-3); `ON DELETE RESTRICT` (SF5-3). |
 
@@ -1420,8 +1477,8 @@ independent review has no open finding.
   `just sevdesk-spike` reach the trial - and an agent runs either only after the maintainer's go in the session.
 - Run `scripts/graph/exchange-rbac-calendar.ps1` or `scripts/graph/record_calendar.py` against Microsoft,
   `just sevdesk-doctor --account live`, or `just billing-drafts` against production: they are the maintainer's.
-- Read an env file, or put a token, a certificate, a tenant id, an account id or a sevDesk id into the
-  repository.
+- Read an env file, or put a token, a certificate, a tenant id or an id of the real sevDesk account into the
+  repository. Ids of trial objects in recorded fixtures are fine; the recorder replaces the SevClient id with 0.
 - Use a real name, address or e-mail anywhere. Families are "family A", students "student B", addresses end in
   `example.org`.
 - Send, enshrine, cancel, book or delete in sevDesk, or invent an invoice number. The one exception is the spike

@@ -61,7 +61,7 @@ call leaves through one guarded transport.**
    in two places only, the maintainer's password manager and the production configuration, and never anywhere an
    agent can reach. A separate trial account with synthetic data takes every write test; it lasts 14 days. Agents
    reach it only through the two trial recipes - `just contract-sevdesk` and `just sevdesk-spike`, introduced by
-   SF1-3 of `billing.md`, never in CI - and only after the maintainer's go in the session.
+   SF1-3a and SF1-3b of `billing.md`, never in CI - and only after the maintainer's go in the session.
 9. **The Entra app `skillforge` is SkillForge's identity in Microsoft 365** - not an app for the calendar alone.
    Every feature adds its own Exchange "RBAC for Applications" role assignment, restricted by its own management
    scope; the first is `Application Calendars.Read` on the one lesson mailbox. The app never receives an org-wide
@@ -81,7 +81,8 @@ Deliberately _not_:
 - **No call from a frontend,** no pass-through route, no token of a third-party system outside SkillForge.
 - **No webhooks,** in either direction.
 - **No generic integration framework.** A client is thin and hand-written and covers the calls a slice needs.
-- **No live call from a test, from CI or from an agent session,** and no test object in a real account.
+- **No call to a real account from a test, from CI or from an agent session,** and no test object in one. The
+  trial is reached only as in point 8.
 - **No shared credential** across deployment locations, and no application permission in Entra "for now".
 
 ## Consequences
