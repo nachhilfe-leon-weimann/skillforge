@@ -84,7 +84,16 @@ row, commit, call, record the outcome - there is no job queue.
   own request log is silenced. A log line or an error message names a path as its template (`path_template`:
   `/Contact/{id}`), never an object's id.
 - **Layering.** `app/integrations/` imports only `app.core` and itself, and `app/core/` imports no integration
-  (`tests/integrations/test_integrations_architecture.py`).
+  (`tests/integrations/test_integrations_architecture.py`) - with one exception: `app/core/config.py` imports
+  `app.integrations.sevdesk.config`, so that `Settings` nests `SevdeskSettings`.
+- **sevDesk** (`sevdesk/`): settings `SEVDESK__*` (`SevdeskSettings`, all optional, an empty id means unset, an
+  empty token is refused; account-specific ids are configuration). A `SevdeskClient` comes from `connect`, which
+  first confirms the account (`verify_account` in `identity.py`): the `SevClient` the token belongs to must have
+  `SEVDESK__EXPECTED_ACCOUNT_ID` and, for a `trial` account, a company name containing `TRIAL` - anything else, a
+  failed read included, is an `IdentityCheckError`, and an unconfirmed client refuses every other call. A listing
+  is read whole or refused (`countAll` total, no repeated id, at most `MAX_PAGES`). The models (`models.py`) parse
+  sevDesk's string-typed numbers and booleans into strict types, hold amounts in whole cents and read no field
+  SkillForge does not use.
 
 ## Housekeeping worker
 
