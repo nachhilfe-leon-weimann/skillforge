@@ -39,10 +39,11 @@
 
     PROPAGATION
       New objects can take a moment to become visible. The lookup retries cover only the checks
-      (and the removal checks): a replication error while an object is being created stops the run,
-      and a rerun fixes it, since the script reuses what exists. Test-ServicePrincipalAuthorization
-      bypasses the permission cache, so it passes at once. Real Graph calls see a change only after
-      the cache resets: 30 minutes for an idle app, up to 2 hours for an active one.
+      (and the removal checks): an error while an object is being created or removed stops the run
+      (every write passes -ErrorAction Stop), and a rerun fixes it, since the script reuses what
+      exists. Test-ServicePrincipalAuthorization bypasses the permission cache, so it passes at once.
+      Real Graph calls see a change only after the cache resets: 30 minutes for an idle app, up to
+      2 hours for an active one.
 
     UNDO
       Run with -Remove (-Mailbox optional; with it, the scope's filter must name that mailbox). It
@@ -96,6 +97,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# The Exchange cmdlets run in their module's scope, which this preference does not reach: their errors stay
+# non-terminating there. Every write therefore passes -ErrorAction Stop, so a failed write never reads as done.
 
 $RoleName = 'Application Calendars.Read'
 $AssignmentName = "$ScopeName-calendars-read"
@@ -232,7 +235,7 @@ if ($Remove) {
         Write-Host "Role assignment ${AssignmentName}: not present."
     } elseif ($PSCmdlet.ShouldProcess("role assignment $AssignmentName", 'Remove')) {
         # Confirmed above; Exchange's own prompt would let a "No" leave the grant behind a "removed".
-        $assignment | Remove-ManagementRoleAssignment -Confirm:$false
+        $assignment | Remove-ManagementRoleAssignment -Confirm:$false -ErrorAction Stop
         Wait-Gone "Role assignment $AssignmentName" { Find-Assignment }
         Write-Host "Role assignment $AssignmentName removed."
     } else { $declined++ }
@@ -242,7 +245,7 @@ if ($Remove) {
     } elseif ($declined -and -not $WhatIfPreference) {
         Write-Host "Management scope $ScopeName kept: its role assignment still uses it."
     } elseif ($PSCmdlet.ShouldProcess("management scope $ScopeName", 'Remove')) {
-        $scope | Remove-ManagementScope -Confirm:$false
+        $scope | Remove-ManagementScope -Confirm:$false -ErrorAction Stop
         Wait-Gone "Management scope $ScopeName" { Find-Scope }
         Write-Host "Management scope $ScopeName removed."
     } else { $declined++ }
@@ -276,7 +279,7 @@ $declined = 0  # ShouldProcess said no: -WhatIf, or a step declined at -Confirm
 if ($servicePrincipal) {
     Write-Host 'Service principal pointer: exists, reused.'
 } elseif ($PSCmdlet.ShouldProcess("service principal pointer $DisplayName", 'Create')) {
-    $servicePrincipal = New-ServicePrincipal -AppId $appIdText -ObjectId $spObjectIdText -DisplayName $DisplayName
+    $servicePrincipal = New-ServicePrincipal -AppId $appIdText -ObjectId $spObjectIdText -DisplayName $DisplayName -ErrorAction Stop
     Write-Host 'Service principal pointer: created.'
 } else { $declined++ }
 
@@ -284,7 +287,7 @@ if ($servicePrincipal) {
 if ($scope) {
     Write-Host "Management scope ${ScopeName}: exists, reused."
 } elseif ($PSCmdlet.ShouldProcess("management scope $ScopeName", 'Create')) {
-    $null = New-ManagementScope -Name $ScopeName -RecipientRestrictionFilter $expectedFilter
+    $null = New-ManagementScope -Name $ScopeName -RecipientRestrictionFilter $expectedFilter -ErrorAction Stop
     Write-Host "Management scope ${ScopeName}: created."
 } else { $declined++ }
 
@@ -292,7 +295,8 @@ if ($scope) {
 if ($assignment) {
     Write-Host "Role assignment ${AssignmentName}: exists, reused."
 } elseif ($PSCmdlet.ShouldProcess("role assignment $AssignmentName ($RoleName on $ScopeName)", 'Create')) {
-    $null = New-ManagementRoleAssignment -Name $AssignmentName -Role $RoleName -App $spObjectIdText -CustomResourceScope $ScopeName
+    $null = New-ManagementRoleAssignment -Name $AssignmentName -Role $RoleName -App $spObjectIdText -CustomResourceScope $ScopeName `
+        -ErrorAction Stop
     Write-Host "Role assignment ${AssignmentName}: created."
 } else { $declined++ }
 
