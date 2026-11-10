@@ -4,7 +4,8 @@ Texts and amounts come from the caller; this module knows only sevDesk's wire fo
 System 2.0 ``saveInvoice`` creates drafts only, the VAT regulation is a ``taxRule`` (no ``taxType``), and
 the body always carries ``invoicePosDelete``, ``discountSave``, ``discountDelete`` and ``takeDefaultAddress``,
 in that order. No amount passes through a float: prices are integer cents, quantities integer minutes, and both
-go out as exact decimal strings.
+go out as exact decimal strings. The quarter-hour rule (money rule 3) holds by construction: minutes come in steps
+of 15 and a price per hour is divisible by 4, so every position is whole cents and nothing is ever rounded.
 """
 
 from dataclasses import dataclass
@@ -17,6 +18,10 @@ CURRENCY = "EUR"
 SMALL_BUSINESS_TAX_RULE = 11
 """System 2.0 tax rule for a small business under § 19 UStG: no VAT on any position."""
 MINUTES_PER_HOUR = 60
+MINUTE_STEP = 15
+"""A position's minutes come in quarter hours."""
+CENTS_PER_HOUR_STEP = 4
+"""A price per hour is divisible by 4, so a quarter hour costs whole cents."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,9 +38,17 @@ class PositionDraft:
     text: str | None = None
 
     def __post_init__(self) -> None:
+        for name in ("minutes", "price_cents", "unity_id", "part_id"):
+            value = getattr(self, name)
+            if not (type(value) is int or (name == "part_id" and value is None)):
+                raise TypeError(f"a position's {name} must be an int, not {type(value).__name__}")
         if self.minutes <= 0 or self.price_cents < 0:
             raise ValueError("a position needs positive minutes and a price of at least zero")
-        hours(self.minutes)
+        if self.minutes % MINUTE_STEP or self.price_cents % CENTS_PER_HOUR_STEP:
+            raise ValueError(
+                f"a position needs minutes in steps of {MINUTE_STEP} and cents per hour divisible by "
+                f"{CENTS_PER_HOUR_STEP} (the quarter-hour rule)"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,8 +83,11 @@ def hours(minutes: int) -> Decimal:
 
 
 def euros(cents: int) -> str:
-    """Integer cents as sevDesk's decimal string: ``3000`` is ``"30.00"``."""
-    return f"{Decimal(cents).scaleb(-2):f}"
+    """Integer cents as sevDesk's decimal string, exact at any size: ``3000`` is ``"30.00"``."""
+    if type(cents) is not int:
+        raise TypeError(f"cents must be an int, not {type(cents).__name__}")
+    whole, rest = divmod(abs(cents), 100)
+    return f"{'-' if cents < 0 else ''}{whole}.{rest:02d}"
 
 
 def invoice_payload(draft: InvoiceDraft, *, contact_person_id: int) -> dict[str, object]:

@@ -130,8 +130,8 @@ class Invoice(SevdeskObject):
     invoice_date: datetime | None = None
     tax_rule: ObjectRef | None = None
     small_settlement: bool | None = None
-    sum_net: Money | None = None
-    sum_gross: Money | None = None
+    sum_net_cents: Money | None = Field(default=None, alias="sumNet")
+    sum_gross_cents: Money | None = Field(default=None, alias="sumGross")
     customer_internal_note: str | None = None
     foot_text: str | None = Field(default=None, repr=False)
     sev_client: ObjectRef | None = None
@@ -142,7 +142,7 @@ class InvoicePosition(SevdeskObject):
     part: ObjectRef | None = None
     unity: ObjectRef | None = None
     quantity: Decimal
-    price: Money | None = None
+    price_cents: Money | None = Field(default=None, alias="price")
     tax_rate: Decimal | None = None
     position_number: int | None = None
     name: str | None = Field(default=None, repr=False)

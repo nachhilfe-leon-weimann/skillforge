@@ -155,7 +155,7 @@ class SevdeskClient:
         return await self._get_one(InvoiceSequence, "/SevSequence/Factory/getByType", params)
 
     async def get_invoice(self, invoice_id: int) -> Invoice | None:
-        return await self._get_by_id(Invoice, f"/Invoice/{invoice_id}")
+        return await self._get_by_id(Invoice, "/Invoice", invoice_id)
 
     async def invoice_positions(self, invoice_id: int) -> list[InvoicePosition]:
         return await self._get_all(InvoicePosition, f"/Invoice/{invoice_id}/getPositions")
@@ -310,10 +310,15 @@ def _validated[T](where: str, validate: Callable[[], T]) -> T:
 
 
 def _written[M: SevdeskModel](model: type[M], written: Reply | PlannedRequest, where: str) -> M | PlannedRequest:
-    """A write's result; a write that went through but cannot be read has an unknown outcome."""
+    """A write's result; a write that went through but whose answer cannot be read - for whatever reason, a body
+    nested too deep for the parser included - has an unknown outcome."""
     if isinstance(written, PlannedRequest):
         return written
     try:
         return _one(model, _objects(written, where), where)
     except UnexpectedResponseError as exc:
         raise OutcomeUnknownError(f"{exc}; the write went through, its result is unknown") from None
+    except Exception as exc:
+        raise OutcomeUnknownError(
+            f"sevdesk {where}: the answer failed ({type(exc).__name__}); the write went through, its result is unknown"
+        ) from None

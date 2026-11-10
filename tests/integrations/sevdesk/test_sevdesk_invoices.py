@@ -4,11 +4,17 @@ import json
 import traceback
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 import httpx
 import pytest
 
-from app.integrations.errors import IdentityCheckError, IntegrationRefusedError, OutcomeUnknownError
+from app.integrations.errors import (
+    IdentityCheckError,
+    IntegrationRefusedError,
+    OutcomeUnknownError,
+    UnexpectedResponseError,
+)
 from app.integrations.sevdesk import client as sevdesk_client
 from app.integrations.sevdesk.client import SevdeskClient
 from app.integrations.sevdesk.invoices import InvoiceDraft, PositionDraft, euros, hours, invoice_payload
@@ -117,7 +123,7 @@ def _floats(value: object) -> list[float]:
 def test_no_float_appears_in_the_body():
     positions = tuple(
         PositionDraft(name="Position", minutes=minutes, price_cents=cents, unity_id=12)
-        for minutes, cents in ((45, 2999), (60, 1), (135, 0), (600, 123456789))
+        for minutes, cents in ((45, 3000), (60, 4), (135, 0), (600, 123456788))
     )
     body = invoice_payload(
         InvoiceDraft(
@@ -136,22 +142,61 @@ def test_no_float_appears_in_the_body():
     sent = body["invoicePosSave"]
     assert isinstance(sent, list)
     assert [(position["quantity"], position["price"]) for position in sent] == [
-        ("0.75", "29.99"),
-        ("1", "0.01"),
+        ("0.75", "30.00"),
+        ("1", "0.04"),
         ("2.25", "0.00"),
-        ("10", "1234567.89"),
+        ("10", "1234567.88"),
     ]
 
 
-@pytest.mark.parametrize(("minutes", "expected"), [(45, "0.75"), (60, "1"), (90, "1.5"), (3, "0.05"), (600, "10")])
+@pytest.mark.parametrize(("minutes", "expected"), [(15, "0.25"), (45, "0.75"), (60, "1"), (90, "1.5"), (600, "10")])
 def test_minutes_become_exact_hours(minutes: int, expected: str):
     assert f"{hours(minutes):f}" == expected
 
 
 @pytest.mark.parametrize("minutes", [50, 1, 100])
-def test_minutes_without_an_exact_decimal_hour_are_refused(minutes: int):
+def test_minutes_without_an_exact_decimal_hour_are_refused_by_hours(minutes: int):
     with pytest.raises(ValueError, match="exact"):
+        hours(minutes)
+
+
+@pytest.mark.parametrize("minutes", [1, 3, 20, 46, 50, 100])
+def test_minutes_off_the_quarter_hour_are_refused(minutes: int):
+    with pytest.raises(ValueError, match="steps of 15"):
         PositionDraft(name="Position", minutes=minutes, price_cents=3000, unity_id=12)
+
+
+@pytest.mark.parametrize("cents", [1, 2, 2999, 3001, 3002])
+def test_a_price_per_hour_not_divisible_by_4_is_refused(cents: int):
+    with pytest.raises(ValueError, match="divisible by 4"):
+        PositionDraft(name="Position", minutes=60, price_cents=cents, unity_id=12)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"minutes": 60.0},
+        {"minutes": True},
+        {"price_cents": 3000.0},
+        {"price_cents": Decimal(3000)},
+        {"price_cents": "3000"},
+        {"unity_id": "12"},
+        {"part_id": 31.0},
+    ],
+)
+def test_a_position_takes_ints_only(change: dict[str, Any]):
+    arguments: dict[str, Any] = {"name": "Position", "minutes": 60, "price_cents": 3000, "unity_id": 12, **change}
+
+    with pytest.raises(TypeError, match="must be an int"):
+        PositionDraft(**arguments)
+
+
+@pytest.mark.parametrize("minutes", range(15, 601, 15))
+@pytest.mark.parametrize("cents", [0, 4, 2996, 3000, 4500, 6000, 99996])
+def test_every_quarter_hour_position_is_whole_cents(minutes: int, cents: int):
+    position = PositionDraft(name="Position", minutes=minutes, price_cents=cents, unity_id=12)
+
+    assert hours(position.minutes) * position.price_cents == minutes * cents // 60
 
 
 @pytest.mark.parametrize(("minutes", "cents"), [(0, 3000), (-60, 3000), (60, -1)])
@@ -160,9 +205,27 @@ def test_a_position_without_time_or_with_a_negative_price_is_refused(minutes: in
         PositionDraft(name="Position", minutes=minutes, price_cents=cents, unity_id=12)
 
 
-@pytest.mark.parametrize(("cents", "expected"), [(3000, "30.00"), (5, "0.05"), (0, "0.00"), (123456789, "1234567.89")])
-def test_cents_become_a_decimal_string(cents: int, expected: str):
+@pytest.mark.parametrize(
+    ("cents", "expected"),
+    [
+        (3000, "30.00"),
+        (5, "0.05"),
+        (0, "0.00"),
+        (-150, "-1.50"),
+        (-5, "-0.05"),
+        (123456789, "1234567.89"),
+        (9007199254740993, "90071992547409.93"),
+        (10**30 + 7, "10000000000000000000000000000.07"),
+    ],
+)
+def test_cents_become_an_exact_decimal_string(cents: int, expected: str):
     assert euros(cents) == expected
+
+
+@pytest.mark.parametrize("cents", [30.0, Decimal(3000), True])
+def test_euros_takes_int_cents_only(cents: object):
+    with pytest.raises(TypeError):
+        euros(cents)  # ty: ignore[invalid-argument-type]
 
 
 # --- reading invoices: lenient parsing, strict types, whole cents ---
@@ -199,9 +262,9 @@ def test_string_numbers_and_booleans_parse_into_strict_types():
     position = InvoicePosition.model_validate(POSITION)
 
     assert (invoice.id, invoice.status, invoice.contact.id, invoice.small_settlement) == (501, 100, 21, True)
-    assert invoice.sum_net == Decimal("45.00")
+    assert (invoice.sum_net_cents, invoice.sum_gross_cents) == (4500, 4500)
     assert invoice.tax_rule is not None and invoice.tax_rule.id == 11
-    assert (position.quantity, position.price, position.position_number) == (Decimal("1.5"), Decimal(30), 0)
+    assert (position.quantity, position.price_cents, position.position_number) == (Decimal("1.5"), 3000, 0)
     assert Invoice.model_validate({**INVOICE, "smallSettlement": "0"}).small_settlement is False
 
 
@@ -211,18 +274,18 @@ def test_a_wrong_type_is_rejected(bad):
         Invoice.model_validate({**INVOICE, **bad})
 
 
-@pytest.mark.parametrize("amount", ["45.00", "45", "45.0000", 45])
+@pytest.mark.parametrize("amount", ["45.00", "45", "45.0000", 45, Decimal("45.00")])
 def test_an_amount_in_whole_cents_is_read_to_the_cent(amount: object):
     invoice = Invoice.model_validate({**INVOICE, "sumGross": amount})
 
-    assert invoice.sum_gross == Decimal("45.00") and str(invoice.sum_gross) == "45.00"
+    assert invoice.sum_gross_cents == 4500 and type(invoice.sum_gross_cents) is int
 
 
-@pytest.mark.parametrize("amount", ["45.005", "0.001", 0.1 + 0.2])
-def test_an_amount_below_a_cent_is_refused(amount: object):
-    with pytest.raises(ValueError, match="below a cent"):
+@pytest.mark.parametrize(("amount", "message"), [("45.005", "below a cent"), ("0.001", "below a cent"), (0.3, "float")])
+def test_an_amount_below_a_cent_or_a_float_is_refused(amount: object, message: str):
+    with pytest.raises(ValueError, match=message):
         Invoice.model_validate({**INVOICE, "sumNet": amount})
-    with pytest.raises(ValueError, match="below a cent"):
+    with pytest.raises(ValueError, match=message):
         InvoicePosition.model_validate({**POSITION, "price": amount})
 
 
@@ -236,6 +299,14 @@ async def test_an_invoice_is_read_by_id(settings, fake_sevdesk: FakeSevdesk):
         invoice = await client.get_invoice(501)
 
     assert invoice is not None and invoice.id == 501
+
+
+async def test_an_invoice_read_by_id_must_be_the_one_asked_for(settings, fake_sevdesk: FakeSevdesk):
+    fake_sevdesk.on("GET", "/Invoice/501", objects({**INVOICE, "id": "502"}))
+
+    async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
+        with pytest.raises(UnexpectedResponseError, match=r"GET /Invoice/\{id\}: the answer is not the object"):
+            await client.get_invoice(501)
 
 
 async def test_find_invoices_pages_and_filters_by_the_note_itself(settings, fake_sevdesk: FakeSevdesk, monkeypatch):
@@ -261,8 +332,8 @@ async def test_the_positions_of_an_invoice(settings, fake_sevdesk: FakeSevdesk):
     async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
         positions = await client.invoice_positions(501)
 
-    assert [(position.id, position.quantity, position.price) for position in positions] == [
-        (601, Decimal("1.5"), Decimal("30.00"))
+    assert [(position.id, position.quantity, position.price_cents) for position in positions] == [
+        (601, Decimal("1.5"), 3000)
     ]
 
 
@@ -318,6 +389,8 @@ SAVE_FAILURES = {
     "a refused connection": httpx.ConnectError("refused"),
     "a 500 validation error": httpx.Response(500, json={"error": {"message": "Synthetic validation error"}}),
     "an unreadable success": httpx.Response(201, json={"objects": {"invoice": {"id": "501"}}}),
+    "a success that is no JSON": httpx.Response(201, content=b"<html>saved</html>"),
+    "a success nested too deep to parse": httpx.Response(201, content=b"[" * 100_000 + b"]" * 100_000),
 }
 
 
