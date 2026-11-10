@@ -26,26 +26,51 @@ NETWORK_MODULES = (
     "importlib",
 )
 NETWORK_CALLS = frozenset({"open_connection", "create_connection", "sock_connect", "__import__"})
+INTEGRATIONS_ALLOWED = ("app.core", "app.integrations")
+CORE_TO_INTEGRATIONS: dict[str, tuple[str, ...]] = {}
+"""The one direction the layering is crossed: a module of ``app/core`` that reads an integration's settings."""
 
 
-def _network_use(source: str, *, package: str) -> set[str]:
-    """The network modules a source file imports - relative imports resolved - and the network calls it makes."""
-    found: set[str] = set()
-    for node in ast.walk(ast.parse(source)):
-        modules: set[str] = set()
+def _imports(tree: ast.AST, *, package: str) -> set[str]:
+    """The absolute module names a module imports, relative imports resolved, each ``from`` name included."""
+    modules: set[str] = set()
+    for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            modules = {alias.name for alias in node.names}
+            modules.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
             base = package.split(".")
             prefix = ".".join(base[: len(base) - (node.level - 1)]) if node.level else ""
             module = ".".join(part for part in (prefix, node.module or "") if part)
-            modules = {module, *(f"{module}.{alias.name}" for alias in node.names)}
-        elif isinstance(node, ast.Attribute) and node.attr in NETWORK_CALLS:
+            modules.update({module, *(f"{module}.{alias.name}" for alias in node.names)})
+    return modules
+
+
+def _network_use(source: str, *, package: str) -> set[str]:
+    """The network modules a source file imports - relative imports resolved - and the network calls it makes."""
+    tree = ast.parse(source)
+    found = {
+        m for m in _imports(tree, package=package) if any(m == n or m.startswith(f"{n}.") for n in NETWORK_MODULES)
+    }
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr in NETWORK_CALLS:
             found.add(f"call .{node.attr}")
         elif isinstance(node, ast.Name) and node.id in NETWORK_CALLS:
             found.add(f"call {node.id}")
-        found.update(m for m in modules if any(m == n or m.startswith(f"{n}.") for n in NETWORK_MODULES))
     return found
+
+
+def _app_imports_outside(source: str, *, package: str, allowed: tuple[str, ...]) -> set[str]:
+    """The ``app`` modules a source file imports from outside ``allowed``."""
+    return {
+        module
+        for module in _imports(ast.parse(source), package=package)
+        if (module == "app" or module.startswith("app."))
+        and not any(module == prefix or module.startswith(f"{prefix}.") for prefix in allowed)
+    }
+
+
+def _package(path: Path) -> str:
+    return ".".join(path.parent.relative_to(REPO_ROOT).parts)
 
 
 def test_only_the_transport_reaches_for_the_network():
@@ -59,6 +84,51 @@ def test_only_the_transport_reaches_for_the_network():
 
     assert offenders == {}
     assert "httpx" in _network_use((REPO_ROOT / TRANSPORT).read_text(), package="app.integrations")
+
+
+def test_the_integrations_import_nothing_but_the_core_and_themselves():
+    files = sorted((REPO_ROOT / "app/integrations").rglob("*.py"))
+
+    assert files
+    offenders = {
+        path.relative_to(REPO_ROOT).as_posix(): found
+        for path in files
+        if (found := _app_imports_outside(path.read_text(), package=_package(path), allowed=INTEGRATIONS_ALLOWED))
+    }
+    assert offenders == {}
+
+
+def test_the_core_imports_no_integration_but_the_named_settings():
+    offenders = {}
+    for path in (REPO_ROOT / "app/core").rglob("*.py"):
+        relative = path.relative_to(REPO_ROOT).as_posix()
+        allowed = ("app.core", *CORE_TO_INTEGRATIONS.get(relative, ()))
+        found = {
+            module
+            for module in _app_imports_outside(path.read_text(), package=_package(path), allowed=allowed)
+            if module == "app.integrations" or module.startswith("app.integrations.")
+        }
+        if found:
+            offenders[relative] = found
+    assert offenders == {}
+
+
+@pytest.mark.parametrize(
+    ("source", "found"),
+    [
+        ("import app.services.billing", True),
+        ("from app.services.crm import parties", True),
+        ("from app.api.v1.common import Page", True),
+        ("from ... import services", True),
+        ("from ...workers import housekeeping", True),
+        ("import app", True),
+        ("from app.core.logging import get_logger", False),
+        ("from ..errors import IntegrationError", False),
+        ("from . import models\nimport httpx\nfrom pydantic import BaseModel", False),
+    ],
+)
+def test_the_import_check_catches_every_form_of_an_outside_import(source: str, found: bool):
+    assert bool(_app_imports_outside(source, package="app.integrations.sevdesk", allowed=INTEGRATIONS_ALLOWED)) is found
 
 
 @pytest.mark.parametrize(
@@ -94,6 +164,12 @@ def test_the_check_catches_every_form(source: str, expected: set[str]):
         (("127.0.0.1", 5432), True),
         (("::1", 5432, 0, 0), True),
         (("192.168.1.10", 5432), True),
+        (("172.17.0.2", 5432), True),
+        (("::ffff:127.0.0.1", 5432, 0, 0), True),
+        (("169.254.169.254", 80), False),
+        (("fe80::1%en0", 80, 0, 1), False),
+        (("100.64.0.1", 443), False),
+        (("100.127.255.254", 443), False),
         (("93.184.215.14", 443), False),
         (("2606:4700::1111", 443, 0, 0), False),
         (("my.sevdesk.de", 443), False),

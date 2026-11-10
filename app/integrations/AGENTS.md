@@ -12,6 +12,9 @@ too. The layer is described in [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.
 - **Never retry a write.** A write that may have reached the remote system is an `OutcomeUnknownError`; the calling
   service records it for a later reconcile. Calls run synchronously from services - no job queue.
 - **Errors stay internal.** Integration errors (`errors.py`) are no `DomainError`; the calling service decides what
-  an API client sees. No message, log line or `repr` carries a credential, a header, a query or a body.
+  an API client sees. No message, log line or `repr` carries a credential, a header, a query, a body or an id:
+  a path is named by its template (`path_template`).
+- **Imports.** This package imports only `app.core` and itself; `app/core/` imports nothing from it
+  (`tests/integrations/test_integrations_architecture.py`).
 - **Ids are configuration.** Account-specific ids (contact person, units, custom fields) come from settings, never
   from literals in code.

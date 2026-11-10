@@ -1,14 +1,17 @@
 """The guarded transport: allowlist, no network under pytest, dry_run, no retry, outcome unknown, no secret leaks."""
 
 import json
+import logging
 import subprocess
 import sys
 import traceback
+from decimal import Decimal
 
 import httpx
 import pytest
 
 from app.core.logging import LogFormat, LoggingSettings, LogLevel, configure_logging
+from app.integrations import transport
 from app.integrations.config import IntegrationAccount, IntegrationMode
 from app.integrations.errors import (
     IntegrationError,
@@ -18,7 +21,7 @@ from app.integrations.errors import (
     OutcomeUnknownError,
 )
 from app.integrations.guards import CONTRACT_RUN_ENV, ensure_live_allowed, ensure_network_allowed
-from app.integrations.transport import Exchange, IntegrationHttp, PlannedRequest, Reply
+from app.integrations.transport import Exchange, IntegrationHttp, PlannedRequest, Reply, path_template
 
 TOKEN = "synthetic-credential-for-tests-only"
 BASE_URL = "https://api.example.org/v1"
@@ -346,6 +349,131 @@ async def test_a_failing_observer_never_hides_the_outcome_of_a_write():
         reply = await http.write("POST", "/Things", json={})
 
     assert isinstance(reply, Reply) and reply.status == 201
+
+
+@pytest.mark.usefixtures("contract_run")
+@pytest.mark.parametrize("write", [False, True])
+async def test_an_unreadable_error_body_keeps_the_error(write: bool):
+    handler = Recorded(httpx.Response(500, content=b"<html>not json</html>"))
+
+    async with _http(handler, error_message=_message) as http:
+        with pytest.raises(OutcomeUnknownError if write else IntegrationUnavailableError) as raised:
+            await (http.write("POST", "/Things", json={}) if write else http.read("/Things"))
+
+    assert raised.value.status == 500 and raised.value.remote_message is None
+
+
+class _FailingLogger:
+    """Fails on the line logged once the response is in: a failure after the request went out."""
+
+    def __init__(self, failure: BaseException) -> None:
+        self._failure = failure
+
+    def info(self, event: str, **values: object) -> None:
+        if values.get("outcome") == "response":
+            raise self._failure
+
+    def warning(self, event: str, **values: object) -> None:
+        pass
+
+
+@pytest.mark.usefixtures("contract_run")
+@pytest.mark.parametrize("failure", [RecursionError("deep"), ValueError("bad"), KeyError("x")])
+async def test_any_failure_after_a_write_was_sent_leaves_its_outcome_unknown(monkeypatch, failure: Exception):
+    monkeypatch.setattr(transport, "logger", _FailingLogger(failure))
+    handler = Recorded(httpx.Response(201, json={"id": "7"}))
+
+    async with _http(handler) as http:
+        with pytest.raises(OutcomeUnknownError, match=f"answer failed \\({type(failure).__name__}\\)") as raised:
+            await http.write("POST", "/Things", json={})
+        with pytest.raises(type(failure)):
+            await http.read("/Things")
+
+    assert raised.value.status == 201 and raised.value.__cause__ is None
+    assert len(handler.requests) == 2
+
+
+@pytest.mark.usefixtures("contract_run")
+async def test_an_unexpected_failure_while_a_write_is_sent_leaves_its_outcome_unknown():
+    handler = Recorded(raises=RuntimeError("synthetic failure inside the transport"))
+
+    async with _http(handler) as http:
+        with pytest.raises(OutcomeUnknownError, match=r"failed \(RuntimeError\); its outcome is unknown"):
+            await http.write("PUT", "/Things", json={})
+        with pytest.raises(RuntimeError):
+            await http.read("/Things")
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (b'{"price": 0.1}', {"price": Decimal("0.1")}),
+        (b'{"price": 90071992547409.93}', {"price": Decimal("90071992547409.93")}),
+        (b'{"sum": 9007199254740993, "share": 1e-2}', {"sum": 9007199254740993, "share": Decimal("0.01")}),
+    ],
+)
+def test_a_json_number_never_passes_through_float(body: bytes, expected: dict):
+    parsed = Reply(200, body).json()
+
+    assert parsed == expected
+    assert isinstance(parsed, dict) and not any(isinstance(value, float) for value in parsed.values())
+
+
+# --- no id in a log line or an error message ---
+
+
+@pytest.mark.parametrize(
+    ("path", "template"),
+    [
+        ("/v1/Things", "/v1/Things"),
+        ("/api/v1/Contact/4711", "/api/v1/Contact/{id}"),
+        ("/api/v1/Invoice/4711/getPositions", "/api/v1/Invoice/{id}/getPositions"),
+        ("/v1/Contact/family-a@example.org", "/v1/Contact/{id}"),
+        ("/v1/Contact/a1b2", "/v1/Contact/{id}"),
+        ("/v1/Contact/x.y", "/v1/Contact/{id}"),
+        ("/v1/Contact/", "/v1/Contact/"),
+    ],
+)
+def test_a_path_template_names_no_object(path: str, template: str):
+    assert path_template(path) == template
+
+
+@pytest.mark.usefixtures("contract_run")
+async def test_no_id_appears_in_a_log_line_or_an_error_message(restore_logging, capsys, caplog):
+    configure_logging(LoggingSettings(level=LogLevel.DEBUG, format=LogFormat.JSON))
+    capsys.readouterr()
+    contact = "4711"
+    messages: list[str] = []
+    responses = iter([httpx.Response(200, json={}), httpx.Response(404, json={}), httpx.Response(500, json={})])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "DELETE":
+            raise httpx.ReadTimeout("timed out", request=request)
+        return next(responses, httpx.Response(503, json={}))
+
+    calls = [
+        lambda http: http.read(f"/Contact/{contact}"),
+        lambda http: http.read(f"/Contact/{contact}/addresses"),
+        lambda http: http.read(f"/Invoice/{contact}/getPositions"),
+        lambda http: http.write("PUT", f"/Contact/{contact}", json={}),
+        lambda http: http.write("DELETE", f"/Contact/{contact}"),
+        lambda http: http.read(f"https://api.example.org/elsewhere/{contact}"),
+    ]
+    async with _http(Recorded(), error_message=_message) as http:
+        http._guard._inner = httpx.MockTransport(handler)
+        for call in calls:
+            try:
+                await call(http)
+            except IntegrationError as exc:
+                messages.extend((str(exc), repr(exc), "".join(traceback.format_exception(exc))))
+
+    output = capsys.readouterr().out
+    assert len(messages) == 3 * 5
+    assert output.count("integration_request") == 5
+    assert "/v1/Contact/{id}" in output and "Contact/{id}" in messages[0]
+    for text in (output, caplog.text, *messages):
+        assert contact not in text
+    assert all(logging.getLogger(library).getEffectiveLevel() >= logging.WARNING for library in ("httpx", "httpcore"))
 
 
 # --- the credential stays inside ---

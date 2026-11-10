@@ -39,6 +39,6 @@ class UnexpectedResponseError(IntegrationError):
 class OutcomeUnknownError(IntegrationError):
     """A write may or may not have taken effect: never repeat it, reconcile it.
 
-    Raised for a transport error or a 5xx once a write was handed to the network, and for a 2xx write
-    whose body cannot be read.
+    Raised for a transport error, a 3xx or a 5xx once a write was handed to the network, for any failure while
+    its answer is handled, and for a 2xx write whose body cannot be read.
     """
