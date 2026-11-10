@@ -39,10 +39,11 @@
 
     PROPAGATION
       New objects can take a moment to become visible. The lookup retries cover only the checks
-      (and the removal checks): a replication error while an object is being created stops the run,
-      and a rerun fixes it, since the script reuses what exists. Test-ServicePrincipalAuthorization
-      bypasses the permission cache, so it passes at once. Real Graph calls see a change only after
-      the cache resets: 30 minutes for an idle app, up to 2 hours for an active one.
+      (and the removal checks): an error of any Exchange call stops the run (each passes
+      -ErrorAction Stop); a rerun fixes a replication error, since the script reuses what exists.
+      Test-ServicePrincipalAuthorization bypasses the permission cache, so it passes at once. Real
+      Graph calls see a change only after the cache resets: 30 minutes for an idle app, up to 2 hours
+      for an active one.
 
     UNDO
       Run with -Remove (-Mailbox optional; with it, the scope's filter must name that mailbox). It
@@ -96,6 +97,9 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# The Exchange cmdlets are functions of a generated module and run in its session state, which this preference
+# does not reach: their errors stay non-terminating. Every Exchange call therefore passes -ErrorAction Stop, so a
+# failed write never reads as done and a failed read never as "not present".
 
 $RoleName = 'Application Calendars.Read'
 $AssignmentName = "$ScopeName-calendars-read"
@@ -119,14 +123,16 @@ if (-not $module -or $module.Version.Major -lt 3) {
     Fail 'ExchangeOnlineManagement 3.x or later is required (Install-Module ExchangeOnlineManagement).'
 }
 if (-not (Get-Command Get-ConnectionInformation -ErrorAction SilentlyContinue) -or
-    -not (Get-ConnectionInformation | Where-Object { $_.State -eq 'Connected' })) {
+    -not (Get-ConnectionInformation -ErrorAction Stop | Where-Object { $_.State -eq 'Connected' })) {
     Fail 'Not connected. Run Connect-ExchangeOnline first, then this script in the same session.'
 }
 
 # Exact lookups only: a non-existent -Identity makes some Get-* cmdlets return every object.
-function Find-ServicePrincipal { Get-ServicePrincipal | Where-Object { $_.AppId -eq $appIdText } }
-function Find-Scope { Get-ManagementScope | Where-Object { $_.Name -eq $ScopeName } }
-function Find-Assignment { Get-ManagementRoleAssignment -Role $RoleName | Where-Object { $_.Name -eq $AssignmentName } }
+function Find-ServicePrincipal { Get-ServicePrincipal -ErrorAction Stop | Where-Object { $_.AppId -eq $appIdText } }
+function Find-Scope { Get-ManagementScope -ErrorAction Stop | Where-Object { $_.Name -eq $ScopeName } }
+function Find-Assignment {
+    Get-ManagementRoleAssignment -Role $RoleName -ErrorAction Stop | Where-Object { $_.Name -eq $AssignmentName }
+}
 
 function Invoke-ReadOnly([scriptblock] $Command) {
     # Test-ServicePrincipalAuthorization only reads; keep -WhatIf and -Confirm from leaking into it.
@@ -142,7 +148,7 @@ function Get-OptionalProperty($Object, [string] $Name) {
 }
 
 function Get-CalendarRows([string] $Resource) {
-    Invoke-ReadOnly { Test-ServicePrincipalAuthorization -Identity $spObjectIdText -Resource $Resource } |
+    Invoke-ReadOnly { Test-ServicePrincipalAuthorization -Identity $spObjectIdText -Resource $Resource -ErrorAction Stop } |
         Where-Object { $_.RoleName -eq $RoleName }
 }
 
@@ -176,7 +182,7 @@ function Test-OwnAssignment($Assignment) {
     if ((Get-OptionalProperty $Assignment 'RoleAssigneeType') -ne 'ServicePrincipal') { return $false }
     $assignees = @('RoleAssignee', 'RoleAssigneeName' | ForEach-Object { Get-OptionalProperty $Assignment $_ })
     if ($assignees -notcontains $spObjectIdText) { return $false }
-    $rows = @(Invoke-ReadOnly { Test-ServicePrincipalAuthorization -Identity $spObjectIdText })
+    $rows = @(Invoke-ReadOnly { Test-ServicePrincipalAuthorization -Identity $spObjectIdText -ErrorAction Stop })
     [bool] ($rows | Where-Object { $_.RoleName -eq $RoleName -and $_.AllowedResourceScope -eq $ScopeName })
 }
 
@@ -207,7 +213,7 @@ if ($servicePrincipal -and $servicePrincipal.ObjectId -ne $spObjectIdText) {
 
 $expectedFilter = $null
 if ($Mailbox) {
-    $target = Get-Mailbox -Identity $Mailbox
+    $target = Get-Mailbox -Identity $Mailbox -ErrorAction Stop
     $targetObjectId = [string] $target.ExternalDirectoryObjectId
     if (-not $targetObjectId) { Fail 'The mailbox has no ExternalDirectoryObjectId; it cannot be scoped this way.' }
     $filterValue = if ($FilterProperty -eq 'EmailAddresses') { [string] $target.PrimarySmtpAddress } else { $targetObjectId }
@@ -232,7 +238,7 @@ if ($Remove) {
         Write-Host "Role assignment ${AssignmentName}: not present."
     } elseif ($PSCmdlet.ShouldProcess("role assignment $AssignmentName", 'Remove')) {
         # Confirmed above; Exchange's own prompt would let a "No" leave the grant behind a "removed".
-        $assignment | Remove-ManagementRoleAssignment -Confirm:$false
+        $assignment | Remove-ManagementRoleAssignment -Confirm:$false -ErrorAction Stop
         Wait-Gone "Role assignment $AssignmentName" { Find-Assignment }
         Write-Host "Role assignment $AssignmentName removed."
     } else { $declined++ }
@@ -242,7 +248,7 @@ if ($Remove) {
     } elseif ($declined -and -not $WhatIfPreference) {
         Write-Host "Management scope $ScopeName kept: its role assignment still uses it."
     } elseif ($PSCmdlet.ShouldProcess("management scope $ScopeName", 'Remove')) {
-        $scope | Remove-ManagementScope -Confirm:$false
+        $scope | Remove-ManagementScope -Confirm:$false -ErrorAction Stop
         Wait-Gone "Management scope $ScopeName" { Find-Scope }
         Write-Host "Management scope $ScopeName removed."
     } else { $declined++ }
@@ -255,9 +261,9 @@ if ($Remove) {
 
 # --- Create --------------------------------------------------------------------------------------
 
-$matched = @(Get-Recipient -RecipientPreviewFilter $expectedFilter -ResultSize 2)
+$matched = @(Get-Recipient -RecipientPreviewFilter $expectedFilter -ResultSize 2 -ErrorAction Stop)
 if ($matched.Count -ne 1) { Fail "The scope filter matches $($matched.Count) recipients, expected exactly 1." }
-$other = Get-Mailbox -Identity $OutOfScopeMailbox
+$other = Get-Mailbox -Identity $OutOfScopeMailbox -ErrorAction Stop
 if ($other.ExternalDirectoryObjectId -eq $targetObjectId) { Fail '-OutOfScopeMailbox is the same mailbox as -Mailbox.' }
 
 # Check what exists before creating anything: a same-named object that is not this setup's stops the run.
@@ -276,7 +282,7 @@ $declined = 0  # ShouldProcess said no: -WhatIf, or a step declined at -Confirm
 if ($servicePrincipal) {
     Write-Host 'Service principal pointer: exists, reused.'
 } elseif ($PSCmdlet.ShouldProcess("service principal pointer $DisplayName", 'Create')) {
-    $servicePrincipal = New-ServicePrincipal -AppId $appIdText -ObjectId $spObjectIdText -DisplayName $DisplayName
+    $servicePrincipal = New-ServicePrincipal -AppId $appIdText -ObjectId $spObjectIdText -DisplayName $DisplayName -ErrorAction Stop
     Write-Host 'Service principal pointer: created.'
 } else { $declined++ }
 
@@ -284,7 +290,7 @@ if ($servicePrincipal) {
 if ($scope) {
     Write-Host "Management scope ${ScopeName}: exists, reused."
 } elseif ($PSCmdlet.ShouldProcess("management scope $ScopeName", 'Create')) {
-    $null = New-ManagementScope -Name $ScopeName -RecipientRestrictionFilter $expectedFilter
+    $null = New-ManagementScope -Name $ScopeName -RecipientRestrictionFilter $expectedFilter -ErrorAction Stop
     Write-Host "Management scope ${ScopeName}: created."
 } else { $declined++ }
 
@@ -292,7 +298,7 @@ if ($scope) {
 if ($assignment) {
     Write-Host "Role assignment ${AssignmentName}: exists, reused."
 } elseif ($PSCmdlet.ShouldProcess("role assignment $AssignmentName ($RoleName on $ScopeName)", 'Create')) {
-    $null = New-ManagementRoleAssignment -Name $AssignmentName -Role $RoleName -App $spObjectIdText -CustomResourceScope $ScopeName
+    $null = New-ManagementRoleAssignment -Name $AssignmentName -Role $RoleName -App $spObjectIdText -CustomResourceScope $ScopeName -ErrorAction Stop
     Write-Host "Role assignment ${AssignmentName}: created."
 } else { $declined++ }
 
