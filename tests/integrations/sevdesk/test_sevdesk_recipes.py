@@ -122,6 +122,44 @@ def test_a_trial_recipe_refuses_an_env_file_inside_the_repository(recipe, inside
     assert recipes.uv_calls() == []
 
 
+@pytest.mark.parametrize("relative", [False, True], ids=["absolute", "relative"])
+def test_a_trial_recipe_refuses_a_file_symlink_into_the_repository(
+    relative: bool, recipes: Recipes, tmp_path, monkeypatch
+):
+    (tmp_path / "repository").symlink_to(ROOT, target_is_directory=True)
+    (tmp_path / "config").mkdir()
+    link = tmp_path / "config" / "sevdesk-trial.env"
+    # A relative target counts from the link's directory, never from where the recipe runs.
+    link.symlink_to("../repository/tests/sevdesk-trial.env" if relative else ROOT / "tests" / "sevdesk-trial.env")
+    monkeypatch.setenv("SKILLFORGE_SEVDESK_TRIAL_ENV", str(link))
+
+    result = recipes.run("contract-sevdesk")
+
+    assert result.returncode == 1 and "must live outside the repository" in result.stderr
+    assert recipes.uv_calls() == []
+
+
+def test_a_trial_recipe_refuses_an_env_file_in_any_git_work_tree(recipes: Recipes, tmp_path, monkeypatch):
+    other = tmp_path / "another-repository"
+    (other / "config").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(other)], check=True)
+    env_file = other / "config" / "sevdesk-trial.env"
+    env_file.write_text("SEVDESK__ACCOUNT=trial\n")
+    monkeypatch.setenv("SKILLFORGE_SEVDESK_TRIAL_ENV", str(env_file))
+
+    result = recipes.run("contract-sevdesk")
+
+    assert result.returncode == 1 and "must live outside any git work tree" in result.stderr
+    assert recipes.uv_calls() == []
+
+
+def test_git_ignores_a_trial_env_file_anywhere_in_the_repository():
+    paths = ["sevdesk-trial.env", "tests/sevdesk-trial.env", "scripts/my-trial.env"]
+    result = subprocess.run(["git", "check-ignore", *paths], cwd=ROOT, capture_output=True, text=True)
+
+    assert result.stdout.split() == paths
+
+
 @pytest.mark.parametrize("linked", ["env file", "justfile"])
 def test_a_trial_recipe_sees_through_a_symlink_to_the_repository(linked: str, recipes: Recipes, tmp_path, monkeypatch):
     link = tmp_path / "linked-repository"
