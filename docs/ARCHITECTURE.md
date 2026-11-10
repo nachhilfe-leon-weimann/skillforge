@@ -80,7 +80,11 @@ row, commit, call, record the outcome - there is no job queue.
   decides what an API client sees.
 - **Nothing leaks.** The credential is passed as `credentials`, redacted in every `Exchange`; errors never chain
   the httpx exception, which can carry the request and a header value. One `integration_request` log line per call
-  names the integration, method, path, status and duration - never a header, a query or a body.
+  names the integration, method, path template, status and duration - never a header, a query or a body; httpx's
+  own request log is silenced. A log line or an error message names a path as its template (`path_template`:
+  `/Contact/{id}`), never an object's id.
+- **Layering.** `app/integrations/` imports only `app.core` and itself, and `app/core/` imports no integration
+  (`tests/integrations/test_integrations_architecture.py`).
 
 ## Housekeeping worker
 

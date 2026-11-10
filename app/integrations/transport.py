@@ -8,8 +8,11 @@ write that may have reached the remote system is an ``OutcomeUnknownError`` for 
 """
 
 import json as jsonlib
+import logging
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from decimal import Decimal
 from time import perf_counter
 from types import TracebackType
 from typing import Literal, Self
@@ -21,6 +24,7 @@ from app.core.logging import get_logger
 
 from .config import IntegrationAccount, IntegrationMode
 from .errors import (
+    IntegrationError,
     IntegrationRefusedError,
     IntegrationRejectedError,
     IntegrationUnavailableError,
@@ -36,8 +40,15 @@ DEFAULT_TIMEOUT_SECONDS = 30.0
 NETWORK_RETRIES = 0
 """httpx retries a failed connect this many times; never, so a write cannot go out twice."""
 _COOKIE_HEADERS = frozenset({"cookie", "set-cookie"})
+_ROUTE_WORD = re.compile(r"[A-Za-z_-]*|v[0-9]+")
+"""A path segment that names a route, not an object: letters only, or an API version such as ``v1``."""
 
 logger = get_logger(__name__)
+
+# httpx logs each request's full URL, query included, at INFO, and httpcore its headers at DEBUG: neither may reach a
+# log, so the one line per request is ``integration_request`` below.
+for _library in ("httpx", "httpcore"):
+    logging.getLogger(_library).setLevel(logging.WARNING)
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,8 +68,11 @@ class Reply:
     content: bytes = field(repr=False)
 
     def json(self) -> object:
-        """The body parsed as JSON; a ``ValueError`` if it is none."""
-        return jsonlib.loads(self.content)
+        """The body parsed as JSON, a number with a fraction as ``Decimal``: no amount passes through ``float``.
+
+        A ``ValueError`` if the body is no JSON; a ``RecursionError`` if it nests deeper than the parser goes.
+        """
+        return jsonlib.loads(self.content, parse_float=Decimal)
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +86,15 @@ class Exchange:
     status: int
     response_headers: dict[str, str]
     response_content: bytes = field(repr=False)
+
+
+def path_template(path: str) -> str:
+    """The path as a template: every segment that is no route word becomes ``{id}``, so no id reaches a log line.
+
+    A path may carry the id of a person's record (``/Contact/4711``); a log line and an error message name
+    ``/Contact/{id}`` instead.
+    """
+    return "/".join(segment if _ROUTE_WORD.fullmatch(segment) else "{id}" for segment in path.split("/"))
 
 
 type Observer = Callable[[Exchange], None]
@@ -100,7 +123,7 @@ class _GuardedTransport(httpx.AsyncBaseTransport):
             raise IntegrationRefusedError(f"host {url.host!r} is not on the allowlist")
         segments = url.path.split("/")
         if not url.path.startswith(self._base_path) or "." in segments or ".." in segments:
-            raise IntegrationRefusedError(f"path {url.path!r} lies outside the base URL")
+            raise IntegrationRefusedError(f"path {path_template(url.path)!r} lies outside the base URL")
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         self.check(request)
@@ -197,9 +220,11 @@ class IntegrationHttp:
 
     async def _send(self, request: httpx.Request, *, body: object, write: bool) -> Reply:
         started = perf_counter()
-        where = f"{self._name} {request.method} {request.url.path}"
+        where = f"{self._name} {request.method} {path_template(request.url.path)}"
         try:
             response = await self._client.send(request)
+        except IntegrationRefusedError:
+            raise
         except httpx.RequestError as exc:
             # No chaining: an httpx error can carry the request, its headers and a header value in its message.
             failure = type(exc).__name__
@@ -207,14 +232,35 @@ class IntegrationHttp:
             if write:
                 raise OutcomeUnknownError(f"{where} failed in transit ({failure}); its outcome is unknown") from None
             raise IntegrationUnavailableError(f"{where} failed in transit ({failure})") from None
+        except Exception as exc:
+            if not write:
+                raise
+            self._log(request, outcome=type(exc).__name__, started=started)
+            raise OutcomeUnknownError(f"{where} failed ({type(exc).__name__}); its outcome is unknown") from None
 
+        if not write:
+            return self._answer(request, body, response, where=where, write=False, started=started)
+        try:
+            return self._answer(request, body, response, where=where, write=True, started=started)
+        except IntegrationError:
+            raise
+        except Exception as exc:
+            # The write went out: whatever fails while its answer is handled leaves its outcome unknown.
+            raise OutcomeUnknownError(
+                f"{where} was sent, but its answer failed ({type(exc).__name__}); its outcome is unknown",
+                status=response.status_code,
+            ) from None
+
+    def _answer(
+        self, request: httpx.Request, body: object, response: httpx.Response, *, where: str, write: bool, started: float
+    ) -> Reply:
         self._log(request, outcome="response", started=started, status=response.status_code)
         self._observe(request, body, response)
         reply = Reply(response.status_code, response.content)
         if response.is_success:
             return reply
 
-        remote_message = self._error_message(reply) if self._error_message else None
+        remote_message = self._remote_message(reply)
         if response.is_client_error:
             raise IntegrationRejectedError(f"{where} was rejected", status=reply.status, remote_message=remote_message)
         if write:
@@ -222,6 +268,16 @@ class IntegrationHttp:
                 f"{where} failed; its outcome is unknown", status=reply.status, remote_message=remote_message
             )
         raise IntegrationUnavailableError(f"{where} failed", status=reply.status, remote_message=remote_message)
+
+    def _remote_message(self, reply: Reply) -> str | None:
+        """The remote system's error text; a failure to extract it is logged and never hides the error itself."""
+        if self._error_message is None:
+            return None
+        try:
+            return self._error_message(reply)
+        except Exception as exc:
+            logger.warning("integration_error_message_failed", integration=self._name, error=type(exc).__name__)
+            return None
 
     def _observe(self, request: httpx.Request, body: object, response: httpx.Response) -> None:
         """Hand the exchange to the observer; its failure is logged and never hides the outcome of the call."""
@@ -252,7 +308,7 @@ class IntegrationHttp:
             "integration_request",
             integration=self._name,
             method=request.method,
-            path=request.url.path,
+            path=path_template(request.url.path),
             outcome=outcome,
             status=status,
             duration_ms=None if started is None else round((perf_counter() - started) * 1000),

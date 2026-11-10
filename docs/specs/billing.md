@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0 done; SP-CAL scripts written, not yet run. SP-SD freezes this spec after both spikes; until
+> Status: Draft - SF0 and SF1-1 done; SP-CAL scripts written, not yet run. SP-SD freezes this spec after both spikes; until
 > then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
@@ -882,20 +882,21 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   `IdentityCheckError`, `IntegrationRejectedError`, `IntegrationUnavailableError`, `UnexpectedResponseError`,
   `OutcomeUnknownError`. `guards.py` and `transport.py`: the guarded `httpx` transport - https only, an exact host
   allowlist per client, no redirects, `retries=0`. The client says per call whether it is a read (GET) or a write
-  (POST, PUT, DELETE). Every request writes one `integration_request` log line: method, path, status, duration.
+  (POST, PUT, DELETE). Every request writes one `integration_request` log line: method, path template
+  (`/Contact/{id}`, never an id), status, duration.
   Under pytest the transport refuses any real network and refuses `live`, unless the contract run is active
   (`SKILLFORGE_CONTRACT_RUN=1`; the gate is in `tests/conftest.py`). Integration settings are nested in `Settings`
   and optional. `httpx` becomes a direct runtime dependency (decision Y). A nested `app/integrations/AGENTS.md`,
   with a `CLAUDE.md` that holds `@AGENTS.md`.
 - _Acceptance criteria:_
-  - [ ] A request to a host outside the allowlist, over plain http, or following a redirect is refused before a
+  - [x] A request to a host outside the allowlist, over plain http, or following a redirect is refused before a
         connection opens.
-  - [ ] Under pytest a real connection is refused and `live` is refused, each unless the contract run is active.
-  - [ ] No request is repeated by the transport, whatever the error.
-  - [ ] Architecture tests: no module under `app/` imports `httpx`, except the transport module; `app/integrations/`
+  - [x] Under pytest a real connection is refused and `live` is refused, each unless the contract run is active.
+  - [x] No request is repeated by the transport, whatever the error.
+  - [x] Architecture tests: no module under `app/` imports `httpx`, except the transport module; `app/integrations/`
         imports only `app.core`.
-  - [ ] The app starts, and `just check` passes, with no integration setting present.
-  - [ ] `app/integrations/AGENTS.md` exists; the `CLAUDE.md` beside it holds only `@AGENTS.md`.
+  - [x] The app starts, and `just check` passes, with no integration setting present.
+  - [x] `app/integrations/AGENTS.md` exists; the `CLAUDE.md` beside it holds only `@AGENTS.md`.
 
 **SF1-2 - sevDesk client.** _May land as two PRs: client and identity; the invoice write._
 

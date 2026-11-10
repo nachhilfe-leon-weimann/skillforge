@@ -11,6 +11,9 @@ def stays_local(address: object) -> bool:
     if host == "localhost":
         return True
     try:
-        return not ipaddress.ip_address(host.split("%")[0]).is_global
+        ip = ipaddress.ip_address(host.split("%")[0])
     except ValueError:
         return False
+    # Private (loopback included), not merely "not global": the carrier-grade NAT range 100.64.0.0/10 is neither
+    # and is refused; link-local (cloud metadata) counts as private and is refused explicitly.
+    return ip.is_private and not ip.is_link_local
