@@ -13,8 +13,9 @@ import re
 import stat
 import sys
 import types
+import unicodedata
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -99,6 +100,19 @@ def test_name_tokens_map_per_normalised_token_and_typos_stay_distinct() -> None:
     assert pseudonymizer.pseudo_name("Max M. 2") == f"{max_} {initial}. {digit}"
 
 
+def test_decomposed_umlauts_are_composed_before_the_words_are_split() -> None:
+    pseudonymizer = rc.Pseudonymizer(SALT)
+    decomposed = unicodedata.normalize("NFD", "Jörg Testmann")
+
+    pseudonym = pseudonymizer.pseudo_name(decomposed)
+
+    assert pseudonym == pseudonymizer.pseudo_name("Jörg Testmann")
+    assert re.fullmatch(r"[A-Z][a-z]+ [A-Z][a-z]+", pseudonym)
+    assert pseudonymizer.pseudo_subject(unicodedata.normalize("NFD", "Französisch mit Jörg Testmann")) == (
+        f"Französisch mit {pseudonym}"
+    )
+
+
 def test_initials_and_digits_keep_their_class() -> None:
     pseudonymizer = rc.Pseudonymizer(SALT)
 
@@ -118,6 +132,8 @@ def test_initials_and_digits_keep_their_class() -> None:
         ("Klavier mit Erika Mustermann", "[subject]"),
         ("Mathe 10 mit Erika Mustermann", "[subject]"),
         ("Erika mit Max Mustermann", "[subject]"),
+        ("Mathe (Physik) mit Erika Mustermann", "[subject]"),
+        ("Mathe \N{TELEPHONE RECEIVER} mit Erika Mustermann", "[subject]"),
     ],
 )
 def test_subject_prefix_survives_only_on_the_allowlist(subject: str, prefix: str) -> None:
@@ -164,6 +180,44 @@ def test_locations_are_replaced_by_a_synthetic_value_of_the_same_class(location:
     assert set(event["location"]) == {"displayName", "locationType"}
 
 
+@pytest.mark.parametrize(
+    ("location_type", "expected"),
+    [("streetAddress", "streetAddress"), ("Erika Mustermann", "default"), (None, "default")],
+)
+def test_the_location_type_survives_only_from_graphs_enum(location_type: str | None, expected: str) -> None:
+    location = {"displayName": "Raum 12", "locationType": location_type}
+
+    event = rc.Pseudonymizer(SALT).event(
+        _event("e1", "Mathe mit Max Mustermann", "2026-03-25T15:00:00", "2026-03-25T16:00:00", location=location)
+    )
+
+    assert event["location"]["locationType"] == expected
+
+
+@pytest.mark.parametrize(
+    ("category", "expected"),
+    [
+        ("Blue category", "Blue category"),
+        ("blaue  KATEGORIE", "blaue  KATEGORIE"),
+        (unicodedata.normalize("NFD", "Grüne Kategorie"), "Grüne Kategorie"),
+        ("Spät abgesagt", "Spät abgesagt"),
+        (unicodedata.normalize("NFD", "spät abgesagt"), "spät abgesagt"),
+    ],
+)
+def test_allowlisted_categories_stay(category: str, expected: str) -> None:
+    assert rc.Pseudonymizer(SALT, extra_categories=["Spät abgesagt"]).pseudo_category(category) == expected
+
+
+@pytest.mark.parametrize("category", ["Familie Mustermann", "Erika M.", unicodedata.normalize("NFD", "Jörg")])
+def test_other_categories_are_pseudonymized_like_names(category: str) -> None:
+    pseudonymizer = rc.Pseudonymizer(SALT)
+
+    pseudonym = pseudonymizer.pseudo_category(category)
+
+    assert pseudonym == f"[category] {pseudonymizer.pseudo_name(category)}"
+    assert not NAME_TOKENS & {token.casefold() for token in re.findall(r"[^\W_]+", pseudonym)}
+
+
 def test_ids_are_keyed_hashes_that_preserve_equality() -> None:
     pseudonymizer = rc.Pseudonymizer(SALT)
     occurrence = pseudonymizer.event(
@@ -183,8 +237,20 @@ def test_events_keep_only_the_selected_fields() -> None:
 
     event = rc.Pseudonymizer(SALT).event(raw)
 
-    assert list(event) == list(rc.EVENT_FIELDS)
+    assert list(event) == list(rc.FIXTURE_EVENT_FIELDS)
     assert "Mustermann" not in json.dumps(event)
+
+
+def test_last_modified_becomes_a_dense_rank() -> None:
+    raws = [
+        {"lastModifiedDateTime": "2026-04-02T08:00:00Z"},
+        {"lastModifiedDateTime": "2026-04-01T08:00:00.1234567Z"},
+        {"lastModifiedDateTime": "2026-04-02T08:00:00Z"},
+        {"lastModifiedDateTime": "not a date"},
+        {},
+    ]
+
+    assert rc.last_modified_ranks(raws) == [1, 0, 1, None, None]
 
 
 # endregion
@@ -214,11 +280,19 @@ def test_the_secret_offset_is_whole_weeks_and_keeps_weekday_and_local_time(start
     shifted = pseudonymizer.shift_datetime_tz({"dateTime": f"{start}.0000000", "timeZone": "UTC"}, all_day=False)
     moved = datetime.fromisoformat(shifted["dateTime"]).replace(tzinfo=UTC)
 
-    assert 52 <= abs(pseudonymizer.week_offset) <= 520
-    assert pseudonymizer.week_offset == rc.Pseudonymizer(SALT).week_offset
     local_before, local_after = original.astimezone(rc.LOCAL_TZ), moved.astimezone(rc.LOCAL_TZ)
     assert (local_after.weekday(), local_after.time()) == (local_before.weekday(), local_before.time())
-    assert (local_after.date() - local_before.date()).days == 7 * pseudonymizer.week_offset
+    shift_days = (local_after.date() - local_before.date()).days
+    assert shift_days % 7 == 0
+    assert rc.MIN_OFFSET_WEEKS <= abs(shift_days) // 7 <= rc.MAX_OFFSET_WEEKS
+
+
+def test_the_offset_is_drawn_per_recording_not_from_the_salt() -> None:
+    offsets = [rc.Pseudonymizer(SALT)._week_offset for _ in range(40)]
+
+    assert all(rc.MIN_OFFSET_WEEKS <= abs(offset) <= rc.MAX_OFFSET_WEEKS for offset in offsets)
+    assert len(set(offsets)) > 1  # one salt, several offsets; all 40 equal is practically impossible
+    assert {offset > 0 for offset in offsets} == {True, False}
 
 
 def test_all_day_events_stay_floating_midnights() -> None:
@@ -259,12 +333,28 @@ def test_paging_follows_next_links_without_repeating_the_query() -> None:
     assert str(second.url) == next_link
 
 
-def test_a_next_link_outside_graph_is_refused() -> None:
+@pytest.mark.parametrize(
+    "next_link",
+    [
+        "https://example.org/steal",
+        "https://graph.microsoft.com.example.org/v1.0/users",
+        "https://graph.microsoft.com@example.org/v1.0/users",
+        "https://graph.microsoft.com:8443/v1.0/users",
+        "http://graph.microsoft.com/v1.0/users",
+        "https://graph.microsoft.com/beta/users",
+    ],
+)
+def test_a_next_link_outside_graph_is_refused(next_link: str) -> None:
+    requests: list[httpx.Request] = []
+
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"value": [], "@odata.nextLink": "https://example.org/steal"})
+        requests.append(request)
+        return httpx.Response(200, json={"value": [], "@odata.nextLink": next_link})
 
     with _client(handler) as client, pytest.raises(rc.RecorderError, match="outside Microsoft Graph"):
         list(client.iter_values(f"{rc.GRAPH_BASE_URL}/users/{MAILBOX}/calendars"))
+
+    assert len(requests) == 1
 
 
 def test_throttling_waits_for_retry_after_capped_then_succeeds() -> None:
@@ -290,6 +380,21 @@ def test_throttling_is_bounded() -> None:
             client.get_json(f"{rc.GRAPH_BASE_URL}/users/{MAILBOX}/calendars")
 
     assert len(sleeps) == rc.MAX_RETRIES
+
+
+@pytest.mark.parametrize("status", [500, 503])
+def test_server_errors_are_not_retried(status: int) -> None:
+    requests: list[httpx.Request] = []
+    sleeps: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(status, headers={"Retry-After": "1"})
+
+    with _client(handler, sleeps) as client, pytest.raises(rc.GraphError, match=str(status)):
+        client.get_json(f"{rc.GRAPH_BASE_URL}/users/{MAILBOX}/calendars")
+
+    assert (len(requests), sleeps) == (1, [])
 
 
 def test_graph_errors_report_the_code_but_not_the_message() -> None:
@@ -424,6 +529,19 @@ def test_a_refused_token_reports_codes_and_thumbprint_but_not_the_description(
     )
 
 
+def test_a_network_error_in_msal_reports_only_its_type(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class _UnreachableApp:
+        def __init__(self, client_id: str, *, authority: str, client_credential: dict[str, str]) -> None:
+            raise ConnectionError(f"Max retries exceeded with url: {authority}/v2.0/.well-known/openid-configuration")
+
+    monkeypatch.setitem(sys.modules, "msal", types.SimpleNamespace(ConfidentialClientApplication=_UnreachableApp))
+
+    with pytest.raises(rc.RecorderError) as raised:
+        rc.acquire_token(_config(tmp_path))
+
+    assert str(raised.value) == "token request failed: ConnectionError"
+
+
 def test_a_missing_key_is_named_without_echoing_values(tmp_path: Path) -> None:
     env_file = tmp_path / "graph.env"
     env_file.write_text(f'GRAPH__TENANT_ID="{TENANT_ID}"\nexport GRAPH__MAILBOX={MAILBOX}\n')
@@ -433,6 +551,16 @@ def test_a_missing_key_is_named_without_echoing_values(tmp_path: Path) -> None:
 
     assert "GRAPH__CLIENT_ID" in str(raised.value)
     assert TENANT_ID not in str(raised.value) and MAILBOX not in str(raised.value)
+
+
+def test_unused_keys_are_counted_not_named(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    env_file = _env_file(tmp_path, extra=["SYNTHETICb64SECRETmaterialAAAA==", "OTHER_SETTING=1"])
+
+    rc.load_config(env_file)
+
+    warning = capsys.readouterr().err
+    assert "2 unused key(s)" in warning
+    assert "SYNTHETIC" not in warning and "OTHER_SETTING" not in warning
 
 
 def test_the_salt_is_created_once_with_mode_600(tmp_path: Path) -> None:
@@ -445,9 +573,23 @@ def test_the_salt_is_created_once_with_mode_600(tmp_path: Path) -> None:
     assert rc.load_or_create_salt(path) == salt
 
 
-def test_out_inside_tests_is_refused() -> None:
-    with pytest.raises(rc.RecorderError, match="tests/"):
-        rc.check_out_dir(rc.REPO_ROOT / "tests" / "fixtures", force=True)
+@pytest.mark.parametrize("inside", [Path("tests/fixtures"), Path("docs"), Path(".")])
+def test_out_inside_this_repository_is_refused(inside: Path) -> None:
+    with pytest.raises(rc.RecorderError, match="git work tree"):
+        rc.check_out_dir(rc.REPO_ROOT / inside, force=True)
+
+
+@pytest.mark.parametrize("marker", ["directory", "file"])
+def test_out_inside_any_git_work_tree_is_refused(tmp_path: Path, marker: str) -> None:
+    repository = tmp_path / "other-checkout"
+    repository.mkdir()
+    if marker == "directory":
+        (repository / ".git").mkdir()
+    else:
+        (repository / ".git").write_text("synthetic pointer\n")  # a linked worktree's .git is a file
+
+    with pytest.raises(rc.RecorderError, match="git work tree"):
+        rc.check_out_dir(repository / "not" / "yet" / "created", force=True)
 
 
 def test_an_existing_fixture_needs_force(tmp_path: Path) -> None:
@@ -456,6 +598,32 @@ def test_an_existing_fixture_needs_force(tmp_path: Path) -> None:
     with pytest.raises(rc.RecorderError, match="--force"):
         rc.check_out_dir(tmp_path, force=False)
     assert rc.check_out_dir(tmp_path, force=True) == (tmp_path / rc.FIXTURE_NAME).resolve()
+
+
+def test_a_fixture_symlink_is_refused_even_with_force(tmp_path: Path) -> None:
+    target = tmp_path / "elsewhere.json"
+    target.write_text("{}")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / rc.FIXTURE_NAME).symlink_to(target)
+
+    with pytest.raises(rc.RecorderError, match="symbolic link"):
+        rc.check_out_dir(out, force=True)
+    with pytest.raises(rc.RecorderError, match="symbolic link"):
+        rc.write_fixture(out / rc.FIXTURE_NAME, {"value": []})
+    assert target.read_text() == "{}"
+
+
+def test_an_overwritten_fixture_gets_mode_600_whatever_it_had(tmp_path: Path) -> None:
+    fixture = tmp_path / rc.FIXTURE_NAME
+    fixture.write_text("{}")
+    fixture.chmod(0o644)
+
+    rc.write_fixture(fixture, {"value": []})
+
+    assert stat.S_IMODE(fixture.stat().st_mode) == 0o600
+    assert json.loads(fixture.read_text()) == {"value": []}
+    assert [path.name for path in tmp_path.iterdir()] == [rc.FIXTURE_NAME]
 
 
 # endregion
@@ -472,17 +640,25 @@ RAW_EVENTS = [
         "2026-03-24T16:00:00",
         type="occurrence",
         seriesMasterId="m1",
+        lastModifiedDateTime="2026-04-07T18:00:00Z",
     ),
     _event(
         "e2",
         "Mathe mit Erika Mustermann",
         "2026-03-31T14:00:00",
         "2026-03-31T15:00:00",
-        type="occurrence",
+        type="exception",
         seriesMasterId="m1",
+        originalStart="2026-03-31T15:00:00Z",
+        lastModifiedDateTime="2026-04-08T09:15:00.1234567Z",
     ),
     _event(
-        "e3", "Englisch mit Max Mustermann", "2026-03-25T16:00:00", "2026-03-25T17:30:00", categories=["Spät abgesagt"]
+        "e3",
+        "Englisch mit Max Mustermann",
+        "2026-03-25T16:00:00",
+        "2026-03-25T17:30:00",
+        categories=["Spät abgesagt", "Familie Mustermann"],
+        lastModifiedDateTime="2026-04-06T07:00:00Z",
     ),
     _event(
         "e4",
@@ -492,6 +668,7 @@ RAW_EVENTS = [
         isOnlineMeeting=True,
         onlineMeetingProvider="teamsForBusiness",
         location={"displayName": "Microsoft Teams-Besprechung", "locationType": "default"},
+        categories=["Blue category"],
     ),
     _event(
         "e5",
@@ -510,9 +687,48 @@ RAW_EVENTS = [
     ),
     _event("e8", "Urlaub", "2026-03-29T00:00:00", "2026-03-30T00:00:00", isAllDay=True, showAs="oof"),
 ]
+# Every real date the input carries; none may survive in the fixture or the summary.
+RAW_DATES = {
+    value[:10]
+    for raw in RAW_EVENTS
+    for value in (
+        raw["start"]["dateTime"],
+        raw["end"]["dateTime"],
+        raw.get("originalStart"),
+        raw["lastModifiedDateTime"],
+    )
+    if value
+} | {"2026-03-23", "2026-03-31"}
 
 
-def _graph_handler(calls: list[str]) -> Handler:
+def _env_file(tmp_path: Path, extra: list[str] | None = None) -> Path:
+    for name in ("cert.pem", "key.pem"):
+        (tmp_path / name).write_text("synthetic")
+    env_file = tmp_path / "graph.env"
+    env_file.write_text(
+        "\n".join([
+            f"GRAPH__TENANT_ID={TENANT_ID}",
+            f"GRAPH__CLIENT_ID={CLIENT_ID}",
+            f"GRAPH__CERTIFICATE_PATH={tmp_path / 'cert.pem'}",
+            f"GRAPH__PRIVATE_KEY_PATH={tmp_path / 'key.pem'}",
+            f"GRAPH__MAILBOX={MAILBOX}",
+            f"GRAPH__CALENDAR_NAME={CALENDAR_NAME}",
+            *(extra or []),
+        ])
+    )
+    for path in (env_file, tmp_path / "key.pem"):
+        path.chmod(0o600)
+    return env_file
+
+
+def _salt_file(tmp_path: Path) -> Path:
+    salt_file = tmp_path / "salt"
+    salt_file.write_text(SALT.hex())
+    salt_file.chmod(0o600)
+    return salt_file
+
+
+def _graph_handler(calls: list[str], events: list[dict[str, Any]] = RAW_EVENTS) -> Handler:
     throttled = iter([True])
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -530,53 +746,40 @@ def _graph_handler(calls: list[str]) -> Handler:
             return httpx.Response(
                 200,
                 json={
-                    "value": RAW_EVENTS[:5],
+                    "value": events[:5],
                     "@odata.nextLink": f"{request.url.copy_with(params={'$skiptoken': '2'})}",
                 },
             )
-        return httpx.Response(200, json={"value": RAW_EVENTS[5:]})
+        return httpx.Response(200, json={"value": events[5:]})
 
     return handler
+
+
+def _record(tmp_path: Path, *extra: str, events: list[dict[str, Any]] = RAW_EVENTS) -> tuple[int, list[str]]:
+    calls: list[str] = []
+    status = rc.main(
+        [
+            *("--env-file", str(_env_file(tmp_path)), "--start", "2026-03-23", "--end", "2026-03-31"),
+            *("--out", str(tmp_path / "out"), "--salt-file", str(_salt_file(tmp_path)), *extra),
+        ],
+        token_provider=lambda config: "synthetic-token",
+        transport=httpx.MockTransport(_graph_handler(calls, events)),
+        sleep=lambda _: None,
+    )
+    return status, calls
 
 
 def test_record_writes_a_fixture_and_summary_free_of_the_synthetic_input(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    for name in ("cert.pem", "key.pem"):
-        (tmp_path / name).write_text("synthetic")
-    env_file = tmp_path / "graph.env"
-    env_file.write_text(
-        "\n".join([
-            f"GRAPH__TENANT_ID={TENANT_ID}",
-            f"GRAPH__CLIENT_ID={CLIENT_ID}",
-            f"GRAPH__CERTIFICATE_PATH={tmp_path / 'cert.pem'}",
-            f"GRAPH__PRIVATE_KEY_PATH={tmp_path / 'key.pem'}",
-            f"GRAPH__MAILBOX={MAILBOX}",
-            f"GRAPH__CALENDAR_NAME={CALENDAR_NAME}",
-        ])
-    )
-    salt_file = tmp_path / "salt"
-    salt_file.write_text(SALT.hex())
-    salt_file.chmod(0o600)
-    out = tmp_path / "out"
-    calls: list[str] = []
-
-    status = rc.main(
-        [
-            *("--env-file", str(env_file), "--start", "2026-03-23", "--end", "2026-03-31"),
-            *("--out", str(out), "--probe-mailbox", OTHER_MAILBOX, "--salt-file", str(salt_file)),
-        ],
-        token_provider=lambda config: "synthetic-token",
-        transport=httpx.MockTransport(_graph_handler(calls)),
-        sleep=lambda _: None,
-    )
+    status, calls = _record(tmp_path, "--probe-mailbox", OTHER_MAILBOX, "--category", "spät ABGESAGT")
 
     summary = capsys.readouterr().out
-    fixture_text = (out / rc.FIXTURE_NAME).read_text()
+    fixture_text = (tmp_path / "out" / rc.FIXTURE_NAME).read_text()
     fixture = json.loads(fixture_text)
     assert status == 0
     assert len(calls) == 5  # calendars, calendarView throttled + two pages, the probe
-    assert stat.S_IMODE((out / rc.FIXTURE_NAME).stat().st_mode) == 0o600
+    assert stat.S_IMODE((tmp_path / "out" / rc.FIXTURE_NAME).stat().st_mode) == 0o600
     assert len(fixture["value"]) == len(RAW_EVENTS)
 
     for text in (summary, fixture_text):
@@ -595,8 +798,21 @@ def test_record_writes_a_fixture_and_summary_free_of_the_synthetic_input(
             assert secret not in text
         for raw in RAW_EVENTS:
             assert raw["id"] not in re.findall(r'"([^"]+)"', text)
-            assert raw["start"]["dateTime"][:10] not in text
+        for day in RAW_DATES:
+            assert day not in text
     assert not re.search(r"\d{4}-\d{2}-\d{2}", summary)
+    assert not re.search(r"\d{4}-\d{2}-\d{2}", json.dumps(fixture["meta"]))
+    assert fixture["meta"]["windowDays"] == 9
+
+    events = {event["iCalUId"]: event for event in fixture["value"]}
+    first, exception, late = (events[rc.Pseudonymizer(SALT).pseudo_id(f"ical-{key}")] for key in ("e1", "e2", "e3"))
+    assert (late["lastModifiedRank"], first["lastModifiedRank"], exception["lastModifiedRank"]) == (1, 2, 3)
+    assert {event["lastModifiedRank"] for event in fixture["value"]} == {0, 1, 2, 3}
+    assert all(list(event) == list(rc.FIXTURE_EVENT_FIELDS) for event in fixture["value"])
+    # Shifted like start: the exception still lies an hour before its original slot.
+    assert rc._parse_utc(exception["originalStart"]) - rc._parse_utc(exception["start"]["dateTime"]) == timedelta(
+        hours=1
+    )
 
     assert "  lessons (<subject> mit <name>): 5" in summary
     assert "  kennenlernen: 1" in summary
@@ -605,12 +821,27 @@ def test_record_writes_a_fixture_and_summary_free_of_the_synthetic_input(
     assert "all-day: 1" in summary
     assert "  teamsForBusiness: 1" in summary
     assert "  Spät abgesagt: 1" in summary
+    assert "  Blue category: 1" in summary
+    assert re.search(r"^  \[category\] [A-Z][a-z]+ [A-Z][a-z]+: 1$", summary, re.MULTILINE)
     assert "  Mathe: 3" in summary
     assert "  60: 4" in summary
     assert "probe of another mailbox: restricted: yes" in summary
 
 
-def test_record_refuses_tests_before_any_request(tmp_path: Path) -> None:
+def test_recordings_share_pseudonyms_but_not_the_date_shift(tmp_path: Path) -> None:
+    fixtures = []
+    for run in range(10):
+        folder = tmp_path / str(run)
+        folder.mkdir()
+        assert _record(folder)[0] == 0
+        fixtures.append(json.loads((folder / "out" / rc.FIXTURE_NAME).read_text())["value"])
+
+    assert len({json.dumps([(e["id"], e["subject"], e["categories"]) for e in fixture]) for fixture in fixtures}) == 1
+    # One salt, ten recordings: the same shift in all of them would be a chance of about 1 in 10**26.
+    assert len({fixture[0]["start"]["dateTime"] for fixture in fixtures}) > 1
+
+
+def test_record_refuses_a_git_work_tree_before_any_request(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise AssertionError("no request expected")
 
@@ -625,6 +856,45 @@ def test_record_refuses_tests_before_any_request(tmp_path: Path) -> None:
 
     assert status == 1
     assert not (tmp_path / "salt").exists()
+
+
+def test_an_unexpected_error_prints_only_its_type(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    malformed = [_event("e1", "Mathe mit Erika Mustermann", "2026-03-24T15:00:00", "2026-03-24T16:00:00")]
+    malformed[0]["start"] = {"dateTime": "2026-03-24T15:00:00 Erika Mustermann", "timeZone": "UTC"}
+
+    status, _ = _record(tmp_path, events=malformed)
+
+    captured = capsys.readouterr()
+    assert status == 1
+    assert captured.err.splitlines()[-1] == "error: unexpected ValueError; its message is withheld"
+    assert "2026-03-24" not in captured.err and "Mustermann" not in captured.err
+    assert captured.out == ""
+    assert not (tmp_path / "out" / rc.FIXTURE_NAME).exists()
+
+
+def test_a_failing_token_provider_does_not_echo_its_message(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def token_provider(config: rc.GraphConfig) -> str:
+        raise OSError(f"cannot reach {rc.AUTHORITY_BASE_URL}/{config.tenant_id}")
+
+    status = rc.main(
+        [
+            *("--env-file", str(_env_file(tmp_path)), "--start", "2026-03-23", "--end", "2026-03-31"),
+            *("--out", str(tmp_path / "out"), "--salt-file", str(_salt_file(tmp_path))),
+        ],
+        token_provider=token_provider,
+    )
+
+    assert status == 1
+    assert TENANT_ID not in capsys.readouterr().err
+
+
+def test_a_malformed_date_argument_is_not_echoed(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        rc.main(["--env-file", "x", "--start", "2026-13-45", "--end", "2026-03-31", "--out", str(tmp_path)])
+
+    error = capsys.readouterr().err
+    assert "expected YYYY-MM-DD" in error
+    assert "2026-13-45" not in error
 
 
 # endregion

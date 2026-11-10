@@ -29,3 +29,6 @@ htmlcov/
 
 # MacOS files
 .DS_Store
+
+# Calendar spike fixture: maintainer-run output, reviewed before it is committed anywhere
+calendar-fixture.json
