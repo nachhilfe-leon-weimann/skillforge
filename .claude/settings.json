@@ -34,7 +34,18 @@
       "Read(~/.config/skillforge/**)",
       "WebFetch(domain:my.sevdesk.de)",
       "WebFetch(domain:graph.microsoft.com)",
-      "WebFetch(domain:login.microsoftonline.com)"
+      "WebFetch(domain:login.microsoftonline.com)",
+      "Bash(just contract-sevdesk)",
+      "Bash(just contract-sevdesk *)",
+      "Bash(just sevdesk-doctor *)",
+      "Bash(just sevdesk-spike)",
+      "Bash(just sevdesk-spike *)",
+      "Bash(uv run --env-file *)",
+      "Bash(uv run python -m app.cli.sevdesk_doctor *)",
+      "Bash(uv run python -m scripts.sevdesk_spike *)",
+      "Bash(SKILLFORGE_CONTRACT_RUN=1 *)",
+      "Bash(uv run scripts/graph/*)",
+      "Bash(pwsh *)"
     ]
   },
   "hooks": {
