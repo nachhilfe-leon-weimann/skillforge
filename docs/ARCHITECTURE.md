@@ -22,6 +22,7 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
         app/services/auth identity: accounts, clients and grants, tokens, sessions, Discord links
         app/services/crm  system of record: parties, roles, contact infos, relations, subjects
         app/services/system  health aggregation + worker heartbeats
+        app/integrations  the only way out to other systems (guarded HTTP transport)
         app/core          cross-cutting: auth, db, logging, config
                           `-> Postgres (schemas: core/geo/ext/auth/system)
 ```
@@ -58,6 +59,25 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
   guards; plus the secret, password and e-mail primitives),
   `db/` (async engine, sessions, models), `logging/` (structured logging via `skillcore`), `errors.py`
   (HTTP-agnostic error taxonomy), `config.py` (settings).
+
+## Integrations
+
+`app/integrations/` is the only place SkillForge calls another system; its rules for agents are in
+[`app/integrations/AGENTS.md`](../app/integrations/AGENTS.md). Services call it synchronously: write a pending
+row, commit, call, record the outcome - there is no job queue.
+
+- **One guarded transport.** `IntegrationHttp` in `transport.py` is the only module in `app/` that imports
+  `httpx`. Every request passes `_GuardedTransport`, which refuses a host outside the client's allowlist and,
+  under pytest, any real network (`guards.py`); tests use `httpx.MockTransport`.
+- **Modes** (`IntegrationMode` in `config.py`): `dry_run`, the default, sends reads and returns a write as the
+  `PlannedRequest` it would have sent; `live` sends both. Under pytest `live` is refused except in the contract
+  run (`SKILLFORGE_CONTRACT_RUN=1`) against a `trial` account (`IntegrationAccount`).
+- **No retry.** A failed read is `IntegrationUnavailableError` and may be repeated by its caller; a write that may
+  have reached the remote system is `OutcomeUnknownError` and is never repeated - the service reconciles it. A
+  4xx is `IntegrationRejectedError`. These errors (`errors.py`) are internal, no `DomainError`: the service
+  decides what an API client sees.
+- **Nothing leaks.** The credential sits in the client's headers only; one `integration_request` log line per
+  call names the integration, method, path, status and duration - never a header, a query or a body.
 
 ## Housekeeping worker
 
