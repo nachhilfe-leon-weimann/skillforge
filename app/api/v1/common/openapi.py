@@ -99,7 +99,7 @@ def customize_openapi(app: FastAPI) -> None:
         return schema
 
     # Overriding the bound method is FastAPI's documented way to extend the schema.
-    app.openapi = openapi  # ty: ignore[invalid-assignment]
+    app.openapi = openapi
     app.openapi()
 
 
