@@ -980,9 +980,10 @@ write (`invoices.py`)._
 - _Technique:_ `app/integrations/recording.py`: the recorder. Nothing is recorded before the identity check
   passed. It drops the `Authorization` header and cookies; person and company objects - SevClient, SevUser,
   Contact, ContactAddress, CommunicationWay - are scrubbed by allowlist at every depth, so only listed fields
-  survive; free text elsewhere, an invoice's address among it, goes unless the run sent exactly that string; IBANs,
-  e-mail addresses (to `example.org`) and phone numbers are replaced. Fixtures go to
-  `tests/fixtures/sevdesk/<run id>/`, and no file is overwritten. `tests/test_fixture_scan.py` runs in
+  survive; free text elsewhere, an invoice's address among it, goes unless the run sent exactly that string; a whole
+  placeholder (`[%RECHNUNGSNUMMER%]`) stays anywhere; IBANs, e-mail addresses (to `example.org`) and phone numbers
+  are replaced. Fixtures go to `tests/fixtures/sevdesk/<run id>/`, and no file is overwritten.
+  `tests/test_fixture_scan.py` runs in
   `just check`: token-like strings, an e-mail address outside `example.org`, IBAN patterns, phone numbers, the
   `TRIAL` company marker. `scripts/sevdesk_spike.py` with the recipe `just sevdesk-spike`: trial only, with the
   refusals of `just contract-sevdesk`; it walks the [fixture manifest](#fixture-manifest), never retries a write,

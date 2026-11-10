@@ -245,6 +245,28 @@ def test_nothing_is_learned_from_what_the_run_sent():
     ] == (setting)
 
 
+def test_a_placeholder_stays_and_is_never_learned():
+    scrub = Scrubber()
+    foot_text = f"Spike {RUN_ID}: <strong>bis zum [%ZAHLUNGSZIEL%]</strong><br>[%KONTAKTPERSON%]"
+    scrub.sent({"footText": foot_text})
+    dictionary = [
+        {"key": "Invoice", "value": [{"key": "INVOICE_NUMBER", "value": "[%RECHNUNGSNUMMER%]"}]},
+        {"key": "Contact", "value": [{"key": "CONTACT_PERSON", "value": "[%KONTAKTPERSON%]"}]},
+        {"key": "Contact", "value": [{"key": "PAYMENT", "value": "[%KONTAKT.ZAHLUNGSVERFAHREN%]"}]},
+    ]
+    person = {"objectName": "SevUser", "id": "11", "salutation": "[%ANREDE%]", "firstName": "Synthia"}
+
+    scrub.learn([dictionary, person])
+
+    assert scrub(dictionary) == dictionary
+    assert scrub(person) == {"objectName": "SevUser", "id": "11", "salutation": "[%ANREDE%]", "firstName": SCRUBBED}
+    assert scrub({"objectName": "Invoice", "footText": foot_text}) == {"objectName": "Invoice", "footText": foot_text}
+    other = {"objectName": "Invoice", "footText": "[%RECHNUNGSNUMMER%] Synthia", "headText": "[%synthia%]"}
+    assert scrub(other) == {"objectName": "Invoice", "footText": SCRUBBED, "headText": SCRUBBED}, (
+        "a value that holds more than a placeholder, or a lower-case one, is free text"
+    )
+
+
 def test_payment_methods_and_configuration_names_stay():
     scrubbed = Scrubber()([
         {"objectName": "ContactCustomField", "value": "PayPal", "contact": {"id": "21", "objectName": "Contact"}},
