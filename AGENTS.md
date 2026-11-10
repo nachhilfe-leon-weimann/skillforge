@@ -17,7 +17,7 @@ commands, conventions and working rules; the _why_ lives in [`docs/`](docs/). "T
 | add or change an endpoint | [`api-conventions.md`](docs/specs/api-conventions.md), ADR 0006 |
 | brief an agent or write a handoff | [`docs/agent-work.md`](docs/agent-work.md) |
 | need the services' `UNSET` sentinel | `app/core/unset.py` |
-| write a test | `tests/`: `api/`, `auth/`, `db/` (Postgres, `@pytest.mark.db`; `db/crm/`, `db/auth/`), `workers/`, `scripts/` |
+| write a test | `tests/`: `api/`, `auth/`, `db/` (Postgres, `@pytest.mark.db`; `db/crm/`, `db/auth/`), `workers/`, `scripts/`, `integrations/` (`httpx.MockTransport`), `contract/` (`@pytest.mark.contract`, sevDesk trial only) |
 | need a repo script | `scripts/`: `coverage_summary.py`, `dump_openapi.py`, `smoke_test_python_client.py`; maintainer-run: `graph/exchange-rbac-calendar.ps1`, `graph/record_calendar.py` |
 | change a workflow | `.github/workflows/`; what they do: [`release-flow.md`](docs/specs/release-flow.md), [`project-intake.md`](docs/specs/project-intake.md) |
 
@@ -34,6 +34,8 @@ Everything runs through [`just`](justfile), which wraps `uv`:
   with grants in both modes.
 - `just bootstrap-admin --party-id <uuid> --email <address>` - ensure an enabled admin account for a person party
   and print its invitation (or, once it has a password, a reset token): the break-glass command.
+- `just sevdesk-doctor --account trial|live [--discover]` - check the configured sevDesk ids, read-only;
+  `just contract-sevdesk` - the contract tests against the sevDesk trial. Both call sevDesk.
 
 ## Conventions
 
@@ -89,6 +91,9 @@ Everything runs through [`just`](justfile), which wraps `uv`:
   production target. `just dev`, `just dev-local-core`, `just docker-run`, `just bootstrap-client`,
   `just bootstrap-admin`, `just worker-housekeeping` and Alembic run only after the maintainer confirms in the
   session that `DB__URL` is local: `bootstrap-admin` prints tokens, `worker-housekeeping` deletes rows.
+- **sevDesk is a live system, its trial too.** `just sevdesk-doctor` and `just contract-sevdesk` are the
+  maintainer's to run; an agent writes and mock-tests them and never runs them. The trial's settings live in the
+  env file the recipes name, outside the repository; agents never read it.
 - DB tests get an ephemeral Postgres via testcontainers (needs Docker; skipped without it) or use a local, throwaway
   `TEST_DB__URL` (the tests drop and recreate its tables), never `DB__URL`.
 

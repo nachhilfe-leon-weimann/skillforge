@@ -127,6 +127,32 @@ bootstrap-client *args:
 bootstrap-admin *args:
     uv run python -m app.cli.bootstrap admin "$@"
 
+# --- sevDesk ---
+# These call sevDesk: only the maintainer runs them, never CI. The trial's settings live outside the repository.
+
+sevdesk_trial_env := env("SKILLFORGE_SEVDESK_TRIAL_ENV", "$HOME/.config/skillforge/sevdesk-trial.env")
+
+# Read-only contract tests against the synthetic sevDesk trial account.
+contract-sevdesk:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "${CI:-}" ]; then echo "contract-sevdesk never runs in CI" >&2; exit 1; fi
+    env_file="{{ sevdesk_trial_env }}"
+    if [ ! -f "$env_file" ]; then echo "no trial configured"; exit 0; fi
+    SKILLFORGE_CONTRACT_RUN=1 uv run --env-file "$env_file" pytest -m contract
+
+# Check the configured sevDesk ids, read-only: --account trial|live [--discover]
+[positional-arguments]
+sevdesk-doctor *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ " $* " == *" --account trial "* || " $* " == *" --account=trial "* ]]; then
+        env_file="{{ sevdesk_trial_env }}"
+        if [ ! -f "$env_file" ]; then echo "no trial configured" >&2; exit 1; fi
+        exec uv run --env-file "$env_file" python -m app.cli.sevdesk_doctor "$@"
+    fi
+    exec uv run python -m app.cli.sevdesk_doctor "$@"
+
 # --- Docker ---
 
 docker-build image="skillforge:local":
