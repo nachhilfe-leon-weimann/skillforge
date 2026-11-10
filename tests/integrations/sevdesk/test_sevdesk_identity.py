@@ -86,6 +86,8 @@ async def test_a_client_not_built_by_connect_sends_nothing_but_the_identity_read
         for call in (client.get_contact(21), client.parts(), client.bookkeeping_version()):
             with pytest.raises(IdentityCheckError, match="not confirmed"):
                 await call
+        with pytest.raises(IdentityCheckError, match="not confirmed"):
+            _ = client.http
         assert fake_sevdesk.requests == []
 
         assert (await client.account()).id == ACCOUNT_ID

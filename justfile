@@ -164,6 +164,16 @@ sevdesk-doctor account *args:
             echo "the account is trial or live, not $account" >&2; exit 1 ;;
     esac
 
+# Walk the sevDesk spike against the trial account (writes there): [--step STEP ...]
+[positional-arguments]
+sevdesk-spike *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "${CI:-}" ]; then echo "sevdesk-spike never runs in CI" >&2; exit 1; fi
+    source "{{justfile_directory()}}/scripts/sevdesk_trial_env.sh" "{{justfile_directory()}}"
+    if [ ! -f "$env_file" ]; then echo "no trial configured: $env_file does not exist" >&2; exit 1; fi
+    exec uv run --env-file "$env_file" python -m scripts.sevdesk_spike "$@"
+
 # --- Docker ---
 
 docker-build image="skillforge:local":
