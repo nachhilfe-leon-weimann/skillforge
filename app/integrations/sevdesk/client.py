@@ -217,7 +217,7 @@ def error_message(reply: Reply) -> str | None:
 def _objects(reply: Reply, where: str) -> object:
     try:
         body = reply.json()
-    except ValueError:
+    except ValueError, RecursionError:  # a body nested too deep for the parser
         raise UnexpectedResponseError(f"sevdesk {where}: the response is not JSON") from None
     match body:
         case {"objects": objects}:
@@ -235,7 +235,7 @@ class _Page(SevdeskModel):
 def _page[M: SevdeskModel](model: type[M], reply: Reply, where: str) -> tuple[int, list[M]]:
     try:
         body = reply.json()
-    except ValueError:
+    except ValueError, RecursionError:  # a body nested too deep for the parser
         raise UnexpectedResponseError(f"sevdesk {where}: the response is not JSON") from None
     if not isinstance(body, dict) or "total" not in body:
         raise UnexpectedResponseError(f"sevdesk {where}: listing without countAll total")
