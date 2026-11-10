@@ -34,7 +34,7 @@ Everything runs through [`just`](justfile), which wraps `uv`:
   with grants in both modes.
 - `just bootstrap-admin --party-id <uuid> --email <address>` - ensure an enabled admin account for a person party
   and print its invitation (or, once it has a password, a reset token): the break-glass command.
-- `just sevdesk-doctor --account trial|live [--discover]` - check the configured sevDesk ids, read-only;
+- `just sevdesk-doctor trial|live [--discover]` - check the configured sevDesk ids, read-only;
   `just contract-sevdesk` - the contract tests against the sevDesk trial. Both call sevDesk.
 
 ## Conventions
@@ -91,9 +91,9 @@ Everything runs through [`just`](justfile), which wraps `uv`:
   production target. `just dev`, `just dev-local-core`, `just docker-run`, `just bootstrap-client`,
   `just bootstrap-admin`, `just worker-housekeeping` and Alembic run only after the maintainer confirms in the
   session that `DB__URL` is local: `bootstrap-admin` prints tokens, `worker-housekeeping` deletes rows.
-- **sevDesk is a live system, its trial too.** `just sevdesk-doctor` and `just contract-sevdesk` are the
-  maintainer's to run; an agent writes and mock-tests them and never runs them. The trial's settings live in the
-  env file the recipes name, outside the repository; agents never read it.
+- **sevDesk is a live system, its trial too.** An agent runs the trial recipes (`just sevdesk-doctor trial`,
+  `just contract-sevdesk`) only after the maintainer's go in the session, and `just sevdesk-doctor live` never. The
+  trial's settings live in the env file the recipes name, outside the repository; agents never read it.
 - DB tests get an ephemeral Postgres via testcontainers (needs Docker; skipped without it) or use a local, throwaway
   `TEST_DB__URL` (the tests drop and recreate its tables), never `DB__URL`.
 

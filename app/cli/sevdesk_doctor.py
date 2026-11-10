@@ -1,22 +1,25 @@
-"""Read-only check of the sevDesk configuration: `just sevdesk-doctor --account trial|live [--discover]`.
+"""Read-only check of the sevDesk configuration: `just sevdesk-doctor trial|live [--discover]`.
 
 It reads the settings from the process environment only (``SEVDESK__*``; no ``.env``): the recipe loads the trial
-env file for ``--account trial``, the maintainer's own terminal provides it for ``--account live``. It always
-runs in ``dry_run``, so nothing it could call is sent as a write. It prints ids and the names of configuration
-objects (units, custom fields) - never a person's data; only ``--discover`` prints the account's company name,
-so the maintainer can fill ``SEVDESK__EXPECTED_ACCOUNT_ID`` on the first run.
+env file for ``trial``, the maintainer's own terminal provides them for ``live``. It always runs in ``dry_run``, so
+nothing it could call is sent as a write, and never in CI. It prints ids and the names of configuration objects
+(units, custom fields) - never a person's data, nor the company name: ``--discover`` prints the account id the
+token belongs to and whether its name carries the trial marker, so the maintainer can fill
+``SEVDESK__EXPECTED_ACCOUNT_ID`` on the first run.
 """
 
 import argparse
 import asyncio
-from collections.abc import Awaitable, Callable, Sequence
+import os
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from app.core.logging import LoggingSettings, LogLevel, configure_logging
 from app.integrations.config import IntegrationAccount, IntegrationMode
 from app.integrations.errors import IdentityCheckError, IntegrationError
-from app.integrations.sevdesk.client import SevdeskClient, sevdesk_http
+from app.integrations.sevdesk.client import SevdeskClient
 from app.integrations.sevdesk.config import SevdeskSettings
+from app.integrations.sevdesk.identity import TRIAL_MARKER
 from app.integrations.sevdesk.models import CustomFieldSetting, SevUser, Unity
 from app.integrations.transport import InnerTransport
 
@@ -49,22 +52,14 @@ async def configured_ids(client: SevdeskClient, settings: SevdeskSettings) -> li
     ]
 
 
-async def discover(settings: SevdeskSettings, *, transport: InnerTransport | None = None) -> list[str]:
-    """The account id as each candidate endpoint reports it - without the identity check, which needs it."""
-    lines: list[str] = []
-    async with sevdesk_http(settings, transport=transport) as http:
-        client = SevdeskClient(http, settings)
-        for endpoint, read in (
-            ("GET /SevClient", _from_accounts),
-            ("GET /SevUser", _from_users),
-            ("GET /ContactCustomFieldSetting", _from_field_settings),
-        ):
-            try:
-                found = await read(client)
-            except IntegrationError as exc:
-                found = [f"unavailable ({exc})"]
-            lines.extend(f"{endpoint}: {item}" for item in found or ["nothing found"])
-    return lines
+async def discover(settings: SevdeskSettings, *, transport: InnerTransport | None = None) -> str:
+    """The account the token belongs to - without the identity check, which needs its id."""
+    try:
+        account = await SevdeskClient.identify(settings, transport=transport)
+    except IntegrationError as exc:
+        return f"GET /SevClient: unavailable ({exc})"
+    marker = "yes" if TRIAL_MARKER in account.name else "no"
+    return f"GET /SevClient: id={account.id} {TRIAL_MARKER} marker: {marker}"
 
 
 async def doctor(settings: SevdeskSettings, *, transport: InnerTransport | None = None) -> list[Check]:
@@ -92,8 +87,7 @@ async def run(
         return 1
     settings = settings.model_copy(update={"mode": IntegrationMode.DRY_RUN})
     if discover_accounts:
-        for line in await discover(settings, transport=transport):
-            out(line)
+        out(await discover(settings, transport=transport))
         return 0
     checks = await doctor(settings, transport=transport)
     for check in checks:
@@ -114,36 +108,18 @@ async def _exists[T: SevUser | Unity | CustomFieldSetting](
     return Check(label, True, str(object_id))
 
 
-async def _from_accounts(client: SevdeskClient) -> list[str]:
-    account = await client.account()
-    return [f"id={account.id} company={account.name!r}"]
-
-
-async def _from_users(client: SevdeskClient) -> list[str]:
-    return _account_refs(await client.users())
-
-
-async def _from_field_settings(client: SevdeskClient) -> list[str]:
-    return _account_refs(await client.custom_field_settings())
-
-
-def _account_refs(items: Sequence[SevUser | CustomFieldSetting]) -> list[str]:
-    ids = sorted({item.sev_client.id for item in items if item.sev_client is not None})
-    return [f"sevClient id={account_id}" for account_id in ids]
-
-
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m app.cli.sevdesk_doctor", description=__doc__)
+    parser = argparse.ArgumentParser(prog="python -m app.cli.sevdesk_doctor", description=__doc__, allow_abbrev=False)
     parser.add_argument(
         "--account", type=IntegrationAccount, choices=list(IntegrationAccount), required=True, help="trial or live"
     )
-    parser.add_argument(
-        "--discover", action="store_true", help="Print the account id each candidate endpoint reports, then stop."
-    )
+    parser.add_argument("--discover", action="store_true", help="Print the account id the token belongs to, then stop.")
     return parser
 
 
 def main() -> None:
+    if os.environ.get("CI"):
+        raise SystemExit("sevdesk-doctor never runs in CI")
     arguments = build_parser().parse_args()
     configure_logging(LoggingSettings(level=LogLevel.WARNING))
     raise SystemExit(asyncio.run(run(arguments.account, discover_accounts=arguments.discover)))

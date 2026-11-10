@@ -103,6 +103,13 @@ class SevdeskClient:
             client._confirmed = True
             yield client
 
+    @classmethod
+    async def identify(cls, settings: SevdeskSettings, *, transport: InnerTransport | None = None) -> Account:
+        """The account the token belongs to, without the identity check, which needs its id: how the maintainer
+        finds ``SEVDESK__EXPECTED_ACCOUNT_ID``. It sends the identity read and nothing else."""
+        async with _sevdesk_http(settings, transport=transport) as http:
+            return await cls(http, settings).account()
+
     # --- reads ---
 
     async def account(self) -> Account:
