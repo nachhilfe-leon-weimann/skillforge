@@ -349,6 +349,8 @@ def test_a_next_link_outside_graph_is_refused(next_link: str) -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
+        if len(requests) > 1:  # a weakened guard followed the link; end the paging so the test fails, not hangs
+            return httpx.Response(200, json={"value": []})
         return httpx.Response(200, json={"value": [], "@odata.nextLink": next_link})
 
     with _client(handler) as client, pytest.raises(rc.RecorderError, match="outside Microsoft Graph"):
