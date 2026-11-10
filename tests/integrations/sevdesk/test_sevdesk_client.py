@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import httpx
 import pytest
+from skillcore.logging.redaction import REDACTED
 
 from app.core.logging import LogFormat, LoggingSettings, LogLevel, configure_logging
 from app.integrations.errors import (
@@ -15,6 +16,7 @@ from app.integrations.errors import (
 from app.integrations.sevdesk import client as sevdesk_client
 from app.integrations.sevdesk.client import SevdeskClient
 from app.integrations.sevdesk.models import Contact, ContactCustomField, Part
+from app.integrations.transport import Exchange
 from tests.integrations.sevdesk.fake_sevdesk import ACCOUNT_ID, TOKEN, FakeSevdesk, objects, page
 
 PART = {"id": "31", "objectName": "Part", "name": "Maths", "price": "30", "taxRate": "0.0", "status": "100"}
@@ -67,6 +69,16 @@ async def test_requests_carry_the_raw_token_and_neutral_headers(settings, fake_s
     assert headers["authorization"] == TOKEN
     assert (headers["accept"], headers["user-agent"]) == ("application/json", "skillforge")
     assert str(fake_sevdesk.requests[0].url) == "https://my.sevdesk.de/api/v1/SevClient"
+
+
+async def test_an_observer_sees_the_token_redacted(settings, fake_sevdesk: FakeSevdesk):
+    exchanges: list[Exchange] = []
+
+    async with SevdeskClient.connect(settings, observer=exchanges.append, transport=fake_sevdesk.transport):
+        pass
+
+    assert [exchange.request_headers["authorization"] for exchange in exchanges] == [REDACTED]
+    assert exchanges[0].request_headers["accept"] == "application/json"
 
 
 async def test_an_unknown_id_reads_as_none(settings, fake_sevdesk: FakeSevdesk):
@@ -209,6 +221,11 @@ async def test_a_listing_stops_once_its_total_is_read(settings, fake_sevdesk: Fa
 
     assert [part.id for part in parts] == [1, 2, 3, 4]
     assert fake_sevdesk.sent() == ["GET /SevClient", "GET /Part", "GET /Part"]
+    params = [dict(request.url.params) for request in fake_sevdesk.requests[1:]]
+    assert params == [
+        {"limit": "2", "offset": "0", "countAll": "true"},
+        {"limit": "2", "offset": "2", "countAll": "true"},
+    ]
 
 
 # --- the token stays inside ---
