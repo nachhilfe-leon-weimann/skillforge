@@ -113,6 +113,16 @@ def test_decomposed_umlauts_are_composed_before_the_words_are_split() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "name", ["\u092a\u094d\u0930\u093f\u092f\u093e \u0936\u0930\u094d\u092e\u093e", "q\u0308uentin Beispiel"]
+)
+def test_marks_that_nfc_cannot_compose_stay_inside_their_word(name: str) -> None:
+    pseudonym = rc.Pseudonymizer(SALT).pseudo_name(name)
+
+    assert pseudonym.isascii()
+    assert len(pseudonym.split()) == 2
+
+
 def test_initials_and_digits_keep_their_class() -> None:
     pseudonymizer = rc.Pseudonymizer(SALT)
 
@@ -218,6 +228,35 @@ def test_other_categories_are_pseudonymized_like_names(category: str) -> None:
     assert not NAME_TOKENS & {token.casefold() for token in re.findall(r"[^\W_]+", pseudonym)}
 
 
+def test_blank_categories_are_dropped() -> None:
+    event = rc.Pseudonymizer(SALT).event(
+        _event("e1", "Urlaub", "2026-03-25T15:00:00", "2026-03-25T16:00:00", categories=[" ", "", "Blue category"])
+    )
+
+    assert event["categories"] == ["Blue category"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected"),
+    [
+        ("type", "exception", "exception"),
+        ("type", "Erika Mustermann", "unknown"),
+        ("showAs", "oof", "oof"),
+        ("showAs", "Erika", "unknown"),
+        ("onlineMeetingProvider", "teamsForBusiness", "teamsForBusiness"),
+        ("onlineMeetingProvider", "Erika", "unknown"),
+        ("isCancelled", "Erika", None),
+        ("isCancelled", True, True),
+    ],
+)
+def test_enum_and_boolean_fields_survive_only_with_graphs_values(field: str, value: Any, expected: Any) -> None:
+    event = rc.Pseudonymizer(SALT).event(
+        _event("e1", "Mathe mit Max Mustermann", "2026-03-25T15:00:00", "2026-03-25T16:00:00", **{field: value})
+    )
+
+    assert event[field] == expected
+
+
 def test_ids_are_keyed_hashes_that_preserve_equality() -> None:
     pseudonymizer = rc.Pseudonymizer(SALT)
     occurrence = pseudonymizer.event(
@@ -293,6 +332,26 @@ def test_the_offset_is_drawn_per_recording_not_from_the_salt() -> None:
     assert all(rc.MIN_OFFSET_WEEKS <= abs(offset) <= rc.MAX_OFFSET_WEEKS for offset in offsets)
     assert len(set(offsets)) > 1  # one salt, several offsets; all 40 equal is practically impossible
     assert {offset > 0 for offset in offsets} == {True, False}
+
+
+def test_an_all_day_original_start_moves_in_plain_weeks_like_its_dates() -> None:
+    # 22:00 UTC is midnight in Berlin summer time; on the Berlin clock a winter offset would make it 23:00.
+    raw = _event(
+        "e1",
+        "Urlaub",
+        "2026-07-15T00:00:00",
+        "2026-07-16T00:00:00",
+        isAllDay=True,
+        type="exception",
+        originalStart="2026-07-14T22:00:00Z",
+    )
+
+    for _ in range(40):
+        event = rc.Pseudonymizer(SALT).event(raw)
+        start = datetime.fromisoformat(event["start"]["dateTime"])
+        original = datetime.fromisoformat(event["originalStart"].removesuffix("Z"))
+        assert event["originalStart"].endswith("T22:00:00Z")
+        assert start - original == datetime(2026, 7, 15) - datetime(2026, 7, 14, 22)
 
 
 def test_all_day_events_stay_floating_midnights() -> None:
@@ -703,21 +762,19 @@ RAW_DATES = {
 } | {"2026-03-23", "2026-03-31"}
 
 
-def _env_file(tmp_path: Path, extra: list[str] | None = None) -> Path:
+def _env_file(tmp_path: Path, extra: list[str] | None = None, **overrides: str) -> Path:
     for name in ("cert.pem", "key.pem"):
         (tmp_path / name).write_text("synthetic")
+    settings = {
+        "GRAPH__TENANT_ID": TENANT_ID,
+        "GRAPH__CLIENT_ID": CLIENT_ID,
+        "GRAPH__CERTIFICATE_PATH": str(tmp_path / "cert.pem"),
+        "GRAPH__PRIVATE_KEY_PATH": str(tmp_path / "key.pem"),
+        "GRAPH__MAILBOX": MAILBOX,
+        "GRAPH__CALENDAR_NAME": CALENDAR_NAME,
+    } | overrides
     env_file = tmp_path / "graph.env"
-    env_file.write_text(
-        "\n".join([
-            f"GRAPH__TENANT_ID={TENANT_ID}",
-            f"GRAPH__CLIENT_ID={CLIENT_ID}",
-            f"GRAPH__CERTIFICATE_PATH={tmp_path / 'cert.pem'}",
-            f"GRAPH__PRIVATE_KEY_PATH={tmp_path / 'key.pem'}",
-            f"GRAPH__MAILBOX={MAILBOX}",
-            f"GRAPH__CALENDAR_NAME={CALENDAR_NAME}",
-            *(extra or []),
-        ])
-    )
+    env_file.write_text("\n".join([*(f"{key}={value}" for key, value in settings.items()), *(extra or [])]))
     for path in (env_file, tmp_path / "key.pem"):
         path.chmod(0o600)
     return env_file
@@ -794,8 +851,12 @@ def test_record_writes_a_fixture_and_summary_free_of_the_synthetic_input(
         assert [raw["id"] for raw in RAW_EVENTS if raw["id"] in quoted] == []
         assert [day for day in sorted(RAW_DATES) if day in text] == []
     assert not re.search(r"\d{4}-\d{2}-\d{2}", summary)
+    # Prefixes only: no subject with its (pseudonymized) name part reaches the summary.
+    assert [line for line in summary.splitlines() if " mit " in line] == ["  lessons (<subject> mit <name>): 5"]
     assert not re.search(r"\d{4}-\d{2}-\d{2}", json.dumps(fixture["meta"]))
     assert fixture["meta"]["windowDays"] == 9
+    assert fixture["meta"]["fields"] == list(rc.FIXTURE_EVENT_FIELDS)
+    assert "lastModifiedDateTime" not in json.dumps(fixture["meta"])
 
     events = {event["iCalUId"]: event for event in fixture["value"]}
     first, exception, late = (events[rc.Pseudonymizer(SALT).pseudo_id(f"ical-{key}")] for key in ("e1", "e2", "e3"))
@@ -881,13 +942,67 @@ def test_a_failing_token_provider_does_not_echo_its_message(tmp_path: Path, caps
     assert TENANT_ID not in capsys.readouterr().err
 
 
-def test_a_malformed_date_argument_is_not_echoed(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit):
-        rc.main(["--env-file", "x", "--start", "2026-13-45", "--end", "2026-03-31", "--out", str(tmp_path)])
+@pytest.mark.parametrize(
+    ("arguments", "planted"),
+    [
+        (["--start", "2026-13-45", "--end", "2026-03-31"], "2026-13-45"),
+        (["--start", "2026-03-01", "--end", "2026-03-31", "--probe-mailbx", OTHER_MAILBOX], OTHER_MAILBOX),
+        (["--start", "2026-03-01", "--end", "2026-03-31", OTHER_MAILBOX], OTHER_MAILBOX),
+    ],
+)
+def test_arguments_that_do_not_parse_are_not_echoed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], arguments: list[str], planted: str
+) -> None:
+    with pytest.raises(SystemExit) as raised:
+        rc.main(["--env-file", "x", "--out", str(tmp_path), *arguments])
 
-    error = capsys.readouterr().err
-    assert "expected YYYY-MM-DD" in error
-    assert "2026-13-45" not in error
+    captured = capsys.readouterr()
+    assert raised.value.code == 2
+    assert "the arguments do not parse" in captured.err
+    assert planted not in captured.out + captured.err
+
+
+@pytest.mark.parametrize(
+    ("settings", "extra", "planted"),
+    [
+        ({}, ["SYNTHETIC LINE WITHOUT AN EQUALS SIGN"], "SYNTHETIC LINE"),
+        ({"GRAPH__CALENDAR_NAME": "Privat"}, [], "Erika Mustermann"),
+        ({"GRAPH__MAILBOX": "erika-mustermann"}, [], "erika-mustermann"),
+        ({"GRAPH__CERTIFICATE_PATH": "{tmp}/erika-mustermann.pem"}, [], "erika-mustermann"),
+        ({"GRAPH__PRIVATE_KEY_PATH": "{tmp}/erika-mustermann.key"}, [], "erika-mustermann"),
+    ],
+    ids=["malformed env line", "visible calendar names", "mailbox", "certificate path", "key path"],
+)
+def test_config_and_lookup_errors_do_not_echo_their_input(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], settings: dict[str, str], extra: list[str], planted: str
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == f"/v1.0/users/{MAILBOX}/calendars"
+        return httpx.Response(
+            200, json={"value": [{"id": "c1", "name": "Erika Mustermann"}, {"id": "c2", "name": "x"}]}
+        )
+
+    overrides = {key: value.format(tmp=tmp_path) for key, value in settings.items()}
+    status = rc.main(
+        [
+            *(
+                "--env-file",
+                str(_env_file(tmp_path, extra, **overrides)),
+                "--start",
+                "2026-03-23",
+                "--end",
+                "2026-03-31",
+            ),
+            *("--out", str(tmp_path / "out"), "--salt-file", str(_salt_file(tmp_path))),
+        ],
+        token_provider=lambda config: "synthetic-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    captured = capsys.readouterr()
+    assert status == 1
+    assert captured.err.startswith("error: ")
+    assert planted not in captured.out + captured.err
 
 
 # endregion
