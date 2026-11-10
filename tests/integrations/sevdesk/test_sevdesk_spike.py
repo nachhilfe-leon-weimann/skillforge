@@ -13,7 +13,7 @@ import pytest
 
 from app.integrations.config import IntegrationAccount, IntegrationMode
 from scripts import sevdesk_spike
-from scripts.sevdesk_spike import STEPS, WRONG_TOKEN, build_parser, run, s24_dates
+from scripts.sevdesk_spike import STEPS, TOPUP_TEXT, WRONG_TOKEN, build_parser, run, s24_dates
 from tests.integrations.sevdesk.fake_sevdesk import ACCOUNT_ID, TOKEN, TRIAL_COMPANY, FakeSevdesk, objects, page
 from tests.integrations.sevdesk.test_sevdesk_recipes import ROOT
 from tests.test_fixture_scan import leaks
@@ -119,7 +119,7 @@ async def test_a_full_walk_creates_tagged_objects_records_everything_and_saves_t
     assert Counter(trial.sent("POST") + trial.sent("DELETE")) == {
         "POST /Contact": 3,
         "POST /ContactCustomField": 2,
-        "POST /Invoice/Factory/saveInvoice": 14,
+        "POST /Invoice/Factory/saveInvoice": 16,
         "POST /Invoice/501/render": 1,
         "DELETE /Invoice/501": 1,
     }
@@ -133,10 +133,16 @@ async def test_a_full_walk_creates_tagged_objects_records_everything_and_saves_t
     assert [d.get("footText", "").split("<br>")[0] for d in drafts].count(TRANSFER) == 1, (
         "one variant with FOOT_TRANSFER"
     )
-    assert drafts[0]["headText"].startswith(f"Spike {RUN_ID}: Sehr geehrte [%ANREDE%],<br>")
+    assert drafts[0]["headText"].startswith(f"Spike {RUN_ID}: [%VOLLEANREDE%],<br>\n<br>\n")
+    assert [d.get("header") for d in drafts].count(f"Spike {RUN_ID}: Rechnung Nr. [%DOKUMENTENNUMMER%]") == 1, (
+        "one variant with DOCUMENT_TITLE"
+    )
+    assert sum("?re=[%DOKUMENTENNUMMER%]&betrag=" in d.get("footText", "") for d in drafts) == 1, (
+        "one variant with the document number in the pay link"
+    )
     positions = [p for r in trial.requests if r.url.path.endswith("/saveInvoice") for p in _positions(r)]
     assert all(p.get("text") for p in positions if "part" not in p), "every lesson carries its description"
-    assert not any("text" in p for p in positions if "part" in p), "the top-up's description is open (and Q5's)"
+    assert [p.get("text") for p in positions if "part" in p] == [TOPUP_TEXT, None], "the top-up's text; Q5's none"
     assert [p["part"]["id"] for p in positions if "part" in p] == [31, 31], "the part the discovery found"
     assert ["name" in p for p in positions if "part" in p] == [True, False], "a top-up, then a part without a name"
     pdf_request = next(request for request in trial.requests if request.url.path.endswith("/getPdf"))
@@ -392,6 +398,8 @@ async def test_the_manifest_steps_report_what_the_rows_ask(live_settings, trial,
         "several lessons",
         "several children",
         "the transfer foot text",
+        "the document title",
+        "the pay link with the document number",
         "a top-up",
         "Q18 /Invoice/{id}/getPositions",
         "a part and no name",
@@ -583,16 +591,16 @@ async def test_an_unreadable_listing_stops_with_a_message(too_deep_to_parse, req
     assert code == 1 and lines[-1] == "stopped: sevdesk GET /Part: the answer is no readable JSON"
 
 
-def _spec_block(name: str) -> str:
+def _spec_block(name: str, kind: str = "html") -> str:
     spec = (ROOT / "docs" / "specs" / "billing.md").read_text()
-    found = re.search(rf"`{name}`[^\n]*:\n\n```html\n(.*?)\n```", spec, re.S)
+    found = re.search(rf"`{name}`[^\n]*:\n\n```{kind}\n(.*?)\n```", spec, re.S)
     assert found, name
     return found[1]
 
 
 def test_the_s15_texts_are_the_specs_blocks_line_by_line():
     placeholders = {
-        "{Anrede/Name}": "[%ANREDE%]",
+        "{Vollanrede}": "[%VOLLEANREDE%]",
         "{Zahlungsziel}": "[%ZAHLUNGSZIEL%]",
         "{Kontaktperson}": "[%KONTAKTPERSON%]",
         "{Zahlungslink}": sevdesk_spike.PAY_LINK,
@@ -603,3 +611,8 @@ def test_the_s15_texts_are_the_specs_blocks_line_by_line():
         for written, placeholder in placeholders.items():
             expected = expected.replace(written, placeholder)
         assert getattr(sevdesk_spike, constant) == "Spike {run_id}: " + expected, constant
+
+
+def test_the_document_title_and_the_top_up_text_are_the_specs_blocks():
+    assert sevdesk_spike.DOCUMENT_TITLE == "Spike {run_id}: " + _spec_block("DOCUMENT_TITLE", "text")
+    assert sevdesk_spike.TOPUP_TEXT == _spec_block("TOPUP_POSITION_DESCRIPTION", "text")

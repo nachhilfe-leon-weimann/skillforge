@@ -54,6 +54,8 @@ CUSTOMER_CATEGORY_ID = 3
 """sevDesk's default contact category "customer" - a spike question."""
 PAY_LINK = "https://pay.example.org/zahlung?re=[%RECHNUNGSNUMMER%]&betrag=[%BETRAG%]"
 """A stand-in for ``{Zahlungslink}``: placeholders for number and amount in a link target."""
+PAY_LINK_DOCUMENT_NUMBER = PAY_LINK.replace("[%RECHNUNGSNUMMER%]", "[%DOKUMENTENNUMMER%]")
+"""The same link with the number placeholder of today's document title (M9): which of the two resolves is Q2."""
 LINE = "<br>\n"
 """How the spec's blocks join their lines (M7): S15 shows what sevDesk makes of the markup and of the line breaks."""
 _FOOT_REST = LINE.join((
@@ -68,14 +70,21 @@ FOOT_TEXT = (
     f"</em>{LINE}{_FOOT_REST}"
 )
 """S15: the markup of ``FOOT_PAYPAL`` in billing.md, with candidate placeholders; ``discovery`` lists the account's."""
+FOOT_TEXT_DOCUMENT_NUMBER = FOOT_TEXT.replace(PAY_LINK, PAY_LINK_DOCUMENT_NUMBER)
+"""S15: ``FOOT_TEXT`` with ``PAY_LINK_DOCUMENT_NUMBER``, on one variant of S11."""
 FOOT_TRANSFER = f"Spike {{run_id}}: <strong>Zahlungsverfahren:</strong> <em>Überweisung</em>{LINE}{_FOOT_REST}"
 """S15: ``FOOT_TRANSFER`` of billing.md, on one variant of S11."""
 HEAD_TEXT = LINE.join((
-    "Spike {run_id}: Sehr geehrte [%ANREDE%],",
+    "Spike {run_id}: [%VOLLEANREDE%],",
+    "",
     "vielen Dank für Ihren Auftrag und das damit verbundene Vertrauen!",
     "Nachfolgend finden Sie die Abrechnung der vereinbarten Leistungen im oben genannten Zeitraum:",
 ))
-"""S15: ``HEAD_TEXT`` of billing.md, with a candidate placeholder for the salutation."""
+"""S15: ``HEAD_TEXT`` of billing.md, with today's placeholder for the full salutation (M3)."""
+DOCUMENT_TITLE = "Spike {run_id}: Rechnung Nr. [%DOKUMENTENNUMMER%]"
+"""S14: ``DOCUMENT_TITLE`` of billing.md as the ``header`` of one variant of S11 (M9)."""
+TOPUP_TEXT = "Vorauszahlung für kommende Unterrichtsstunden"
+"""S11: ``TOPUP_POSITION_DESCRIPTION`` of billing.md (M4)."""
 LESSON_TEXT = "Montag, 3. November 2025 / 14:00 – 15:30"
 """A lesson's description in the form of ``POSITION_DESCRIPTION`` (billing.md); synthetic."""
 PAYMENT_METHODS = ("PayPal", "Überweisung")
@@ -212,14 +221,17 @@ async def invoice_variants(spike: Spike) -> None:
         "several lessons": _draft(spike, *lessons),
         "several children": _draft(spike, *children),
         "the transfer foot text": _draft(spike, _lesson(spike, "transfer"), foot_text=_text(spike, FOOT_TRANSFER)),
+        "the document title": _draft(spike, _lesson(spike, "title"), header=_text(spike, DOCUMENT_TITLE)),
+        "the pay link with the document number": _draft(
+            spike, _lesson(spike, "pay link"), foot_text=_text(spike, FOOT_TEXT_DOCUMENT_NUMBER)
+        ),
     }
     for label, draft in variants.items():
         await _save(spike, draft, label)
     if spike.part_id is None:
         spike.out("a top-up and a part without a name: no part (--part-id, or a part the discovery step finds)")
         return
-    # The top-up's description is open in the spec: its position, and Q5's, carry none.
-    top_up = _lesson(spike, "5 x Maths", 300, part_id=spike.part_id, text=None)
+    top_up = _lesson(spike, "5 x Maths", 300, part_id=spike.part_id, text=TOPUP_TEXT)
     await _save(spike, _draft(spike, top_up), "a top-up")
     # Q5: a position with a part and no name - built as always, then sent without its name; a refusal is the answer.
     draft = _draft(spike, _lesson(spike, "unnamed", part_id=spike.part_id, text=None))
