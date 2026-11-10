@@ -141,6 +141,9 @@ async def test_an_expired_trial_skips_the_contract_run(settings, fake_sevdesk: F
 async def test_any_other_failed_check_fails_the_contract_run(answer, settings, fake_sevdesk: FakeSevdesk):
     fake_sevdesk.on("GET", "/SevClient", answer)
 
-    with pytest.raises(IdentityCheckError):
+    # A skip is no exception but an outcome: catch it too, or a wrong skip would pass as a skipped test.
+    with pytest.raises((IdentityCheckError, pytest.skip.Exception)) as raised:
         async with connect_trial(settings, transport=fake_sevdesk.transport):
             pass
+
+    assert isinstance(raised.value, IdentityCheckError)
