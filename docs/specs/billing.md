@@ -1429,7 +1429,7 @@ SP-CAL and SP-SD move each answered question here, with the fixture that shows i
 
 | Id | Question | Answer | Fixture |
 |---|---|---|---|
-| Q9 | The exact name of the Outlook category for a late cancellation, and whether Graph delivers `categories` for the lesson calendar. | `Abgesagt`; Graph delivers `categories`. | G3 |
+| Q9 | The exact name of the Outlook category for a late cancellation, and whether Graph delivers `categories` for the lesson calendar. | `Abgesagt`, for a late cancellation and a no-show alike (decision M); Graph delivers `categories`. The category only presets the status; the maintainer decides in the portal. | G3 |
 | Q16 | Which Graph id stays the same when an occurrence of a series moves? | All three: `id`, `iCalUId` and `seriesMasterId`; the occurrence becomes an `exception`. `calendar_event.external_id` is the event `id`, the one `calendarView` addresses. | G2 |
 
 ## Open questions
