@@ -41,8 +41,9 @@ from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from itertools import groupby
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -91,7 +92,14 @@ EVENT_FIELDS = (
 # The fixture keeps the order of lastModifiedDateTime as a rank: the instant lies near the recording date.
 FIXTURE_EVENT_FIELDS = (*(field for field in EVENT_FIELDS if field != "lastModifiedDateTime"), "lastModifiedRank")
 ID_FIELDS = ("id", "iCalUId", "seriesMasterId")
-PASSTHROUGH_FIELDS = ("type", "isAllDay", "isCancelled", "isOnlineMeeting", "onlineMeetingProvider", "showAs")
+BOOLEAN_FIELDS = ("isAllDay", "isCancelled", "isOnlineMeeting")
+# Graph's enums; any other value could carry text and becomes "unknown", as an unknown location type "default".
+ENUM_FIELDS = {
+    "type": frozenset({"singleInstance", "occurrence", "exception", "seriesMaster"}),
+    "showAs": frozenset({"free", "tentative", "busy", "oof", "workingElsewhere", "unknown"}),
+    "onlineMeetingProvider": frozenset({"unknown", "teamsForBusiness", "skypeForBusiness", "skypeForConsumer"}),
+}
+UNKNOWN_ENUM = "unknown"
 LOCATION_TYPES = frozenset({
     "default",
     "conferenceRoom",
@@ -179,7 +187,6 @@ SYNTHETIC_LOCATIONS = {
 }
 
 _NAME_SEPARATOR = re.compile(r"\s+mit\s+", re.IGNORECASE)
-_WORD = re.compile(r"[^\W_]+")
 _PHONE_CHARS = re.compile(r"^[+\d\s/().\-]+$")
 _MIN_PHONE_DIGITS = 6
 _UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
@@ -535,6 +542,22 @@ def last_modified_ranks(raw_events: Sequence[dict[str, Any]]) -> list[int | None
     return [None if moment is None else rank[moment] for moment in instants]
 
 
+def _is_word_char(char: str) -> bool:
+    return unicodedata.category(char)[0] in "LMN"
+
+
+def _runs(text: str) -> list[tuple[bool, str]]:
+    """Maximal runs of letters, marks and digits (``True``) and of everything else (``False``).
+
+    By Unicode category, so a combining mark that NFC cannot compose (a virama, say) stays inside its word.
+    """
+    return [(is_word, "".join(run)) for is_word, run in groupby(text, key=_is_word_char)]
+
+
+def _words(text: str) -> list[str]:
+    return [run for is_word, run in _runs(text) if is_word]
+
+
 def _category_key(category: str) -> str:
     return " ".join(normalize_token(category).split())
 
@@ -547,7 +570,7 @@ class Pseudonymizer:
         self._id_key = self._derive(salt, b"ids")
         self._week_offset = random_week_offset()
         kept = (*SUBJECTS, *TITLE_MARKERS, KENNENLERNEN, *extra_subjects)
-        self._kept_words = {normalize_token(word) for text in kept for word in _WORD.findall(text)}
+        self._kept_words = {normalize_token(word) for text in kept for word in _words(text)}
         self._kept_categories = {_category_key(category) for category in (*DEFAULT_CATEGORIES, *extra_categories)}
         self._pseudonyms: dict[str, str] = {}
 
@@ -588,16 +611,18 @@ class Pseudonymizer:
     def pseudo_name(self, name: str) -> str:
         """Replace every word, keep spaces, hyphens and punctuation: token count and shape survive.
 
-        NFC first: a decomposed umlaut would split a word at its combining mark and leave the mark behind.
+        NFC first, so a decomposed umlaut is one letter; a mark NFC leaves alone stays inside its word anyway.
         """
-        return _WORD.sub(lambda match: self._word(match.group()), unicodedata.normalize("NFC", name))
+        runs = _runs(unicodedata.normalize("NFC", name))
+        return "".join(self._word(run) if is_word else run for is_word, run in runs)
 
     def keeps_prefix(self, prefix: str) -> bool:
-        words = _WORD.findall(prefix)
+        runs = _runs(prefix)
+        words = [run for is_word, run in runs if is_word]
         return (
             bool(words)
             and all(normalize_token(w) in self._kept_words for w in words)
-            and all(PREFIX_SEPARATORS.fullmatch(gap) for gap in _WORD.split(prefix))
+            and all(PREFIX_SEPARATORS.fullmatch(gap) for is_word, gap in runs if not is_word)
         )
 
     def pseudo_subject(self, subject: Any) -> str:
@@ -610,9 +635,14 @@ class Pseudonymizer:
         kept = prefix if self.keeps_prefix(prefix) else SUBJECT_PLACEHOLDER
         return f"{kept}{separator.group()}{self.pseudo_name(subject[separator.end() :])}"
 
-    def pseudo_category(self, category: Any) -> str:
-        """An allowlisted category stays; any other may name a person and becomes ``[category] <pseudonym>``."""
+    def pseudo_category(self, category: Any) -> str | None:
+        """An allowlisted category stays; any other may name a person and becomes ``[category] <pseudonym>``.
+
+        A blank category is ``None``: the caller drops it.
+        """
         text = unicodedata.normalize("NFC", str(category)).strip()
+        if not text:
+            return None
         if _category_key(text) in self._kept_categories:
             return text
         return f"{CATEGORY_PLACEHOLDER} {self.pseudo_name(text)}"
@@ -630,10 +660,19 @@ class Pseudonymizer:
             shifted = _shift_local(moment.replace(tzinfo=UTC), self._week_offset)
         return {"dateTime": _graph_datetime(shifted), "timeZone": value.get("timeZone", "UTC")}
 
-    def shift_instant(self, value: Any) -> Any:
+    def shift_instant(self, value: Any, *, all_day: bool) -> Any:
+        """An ISO instant; for an all-day event in plain whole weeks like its dates, else on the Berlin clock.
+
+        On the Berlin clock an all-day ``originalStart`` would move by an hour across DST and give the season away.
+        """
         if not isinstance(value, str) or not value:
             return value
-        return f"{_shift_local(_parse_utc(value), self._week_offset):%Y-%m-%dT%H:%M:%S}Z"
+        moment = _parse_utc(value)
+        if all_day:
+            shifted = moment + timedelta(weeks=self._week_offset)
+        else:
+            shifted = _shift_local(moment, self._week_offset)
+        return f"{shifted:%Y-%m-%dT%H:%M:%S}Z"
 
     # Events
 
@@ -649,17 +688,25 @@ class Pseudonymizer:
         location = location if isinstance(location, dict) else {}
         location_type = location.get("locationType")
         out: dict[str, Any] = {field: self.pseudo_id(raw.get(field)) for field in ID_FIELDS}
-        out |= {field: raw.get(field) for field in PASSTHROUGH_FIELDS}
+        out |= {field: raw[field] if isinstance(raw.get(field), bool) else None for field in BOOLEAN_FIELDS}
+        out |= {
+            field: None if raw.get(field) is None else raw[field] if raw[field] in allowed else UNKNOWN_ENUM
+            for field, allowed in ENUM_FIELDS.items()
+        }
         out |= {
             "subject": self.pseudo_subject(raw.get("subject")),
             "start": self.shift_datetime_tz(raw.get("start"), all_day=all_day),
             "end": self.shift_datetime_tz(raw.get("end"), all_day=all_day),
-            "originalStart": self.shift_instant(raw.get("originalStart")),
+            "originalStart": self.shift_instant(raw.get("originalStart"), all_day=all_day),
             "location": {
                 "displayName": SYNTHETIC_LOCATIONS[classify_location(location)],
                 "locationType": location_type if location_type in LOCATION_TYPES else "default",
             },
-            "categories": [self.pseudo_category(c) for c in categories if c] if isinstance(categories, list) else [],
+            "categories": [
+                pseudonym
+                for c in (categories if isinstance(categories, list) else [])
+                if (pseudonym := self.pseudo_category(c))
+            ],
             "lastModifiedRank": last_modified_rank,
         }
         return {field: out[field] for field in FIXTURE_EVENT_FIELDS}
@@ -791,19 +838,19 @@ def write_fixture(path: Path, document: dict[str, Any]) -> None:
 # region CLI
 
 
-def _iso_date(text: str) -> date:
-    """``date.fromisoformat`` whose error does not echo the value: it may be a real date."""
-    try:
-        return date.fromisoformat(text)
-    except ValueError:
-        raise argparse.ArgumentTypeError("expected YYYY-MM-DD") from None
+class _QuietParser(argparse.ArgumentParser):
+    """Its errors echo nothing the maintainer typed: a mistyped option or value may be an address or a real date."""
+
+    def error(self, message: str) -> NoReturn:
+        self.print_usage(sys.stderr)
+        self.exit(2, f"{self.prog}: error: the arguments do not parse (an option or a value); see --help\n")
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
+    parser = _QuietParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--env-file", type=Path, required=True, help="the Graph config (mode 600)")
-    parser.add_argument("--start", type=_iso_date, required=True, help="first day, YYYY-MM-DD (Berlin)")
-    parser.add_argument("--end", type=_iso_date, required=True, help="last day, inclusive, YYYY-MM-DD")
+    parser.add_argument("--start", type=date.fromisoformat, required=True, help="first day, YYYY-MM-DD (Berlin)")
+    parser.add_argument("--end", type=date.fromisoformat, required=True, help="last day, inclusive, YYYY-MM-DD")
     parser.add_argument("--out", type=Path, required=True, help="directory for the fixture (outside every git repo)")
     parser.add_argument("--force", action="store_true", help="overwrite an existing fixture")
     parser.add_argument("--probe-mailbox", help="another mailbox; expects 403 to prove the RBAC restriction")
@@ -854,7 +901,7 @@ def main(
                     # The length only: the window's dates would give the shift away.
                     "windowDays": window_days,
                     "dateShift": "a random whole number of weeks per recording, Europe/Berlin wall clock kept",
-                    "selectedFields": list(EVENT_FIELDS),
+                    "fields": list(FIXTURE_EVENT_FIELDS),
                 },
                 "value": events,
             },

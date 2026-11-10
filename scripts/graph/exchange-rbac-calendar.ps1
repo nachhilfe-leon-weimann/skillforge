@@ -14,9 +14,9 @@
          filter, -FilterProperty EmailAddresses scopes by the mailbox's primary SMTP address instead.
          A reused scope must carry exactly this filter.
       3. Role assignment "Application Calendars.Read" for the app, restricted to that scope. A reused
-         assignment must give this app the role on this scope.
+         assignment must be assigned to this app's service principal and use this scope.
       4. Test-ServicePrincipalAuthorization: the in-scope mailbox must be InScope True; the
-         out-of-scope mailbox must be InScope False for every "Application Calendars.Read" row.
+         out-of-scope mailbox must show at least one "Application Calendars.Read" row, all InScope False.
 
     Output names only role, scope and True/False - no IDs, tenant data or addresses - so it can be
     pasted into an agent chat. Error messages from Exchange cmdlets may still contain IDs.
@@ -38,15 +38,16 @@
       cannot see Entra grants, and Test-ServicePrincipalAuthorization ignores them.
 
     PROPAGATION
-      New objects can take a moment to become visible; the script looks them up again a few times
-      before it gives up. Test-ServicePrincipalAuthorization bypasses the permission cache, so it
-      passes at once. Real Graph calls see a change only after the cache resets: 30 minutes for an
-      idle app, up to 2 hours for an active one.
+      New objects can take a moment to become visible. The lookup retries cover only the checks
+      (and the removal checks): a replication error while an object is being created stops the run,
+      and a rerun fixes it, since the script reuses what exists. Test-ServicePrincipalAuthorization
+      bypasses the permission cache, so it passes at once. Real Graph calls see a change only after
+      the cache resets: 30 minutes for an idle app, up to 2 hours for an active one.
 
     UNDO
       Run with -Remove (-Mailbox optional; with it, the scope's filter must name that mailbox). It
       first checks that the role assignment and the scope are the ones this setup creates, then
-      removes both. The service principal pointer stays: it grants nothing on its own, and other
+      removes both and fails if either is still there. The service principal pointer stays: it grants nothing on its own, and other
       SkillForge features may hold role assignments through it. Remove it by hand with
       Remove-ServicePrincipal once no role assignment uses it.
 
@@ -128,9 +129,16 @@ function Find-Scope { Get-ManagementScope | Where-Object { $_.Name -eq $ScopeNam
 function Find-Assignment { Get-ManagementRoleAssignment -Role $RoleName | Where-Object { $_.Name -eq $AssignmentName } }
 
 function Invoke-ReadOnly([scriptblock] $Command) {
-    # Test-ServicePrincipalAuthorization only reads; keep -WhatIf from leaking into it.
+    # Test-ServicePrincipalAuthorization only reads; keep -WhatIf and -Confirm from leaking into it.
     $WhatIfPreference = $false
+    $ConfirmPreference = 'None'
     & $Command
+}
+
+function Get-OptionalProperty($Object, [string] $Name) {
+    # StrictMode throws on a missing property; an assignment may lack one of the assignee fields.
+    $property = $Object.PSObject.Properties[$Name]
+    if ($property) { "$($property.Value)" }
 }
 
 function Get-CalendarRows([string] $Resource) {
@@ -162,23 +170,34 @@ function Test-OwnScope($Scope) {
 }
 
 function Test-OwnAssignment($Assignment) {
-    # The named assignment must use this scope, and this app must hold the role through this scope.
+    # The named assignment must be assigned to this service principal and use this scope, and this app must
+    # hold the role through this scope.
     if (-not $servicePrincipal -or "$($Assignment.CustomResourceScope)" -ne $ScopeName) { return $false }
+    if ((Get-OptionalProperty $Assignment 'RoleAssigneeType') -ne 'ServicePrincipal') { return $false }
+    $assignees = @('RoleAssignee', 'RoleAssigneeName' | ForEach-Object { Get-OptionalProperty $Assignment $_ })
+    if ($assignees -notcontains $spObjectIdText) { return $false }
     $rows = @(Invoke-ReadOnly { Test-ServicePrincipalAuthorization -Identity $spObjectIdText })
     [bool] ($rows | Where-Object { $_.RoleName -eq $RoleName -and $_.AllowedResourceScope -eq $ScopeName })
 }
 
-function Wait-Lookup([string] $What, [scriptblock] $Lookup) {
-    # A new object can take a moment to replicate; look again a few times before giving up.
+function Wait-Until([string] $Waiting, [string] $Failure, [scriptblock] $Condition) {
+    # A change can take a moment to replicate; look again a few times before giving up.
     for ($attempt = 1; $attempt -le $LookupAttempts; $attempt++) {
-        $found = & $Lookup
-        if ($found) { return $found }
+        if (& $Condition) { return }
         if ($attempt -lt $LookupAttempts) {
-            Write-Host "$What not visible yet; looking again in $LookupDelaySeconds s ($attempt/$($LookupAttempts - 1))."
+            Write-Host "$Waiting; looking again in $LookupDelaySeconds s ($attempt/$($LookupAttempts - 1))."
             Start-Sleep -Seconds $LookupDelaySeconds
         }
     }
-    Fail "$What is still not visible. Run the script again in a few minutes; it reuses what exists."
+    Fail $Failure
+}
+
+function Wait-Visible([string] $What, [scriptblock] $Lookup) {
+    Wait-Until "$What not visible yet" "$What is still not visible. Run the script again in a few minutes; it reuses what exists." { [bool] (& $Lookup) }
+}
+
+function Wait-Gone([string] $What, [scriptblock] $Lookup) {
+    Wait-Until "$What still there" "$What is still there after its removal; remove it by hand." { -not (& $Lookup) }
 }
 
 $servicePrincipal = Find-ServicePrincipal
@@ -212,7 +231,9 @@ if ($Remove) {
     if (-not $assignment) {
         Write-Host "Role assignment ${AssignmentName}: not present."
     } elseif ($PSCmdlet.ShouldProcess("role assignment $AssignmentName", 'Remove')) {
-        $assignment | Remove-ManagementRoleAssignment
+        # Confirmed above; Exchange's own prompt would let a "No" leave the grant behind a "removed".
+        $assignment | Remove-ManagementRoleAssignment -Confirm:$false
+        Wait-Gone "Role assignment $AssignmentName" { Find-Assignment }
         Write-Host "Role assignment $AssignmentName removed."
     } else { $declined++ }
 
@@ -221,7 +242,8 @@ if ($Remove) {
     } elseif ($declined -and -not $WhatIfPreference) {
         Write-Host "Management scope $ScopeName kept: its role assignment still uses it."
     } elseif ($PSCmdlet.ShouldProcess("management scope $ScopeName", 'Remove')) {
-        $scope | Remove-ManagementScope
+        $scope | Remove-ManagementScope -Confirm:$false
+        Wait-Gone "Management scope $ScopeName" { Find-Scope }
         Write-Host "Management scope $ScopeName removed."
     } else { $declined++ }
 
@@ -283,9 +305,9 @@ if ($declined) {
 }
 
 # 4. Checks (bypass the permission cache)
-$null = Wait-Lookup 'The service principal pointer' { Find-ServicePrincipal }
-$null = Wait-Lookup "Management scope $ScopeName" { Find-Scope }
-$null = Wait-Lookup "Role assignment $AssignmentName" { Find-Assignment }
+Wait-Visible 'The service principal pointer' { Find-ServicePrincipal }
+Wait-Visible "Management scope $ScopeName" { Find-Scope }
+Wait-Visible "Role assignment $AssignmentName" { Find-Assignment }
 
 $ok = $true
 Write-Host '--- Test-ServicePrincipalAuthorization ---'
@@ -300,7 +322,9 @@ if ($inRows | Where-Object { $_.AllowedResourceScope -ne $ScopeName }) {
 
 $outRows = @(Get-CalendarRows $other.DistinguishedName)
 $outRows | ForEach-Object { Write-Host ("out-of-scope mailbox: " + (Format-Row $_)) }
-if ($outRows | Where-Object { "$($_.InScope)" -ne 'False' }) {
+if (-not $outRows) {
+    $ok = $false; Write-Host "FAIL: no $RoleName row for the out-of-scope mailbox; the negative check proves nothing." -ForegroundColor Red
+} elseif ($outRows | Where-Object { "$($_.InScope)" -ne 'False' }) {
     $ok = $false; Write-Host "FAIL: $RoleName reaches the out-of-scope mailbox." -ForegroundColor Red
 }
 
