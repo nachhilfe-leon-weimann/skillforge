@@ -7,8 +7,9 @@ too. The layer is described in [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.
   imports `httpx` (`tests/integrations/test_integrations_architecture.py`). A client brings its base URL and host
   allowlist and never builds its own HTTP client.
 - **`dry_run` is the default.** In `dry_run` reads go out and writes do not: `write` returns the `PlannedRequest`.
-  Under pytest real network and `live` are refused, except in the contract run (`SKILLFORGE_CONTRACT_RUN=1`) - and
-  there `live` only for a `trial` account. Tests use `httpx.MockTransport` and synthetic data.
+  Under pytest real network and `live` are refused, except in the contract run (`SKILLFORGE_CONTRACT_RUN=1`, set
+  only by `just contract-sevdesk`) - and there `live` only for a `trial` account. Tests use `httpx.MockTransport`
+  and synthetic data.
 - **Never retry a write.** A write that may have reached the remote system is an `OutcomeUnknownError`; the calling
   service records it for a later reconcile. Calls run synchronously from services - no job queue.
 - **Errors stay internal.** Integration errors (`errors.py`) are no `DomainError`; the calling service decides what
@@ -18,3 +19,5 @@ too. The layer is described in [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.
   settings `app/core/config.py` nests (`tests/integrations/test_integrations_architecture.py`).
 - **Ids are configuration.** Account-specific ids (contact person, units, custom fields) come from settings, never
   from literals in code.
+- **Live calls are the maintainer's.** `just sevdesk-doctor` and `just contract-sevdesk` (`@pytest.mark.contract`,
+  skipped in every other run) reach sevDesk; agents write and mock-test them, never run them.
