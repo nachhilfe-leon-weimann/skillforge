@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0 and SF1-1 to SF1-3c done; SP-CAL scripts written, not yet run. SP-SD freezes this spec after both spikes; until
+> Status: Draft - SF0 and SF1-1 to SF1-3c done; SP-CAL run, Q9 and Q16 answered. SP-SD freezes this spec after both spikes; until
 > then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
@@ -124,8 +124,9 @@ them.
 
 ## Verified behavior
 
-Nothing here was probed against a live account. "Documented" means read in the vendor's published description;
-the spikes turn the open rows into fixtures ([Fixture manifest](#fixture-manifest)).
+"Run" means the maintainer ran it on the Microsoft 365 tenant in SP-CAL (2026-11); nothing was probed against
+sevDesk yet. "Documented" means read in the vendor's published description; the spikes turn the open rows into
+fixtures ([Fixture manifest](#fixture-manifest)).
 
 | Question | Result |
 |---|---|
@@ -143,8 +144,9 @@ the spikes turn the open rows into fixtures ([Fixture manifest](#fixture-manifes
 | How are values typed? | Secondary sources: numbers and booleans arrive as strings; a validation error can arrive as HTTP 500 with a JSON body. **Open** until recorded (S21). |
 | What do today's invoices look like? | Observed on two redacted invoices, one per payment method: number `RE-<n>`; one position per lesson (name `<Fach>-Online`, the description of [Family-visible texts](#family-visible-texts), quantity `1,00`, unit `Std`); the § 19 line; a GiroCode and the bank block on both variants; the PayPal link rendered as `…/zahlung?re=<number>&betrag=<d,dd>%20EUR`. |
 | What does `/zahlung` accept? | Read in skillsite's code (`parsePaymentRequest` in `invoice-link.ts`): `re` matches `INVOICE_PATTERN` (letters, digits, `. _ - /`, at most 32 characters); `betrag` is an unambiguous euro figure (`90,00`, `90,00 EUR`, `1.234,56`, `90.00`; a bare `1.234` is refused) within `AMOUNT_LIMITS`. |
-| How is one mailbox opened to an app? | Documented (Microsoft Learn, "Role Based Access Control for Applications in Exchange Online"): it replaces Application Access Policies; Entra grants and Exchange grants are a union; a change takes 30 minutes to 2 hours to apply. Not run on the tenant yet: **open** (SP-CAL). |
-| How does Graph return recurring lessons? | Documented: `calendarView` expands a series into occurrences. Which id stays stable when an occurrence moves: **open** (Q16). |
+| How is one mailbox opened to an app? | Documented (Microsoft Learn, "Role Based Access Control for Applications in Exchange Online"): it replaces Application Access Policies; Entra grants and Exchange grants are a union; a change takes 30 minutes to 2 hours to apply. Run: `exchange-rbac-calendar.ps1` set it up; the service principal pointer takes the object id of the enterprise application, not of the app registration (`AADServicePrincipalNotFound` otherwise). `Test-ServicePrincipalAuthorization` answers `InScope` true for the lesson mailbox and false for the other; the recorder's read of the other mailbox got `403` (G6). The app holds no application permission in Entra (the maintainer's statement). |
+| How does Graph return recurring lessons? | Documented: `calendarView` expands a series into occurrences. Run: 70 days held 63 single instances, 48 occurrences and 14 exceptions. An occurrence moved in Outlook keeps its `id`, `iCalUId` and `seriesMasterId` and becomes an `exception`; `originalStart` keeps the planned time (Q16, G2). |
+| What does a lesson event carry? | Run, on 125 events over 70 days: `categories` arrive (50 events had one); the late-cancellation category is `Abgesagt` (Q9). `isCancelled` was never true, no event was all-day, `showAs` was always `busy`. 44 Teams lessons carry `isOnlineMeeting` and `teamsForBusiness`; a "Teams" category only colours them. Durations: 15, 30, 45, 60 and 120 minutes. Titles: 122 `<subject> mit <name>`, 1 `Kennenlernen`, 2 without the pattern. |
 | Is `httpx` installed? | Yes: `uv.lock` holds it through `fastapi[standard]`. |
 | How does a new schema get created? | `get_schemata` in `schemata.py` returns every model package; `migrations/env.py` creates its schema. |
 | What refuses the delete of a party? | `EXTERNAL_LINKS` in `app/services/crm/parties.py`: `(kind, model, still_linked)` rows that `_external_link_kinds` matches on `model.party_id`, answered as `party_in_use`. |
@@ -209,7 +211,7 @@ name_normalized TEXT NOT NULL UNIQUE
 student_party_id UUID NOT NULL
 
 -- billing.calendar_event  (SF4-3) - one occurrence as last seen in the calendar
-external_id TEXT NOT NULL UNIQUE                         -- which Graph id: open (Q16)
+external_id TEXT NOT NULL UNIQUE                         -- the Graph event id (Q16)
 starts_at TIMESTAMPTZ NOT NULL
 ends_at TIMESTAMPTZ NOT NULL
 title_subject TEXT NULL                                  -- text before " mit "
@@ -331,7 +333,7 @@ What happens to an occurrence, first match wins:
 | Duration not a multiple of 15 minutes | No lesson; `reason = duration`. Shows as unassigned. |
 | Name matches no student | No lesson; `reason = unmatched`. Shows as unassigned. |
 | Name matches several students | No lesson; `reason = ambiguous`. Shows as unassigned. Never a guess. |
-| Carries the late-cancellation category (name: **open**, Q9), or `isCancelled` | A `cancelled` lesson, not billable. |
+| Carries the late-cancellation category `Abgesagt` (Q9), or `isCancelled` | A `cancelled` lesson, not billable. |
 | Anything else - a Teams meeting (`isOnlineMeeting`) included | A `planned` lesson. |
 
 - **Title.** The subject is the text before the first ` mit ` (case-insensitive), the name the text after it.
@@ -782,10 +784,10 @@ repository.
 Every response shape SF1, SF6 and SFP-2 build on is recorded once, scrubbed, and never edited by hand - a changed
 shape is recorded again and the diff reviewed. sevDesk fixtures come from the trial account through the recorder
 of SF1-3b and live under `tests/fixtures/sevdesk/<run id>/`; Graph fixtures are the exception: the maintainer runs
-the recorder of SP-CAL once, outside every work tree, and hands over its redacted summary; an agent builds G1 to G6
-as synthetic fixtures of that shape under `tests/fixtures/graph/`, and G7 is the recorded token and error response,
-scrubbed. The maintainer compares them with the recording once and then deletes it: nothing recorded from the
-calendar enters the repository.
+the recorder of SP-CAL once, outside every work tree, and hands over its redacted summary; an agent builds G1 to G7
+as synthetic fixtures of that shape under `tests/fixtures/graph/` - G7 in the documented shape, since the recorder
+reads tokens through MSAL and records no token exchange. The maintainer compares them with the recording once and
+then deletes it: nothing recorded from the calendar enters the repository.
 
 "Script" is the spike script (`just sevdesk-spike`). It reads, creates synthetic contacts and drafts, and deletes
 nothing - except in S18. What changes an invoice after its creation the maintainer does by hand in the trial's UI;
@@ -892,17 +894,17 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
   with `--category` - with a fresh secret week offset per recording. It writes only outside any git work tree and
   prints a summary that is safe to paste. Agents write both scripts and never run them against Microsoft. The
   maintainer runs them once and hands over the redacted summary; an agent builds synthetic fixtures of its shape
-  under `tests/fixtures/graph/` (G7 scrubbed from the recording) once the fixture scan of SF1-3b exists, and the
-  maintainer deletes the recording after one comparison.
+  under `tests/fixtures/graph/` once the fixture scan of SF1-3b exists, and the maintainer deletes the recording
+  after one comparison.
 - _Acceptance criteria:_
   - [x] Both scripts exist; tests on synthetic events show that a fixture and a summary hold no name, address or
         id, and that the recorder refuses an output path inside a git work tree.
-  - [ ] The maintainer ran the setup: the lesson mailbox is in scope, the other mailbox is not, and the app holds
+  - [x] The maintainer ran the setup: the lesson mailbox is in scope, the other mailbox is not, and the app holds
         no application permission in Entra (the maintainer's statement, in the PR).
-  - [ ] The recorder's probe of a mailbox outside the restriction was refused (G6).
-  - [ ] Synthetic fixtures G1 to G6 and the scrubbed G7 are in the repository and pass the fixture scan; the
-        maintainer compared them with the recording and deleted it.
-  - [ ] Q9 and Q16 are answered in this spec, and "Verified behavior" says what was run.
+  - [x] The recorder's probe of a mailbox outside the restriction was refused (G6).
+  - [ ] Synthetic fixtures G1 to G7 are in the repository and pass the fixture scan; the maintainer compared them
+        with the recording and deleted it.
+  - [x] Q9 and Q16 are answered in this spec, and "Verified behavior" says what was run.
 
 **SF1-1 - Integration foundation.**
 
@@ -1423,7 +1425,12 @@ e-invoices for authorities; bookings made in the portal so that names always mat
 
 ## Decided (formerly open questions)
 
-None yet. SP-CAL and SP-SD move each answered question here, with the fixture that shows it.
+SP-CAL and SP-SD move each answered question here, with the fixture that shows it.
+
+| Id | Question | Answer | Fixture |
+|---|---|---|---|
+| Q9 | The exact name of the Outlook category for a late cancellation, and whether Graph delivers `categories` for the lesson calendar. | `Abgesagt`; Graph delivers `categories`. | G3 |
+| Q16 | Which Graph id stays the same when an occurrence of a series moves? | All three: `id`, `iCalUId` and `seriesMasterId`; the occurrence becomes an `exception`. `calendar_event.external_id` is the event `id`, the one `calendarView` addresses. | G2 |
 
 ## Open questions
 
@@ -1439,14 +1446,12 @@ None yet. SP-CAL and SP-SD move each answered question here, with the fixture th
 | Q6 | The ids of the unit `Std` and of the contact person, and where they are read. | Configuration. | SP-SD (S6, S7) |
 | Q7 | Is `GET /SevClient` the read that yields the account's identity and company name, and does its id equal the client id on `SevUser` and `ContactCustomFieldSetting`? | The identity check of SF1-2, which is built on it. | SP-SD (S2) |
 | Q8 | Does the trial run bookkeeping system 2.0 with the functions of "Buchhaltung Pro", like the real account? | Whether trial fixtures speak for the real account. | SP-SD (S1), the doctor on both accounts |
-| Q9 | The exact name of the Outlook category for a late cancellation, and whether Graph delivers `categories` for the lesson calendar. | The cancelled row of [Calendar import](#calendar-import). | SP-CAL (G3) |
 | Q10 | The real name and matching of the `customerInternalNote` filter; otherwise the list of a contact's drafts by creation time. Is that listing complete - paging, limits, drafts included? | Reconcile: "finds nothing" may only mean `failed` if the listing is complete. | SP-SD (S20) |
 | Q11 | Does `DELETE` work on a draft although it is not documented? | Whether a draft could ever be cleaned up through the API; v1 does not rely on it. | SP-SD (S18) |
 | Q12 | How does a cancelled invoice read: the original's status, the cancellation invoice's shape? | What `mark-cancelled` must read before it voids; v1.1 detection. | SP-SD (S17) |
 | Q13 | Does the maintainer's way of sending move an invoice to status 200? | Credit at issue; SFP-3. | SP-SD (S13) |
 | Q14 | How are amounts typed in responses, and what do error bodies look like - is a validation error a `5xx` with a recognisable body? | The client's parsing; which `5xx` proves a rejection. | SP-SD (S19, S21) |
 | Q15 | How does sevDesk read the time zone of `deliveryDate`? Which delivery date does a top-up carry today? | The request's dates; `delivery_from` on a top-up. | SP-SD (S24); a top-up invoice of today, read by the maintainer |
-| Q16 | Which Graph id stays the same when an occurrence of a series moves? | `calendar_event.external_id`. | SP-CAL (G2) |
 | Q17 | How does a draft read after the maintainer deleted it in the UI: the answer of `GET /Invoice/{id}`, and is it gone from the contact's list? | What `discard` must read before it voids. | SP-SD (S25) |
 | Q18 | Does every listing the client reads whole - `/Part`, `/ContactCustomField`, `/Invoice/{id}/getPositions`, `/Invoice` - answer `countAll=true` with `total`? | The client refuses a listing without `total` ("listing without countAll total"): a listing that lacks it needs another way to be read whole. | SP-SD (S5, S9, S12, S20) |
 
@@ -1495,7 +1500,7 @@ No slice waits for a merge: dependent PRs form a stack ([`AGENTS.md`](../../AGEN
 | **SF2-1**, **SF2-2**, **SF2-3** | SF0, PD3, PD9; each the one before | Can run beside SF1; both proposals are approved. |
 | **SF3-1**, **SF3-2** | SF2-2, PD1 | |
 | **SF4-1** | SP-CAL, SF1-1, M5 | |
-| **SF4-2** | SF2-1, Q9 | |
+| **SF4-2** | SF2-1 | |
 | **SF4-3** | SF4-1, SF4-2, SF2-2, PD13 | |
 | **SF5-1** | the freeze | |
 | **SF5-2**, **SF5-3**, **SF5-4** | SF5-1, each the one before; SF5-3 also SF3-1; SF5-4 also SF1-2 and PD6 | |

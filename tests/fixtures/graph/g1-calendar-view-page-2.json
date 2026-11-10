@@ -1,0 +1,91 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/v1.0/users/lessons@example.org/calendars/AAMkAGc3ludGhldGljOmNhbGVuZGFyOmxlc3NvbnM=/calendarView",
+    "params": {
+      "startDateTime": "2026-11-15T23:00:00Z",
+      "endDateTime": "2026-11-22T23:00:00Z",
+      "$select": "id,iCalUId,seriesMasterId,type,subject,start,end,originalStart,isAllDay,isCancelled,isOnlineMeeting,onlineMeetingProvider,location,categories,showAs,lastModifiedDateTime",
+      "$top": "3",
+      "$skip": "3"
+    },
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; odata.metadata=minimal; odata.streaming=true; IEEE754Compatible=false; charset=utf-8"
+    },
+    "body": {
+      "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('lessons@example.org')/calendars('AAMkAGc3ludGhldGljOmNhbGVuZGFyOmxlc3NvbnM=')/calendarView(id,iCalUId,seriesMasterId,type,subject,start,end,originalStart,isAllDay,isCancelled,isOnlineMeeting,onlineMeetingProvider,location,categories,showAs,lastModifiedDateTime)",
+      "value": [
+        {
+          "@odata.etag": "W/\"ZXRhZzpnMS1tYXRoLXRodToyMDI2LTExLTAyVDE4OjA0OjEx\"",
+          "id": "AAMkAGc3ludGhldGljOmV2ZW50OmcxLW1hdGgtdGh1",
+          "iCalUId": "synthetic-ical-g1-math-thu",
+          "seriesMasterId": "AAMkAGc3ludGhldGljOnNlcmllczpnMS1tYXRoLXRodS13ZWVrbHk=",
+          "type": "occurrence",
+          "subject": "mathematik mit lena beispiel-schmidt",
+          "start": {
+            "dateTime": "2026-11-19T17:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2026-11-19T19:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "originalStart": "2026-11-19T17:00:00Z",
+          "isAllDay": false,
+          "isCancelled": false,
+          "isOnlineMeeting": false,
+          "onlineMeetingProvider": "unknown",
+          "location": {
+            "displayName": "",
+            "locationType": "default",
+            "uniqueIdType": "unknown",
+            "address": {},
+            "coordinates": {}
+          },
+          "categories": [],
+          "showAs": "busy",
+          "lastModifiedDateTime": "2026-11-02T18:04:11.2830000Z"
+        },
+        {
+          "@odata.etag": "W/\"ZXRhZzpnMS1tYXRoLXNhdDoyMDI2LTExLTAyVDE4OjA0OjEx\"",
+          "id": "AAMkAGc3ludGhldGljOmV2ZW50OmcxLW1hdGgtc2F0",
+          "iCalUId": "synthetic-ical-g1-math-sat",
+          "seriesMasterId": null,
+          "type": "singleInstance",
+          "subject": "Mathematik mit Erika Mustermann",
+          "start": {
+            "dateTime": "2026-11-21T09:00:00.0000000",
+            "timeZone": "UTC"
+          },
+          "end": {
+            "dateTime": "2026-11-21T09:15:00.0000000",
+            "timeZone": "UTC"
+          },
+          "originalStart": null,
+          "isAllDay": false,
+          "isCancelled": false,
+          "isOnlineMeeting": false,
+          "onlineMeetingProvider": "unknown",
+          "location": {
+            "displayName": "",
+            "locationType": "default",
+            "uniqueIdType": "unknown",
+            "address": {},
+            "coordinates": {}
+          },
+          "categories": [],
+          "showAs": "busy",
+          "lastModifiedDateTime": "2026-11-02T18:04:11.2830000Z"
+        }
+      ]
+    }
+  }
+}
