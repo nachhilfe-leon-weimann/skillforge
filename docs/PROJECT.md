@@ -8,11 +8,11 @@ changes, it changes here first; ADRs and specs follow.
 
 SkillForge is the central service of the skill platform. It keeps the data the whole tutoring
 business relies on - who the people are and how they relate: students, guardians, payers, tutors,
-companies - and it decides who may do what with that data. Showing that data to people is somebody
-else's job. The Discord bot (SkillBot) and the web portal (skillsite) are frontends with their own
-backends and, where they need it, their own storage; they come to SkillForge when they need central
-data or a decision. **SkillForge is the hub for central data, not the backend of any single
-frontend.**
+companies, and which lessons took place and what is billed for them - and it decides who may do what
+with that data. Showing that data to people is somebody else's job. The Discord bot (SkillBot) and
+the web portal (skillsite) are frontends with their own backends and, where they need it, their own
+storage; they come to SkillForge when they need central data or a decision. **SkillForge is the hub
+for central data, not the backend of any single frontend.**
 
 ## The platform at a glance
 
@@ -25,6 +25,7 @@ flowchart LR
     operator([Operator])
     skillforge["SkillForge<br/>central data, identity,<br/>permissions, domain rules"]
     skillforgedb[(SkillForge database)]
+    thirdparty["Third-party systems<br/>sevDesk, Microsoft 365"]
 
     people -- Discord --> bot
     people -- browser --> portal
@@ -33,6 +34,7 @@ flowchart LR
     portal -- "API: for a person" --> skillforge
     operator -- Swagger UI --> skillforge
     skillforge --- skillforgedb
+    skillforge -- "calls, for its<br/>own domain rules" --> thirdparty
 ```
 
 This is the target picture. Parts of today's code still look different - see
@@ -46,6 +48,8 @@ This is the target picture. Parts of today's code still look different - see
 | Identities: user accounts, how people log in, links to outside accounts (Discord, sevDesk, ...) | Their sessions and screen state                                                                                       |
 | Permissions: which client and which person may do what                                          | Their own picture of the data - for the bot: servers, channels, categories, workspaces, command setups, Discord roles |
 | Domain rules and actions that mean something for the business                                   | Rules that only concern their own medium                                                                              |
+| Lessons and billing: what took place, what it costs, who pays, invoice drafts, prepaid credit   | The screens for it: the portal's admin area is UI and backend-for-frontend, with no billing data of its own           |
+| The calls to third-party systems its domain rules need (sevDesk, Microsoft 365)                 | No call to those systems, and no way through SkillForge to reach them                                                 |
 
 The test for a rule: **would the other frontend need the same rule?** Then it belongs in SkillForge.
 "Only a student's own tutor may act on the student" is a SkillForge rule. "How many archive
@@ -63,6 +67,9 @@ categories a Discord server holds" is a bot rule.
 3. **SkillForge pushes nothing.** It does not know who consumes its data. A frontend asks what
    changed since it last looked and brings its own state in line; its handlers are idempotent, so
    asking twice does no harm. Pushing (webhooks) stays an option for the day pulling is too slow.
+   Calling a third-party system a domain rule needs - the accounting system, the calendar - is not
+   pushing: SkillForge is that system's client, and no consumer of SkillForge's data is involved
+   ([ADR 0010](decisions/0010-outbound-integrations.md)).
 4. **The CRM is the system of record.** It holds the intended state of the business and knows
    nothing about Discord or logins. Everybody reads it; nobody writes around it
    ([ADR 0007](decisions/0007-crm-system-of-record.md)).
@@ -125,10 +132,11 @@ As of 2026-09.
 | Own data        | `crm:read:own` limits a person to their reach on the party read routes; the other routes still need the unqualified scope                                                                            | `:own` scopes limit a person to their reach                                                                                              |
 | Change signals  | Parties and Discord links carry `updated_at`, their lists filter by `updated_since`, and one pull contract says how to pull ("Change signals" in `ARCHITECTURE.md`)                                  | Frontends pull what changed and bring their state in line                                                                                |
 | Portal          | Not started                                                                                                                                                                                          | A Next.js server backend that talks to SkillForge                                                                                        |
+| Billing         | Not in SkillForge (2026-11): lessons are tracked in a time tracker and invoiced in sevDesk by hand; `ext.sevdesk_contact` has no writer and `app/integrations/` is empty                             | SkillForge knows the lessons, prices them, creates invoice drafts in sevDesk and keeps prepaid credit; the portal only shows it          |
 
 ## Roadmap
 
-Coarse on purpose; the details live in the GitHub project.
+Coarse on purpose; the details live in the specs.
 
 1. **Auth core** - done (2026-09, [spec](specs/user-authentication.md)). User accounts, client
    grants with modes, portal login (e-mail and password, refresh, logout) and "own data" on the
@@ -139,10 +147,17 @@ Coarse on purpose; the details live in the GitHub project.
    [0004](decisions/0004-forge-first-job-queue.md)); Discord links are identity, frontends pull what changed, and
    bot commands run on the person's token (Discord as a way to log in). The bot's rebuild - its workflows and their
    state in its own database, its grant system retired - continues in skillbot.
-3. **Reach arc.** Tutors reach their students, with rules for what a tutor may see - who pays for a student is none
+3. **Billing arc** - started (2026-11, [spec](specs/billing.md),
+   [ADR 0010](decisions/0010-outbound-integrations.md)). Lessons become central data: SkillForge imports them from
+   the calendar, prices them with a rate per student, creates invoice drafts in sevDesk and keeps prepaid credit as
+   an account statement. It calls sevDesk and Microsoft 365 itself; the portal's admin area in skillsite is only
+   the UI and its backend-for-frontend.
+4. **Reach arc.** Tutors reach their students, with rules for what a tutor may see - who pays for a student is none
    of the tutor's business - and people see and edit their own relations and subjects (#160, #161).
-4. **Portal arc** in skillsite: its backend and the first views. Can run alongside the bot arc.
-5. **Later:** sending e-mail (invitations, password resets), self-service for people, lessons.
+5. **Portal arc** in skillsite: its backend and the first views; its first area is the admin helper for billing.
+   Can run alongside the bot arc.
+6. **Later:** sending e-mail (invitations, password resets), self-service for people, a family's view of its
+   lessons and credit.
 
 ## Words we use
 
@@ -158,6 +173,13 @@ Coarse on purpose; the details live in the GitHub project.
   themselves, and those they are parent of or pay for.
 - **Token**: short-lived proof a client sends with every request, saying who is asking and what they
   may do.
+- **Lesson**: one tutoring appointment of a student. It is billed only after it was checked off as
+  held.
+- **Payer**: the party that receives a student's invoices - whoever pays for the student in the CRM,
+  otherwise the student.
+- **Draft**: an invoice SkillForge created in sevDesk and did not send. Sending stays a human step
+  in sevDesk.
+- **Credit account**: a payer's prepaid money. Top-ups add to it, lessons are charged against it.
 
 ## How this sketch fits in
 
