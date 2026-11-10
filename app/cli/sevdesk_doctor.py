@@ -3,9 +3,10 @@
 It reads the settings from the process environment only (``SEVDESK__*``; no ``.env``): the recipe loads the trial
 env file for ``trial``, the maintainer's own terminal provides them for ``live``. It always runs in ``dry_run``, so
 nothing it could call is sent as a write, and never in CI. It prints ids and the names of configuration objects
-(units, custom fields) - never a person's data, nor the company name: ``--discover`` prints the account id the
-token belongs to and whether its name carries the trial marker, so the maintainer can fill
-``SEVDESK__EXPECTED_ACCOUNT_ID`` on the first run.
+(units, custom fields) - never a person's data, nor the company name: ``--discover`` sends the three reads of
+spike row S2 (``GET /SevClient``, ``GET /SevUser``, ``GET /ContactCustomFieldSetting``) and prints the
+``sevClient`` ids they report and whether the company name carries the trial marker, so the maintainer can fill
+``SEVDESK__EXPECTED_ACCOUNT_ID`` on the first run. It is the one path that reads before the account is confirmed.
 """
 
 import argparse
@@ -19,7 +20,6 @@ from app.integrations.config import IntegrationAccount, IntegrationMode
 from app.integrations.errors import IdentityCheckError, IntegrationError
 from app.integrations.sevdesk.client import SevdeskClient
 from app.integrations.sevdesk.config import SevdeskSettings
-from app.integrations.sevdesk.identity import TRIAL_MARKER
 from app.integrations.sevdesk.models import CustomFieldSetting, SevUser, Unity
 from app.integrations.transport import InnerTransport
 
@@ -52,14 +52,17 @@ async def configured_ids(client: SevdeskClient, settings: SevdeskSettings) -> li
     ]
 
 
-async def discover(settings: SevdeskSettings, *, transport: InnerTransport | None = None) -> str:
-    """The account the token belongs to - without the identity check, which needs its id."""
+async def discover(settings: SevdeskSettings, *, transport: InnerTransport | None = None) -> list[Check]:
+    """The ``sevClient`` ids the account reports - without the identity check, which needs one of them."""
     try:
-        account = await SevdeskClient.identify(settings, transport=transport)
+        found = await SevdeskClient.discover(settings, transport=transport)
     except IntegrationError as exc:
-        return f"GET /SevClient: unavailable ({exc})"
-    marker = "yes" if TRIAL_MARKER in account.name else "no"
-    return f"GET /SevClient: id={account.id} {TRIAL_MARKER} marker: {marker}"
+        return [Check("discover", False, str(exc))]
+    return [
+        Check("GET /SevClient", True, f"id={found.account_id} TRIAL marker: {'yes' if found.trial_marker else 'no'}"),
+        Check("GET /SevUser", True, f"sevClient ids {_ids(found.user_account_ids)}"),
+        Check("GET /ContactCustomFieldSetting", True, f"sevClient ids {_ids(found.field_setting_account_ids)}"),
+    ]
 
 
 async def doctor(settings: SevdeskSettings, *, transport: InnerTransport | None = None) -> list[Check]:
@@ -86,10 +89,7 @@ async def run(
         out(f"SEVDESK__ACCOUNT is {settings.account.value}, not {account.value}: refusing")
         return 1
     settings = settings.model_copy(update={"mode": IntegrationMode.DRY_RUN})
-    if discover_accounts:
-        out(await discover(settings, transport=transport))
-        return 0
-    checks = await doctor(settings, transport=transport)
+    checks = await (discover if discover_accounts else doctor)(settings, transport=transport)
     for check in checks:
         out(str(check))
     return 0 if all(check.ok for check in checks) else 1
@@ -108,12 +108,18 @@ async def _exists[T: SevUser | Unity | CustomFieldSetting](
     return Check(label, True, str(object_id))
 
 
+def _ids(ids: tuple[int, ...]) -> str:
+    return ", ".join(map(str, ids)) or "none"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli.sevdesk_doctor", description=__doc__, allow_abbrev=False)
     parser.add_argument(
         "--account", type=IntegrationAccount, choices=list(IntegrationAccount), required=True, help="trial or live"
     )
-    parser.add_argument("--discover", action="store_true", help="Print the account id the token belongs to, then stop.")
+    parser.add_argument(
+        "--discover", action="store_true", help="Print the sevClient ids the token's account reports, then stop."
+    )
     return parser
 
 

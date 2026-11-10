@@ -43,7 +43,7 @@ def recipes(tmp_path: Path, monkeypatch) -> Recipes:
     if shutil.which("just") is None:
         pytest.skip("needs just")
     recipes = Recipes(tmp_path)
-    for name in [name for name in os.environ if name.startswith("SEVDESK__")] + ["CI"]:
+    for name in [name for name in os.environ if name.upper().startswith("SEVDESK__")] + ["CI"]:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("PATH", recipes.path)
     monkeypatch.setenv("UV_CALLS", str(recipes.calls))
@@ -71,14 +71,68 @@ def test_no_recipe_runs_in_ci(recipe: tuple[str, ...], recipes: Recipes, trial_e
     assert recipes.uv_calls() == []
 
 
+@pytest.mark.parametrize("variable", ["SEVDESK__TOKEN", "sevdesk__account", "Sevdesk__Mode"])
 @pytest.mark.parametrize("recipe", TRIAL_RECIPES.values(), ids=TRIAL_RECIPES.keys())
-def test_a_trial_recipe_refuses_sevdesk_variables_of_the_shell(recipe, recipes: Recipes, trial_env_file, monkeypatch):
-    monkeypatch.setenv("SEVDESK__TOKEN", "synthetic-shell-token")
+def test_a_trial_recipe_refuses_sevdesk_variables_of_the_shell_in_any_case(
+    recipe, variable: str, recipes: Recipes, trial_env_file, monkeypatch
+):
+    monkeypatch.setenv(variable, "synthetic-shell-value")
 
     result = recipes.run(*recipe)
 
     assert result.returncode == 1 and "unset the SEVDESK__ variables" in result.stderr
-    assert "synthetic-shell-token" not in result.stdout + result.stderr
+    assert "synthetic-shell-value" not in result.stdout + result.stderr
+    assert recipes.uv_calls() == []
+
+
+def test_the_shell_variable_check_holds_with_many_variables(recipes: Recipes, trial_env_file, monkeypatch):
+    """With more names than a pipe holds, a check that stops reading early would break its pipe and pass."""
+    monkeypatch.setenv("SEVDESK__TOKEN", "synthetic-shell-value")
+    for number in range(4000):
+        monkeypatch.setenv(f"ZZ_SYNTHETIC_PADDING_VARIABLE_{number:05d}", "")
+
+    result = recipes.run("contract-sevdesk")
+
+    assert result.returncode == 1 and "unset the SEVDESK__ variables" in result.stderr
+    assert recipes.uv_calls() == []
+
+
+@pytest.mark.parametrize("recipe", TRIAL_RECIPES.values(), ids=TRIAL_RECIPES.keys())
+def test_a_trial_recipe_refuses_an_env_file_path_with_whitespace(recipe, recipes: Recipes, tmp_path, monkeypatch):
+    spaced = tmp_path / "trial settings" / "sevdesk-trial.env"
+    spaced.parent.mkdir()
+    spaced.write_text("SEVDESK__ACCOUNT=trial\n")
+    monkeypatch.setenv("SKILLFORGE_SEVDESK_TRIAL_ENV", str(spaced))
+
+    result = recipes.run(*recipe)
+
+    assert result.returncode == 1 and "must not contain whitespace" in result.stderr
+    assert recipes.uv_calls() == []
+
+
+@pytest.mark.parametrize("inside", ["sevdesk-trial.env", "tests/sevdesk-trial.env", "tests/../sevdesk-trial.env"])
+@pytest.mark.parametrize("recipe", TRIAL_RECIPES.values(), ids=TRIAL_RECIPES.keys())
+def test_a_trial_recipe_refuses_an_env_file_inside_the_repository(recipe, inside: str, recipes: Recipes, monkeypatch):
+    # The file need not exist: the recipe refuses the path before it looks for the file.
+    monkeypatch.setenv("SKILLFORGE_SEVDESK_TRIAL_ENV", str(ROOT / inside))
+
+    result = recipes.run(*recipe)
+
+    assert result.returncode == 1 and "must live outside the repository" in result.stderr
+    assert recipes.uv_calls() == []
+
+
+@pytest.mark.parametrize("linked", ["env file", "justfile"])
+def test_a_trial_recipe_sees_through_a_symlink_to_the_repository(linked: str, recipes: Recipes, tmp_path, monkeypatch):
+    link = tmp_path / "linked-repository"
+    link.symlink_to(ROOT, target_is_directory=True)
+    env_file = (link if linked == "env file" else ROOT) / "sevdesk-trial.env"
+    justfile = (link if linked == "justfile" else ROOT) / "justfile"
+    monkeypatch.setenv("SKILLFORGE_SEVDESK_TRIAL_ENV", str(env_file))
+
+    result = subprocess.run(["just", "--justfile", str(justfile), "contract-sevdesk"], capture_output=True, text=True)
+
+    assert result.returncode == 1 and "must live outside the repository" in result.stderr
     assert recipes.uv_calls() == []
 
 
@@ -115,11 +169,32 @@ def test_the_doctor_loads_the_trial_env_file_for_the_trial_only(recipes: Recipes
     ]
 
 
-def test_the_doctor_takes_trial_or_live_only(recipes: Recipes, trial_env_file):
-    result = recipes.run("sevdesk-doctor", "prod")
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ("prod",),
+        ("trial", "--account", "live"),
+        ("trial", "--account=live"),
+        ("live", "--account", "trial"),
+        ("trial", "--discover", "--discover"),
+        ("trial", "extra"),
+        ("trial", "live"),
+    ],
+)
+def test_the_doctor_takes_trial_or_live_and_at_most_discover(arguments: tuple[str, ...], recipes, trial_env_file):
+    result = recipes.run("sevdesk-doctor", *arguments)
 
     assert result.returncode == 1 and "trial or live" in result.stderr
     assert recipes.uv_calls() == []
+
+
+@pytest.mark.parametrize(
+    ("recipe", "selection"),
+    [("test", "not contract"), ("test-coverage", "not contract"), ("test-without-db", "not db and not contract")],
+)
+def test_the_test_recipes_deselect_the_contract_tests(recipe: str, selection: str, recipes: Recipes):
+    """``check`` runs ``test-without-db``, ``check-all`` runs ``test``, CI runs ``test-coverage``."""
+    assert f'pytest -m "{selection}"' in recipes.run("--show", recipe).stdout
 
 
 # --- the contract run's connect ---

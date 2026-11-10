@@ -98,9 +98,11 @@ row, commit, call, record the outcome - there is no job queue.
   a position keeps the quarter-hour rule (minutes in steps of 15, cents per hour divisible by 4).
 - **Tooling** for the maintainer, all calling sevDesk and none in CI: `just sevdesk-doctor trial|live`
   ([`app/cli/sevdesk_doctor.py`](../app/cli/sevdesk_doctor.py)) checks the configured ids read-only and, with
-  `--discover`, prints the account id the token belongs to and whether it carries the trial marker;
+  `--discover` - the one read before the account is confirmed - prints the `sevClient` ids that `GET /SevClient`,
+  `GET /SevUser` and `GET /ContactCustomFieldSetting` report and whether the company name carries the trial marker;
   `just contract-sevdesk` runs the `contract` tests against the trial, skipping them once the trial expired. The
-  trial recipes load the trial's env file and refuse a shell that has `SEVDESK__*` variables of its own.
+  trial recipes load the trial's env file and refuse (`scripts/sevdesk_trial_env.sh`) a shell that has `SEVDESK__*`
+  variables of its own, in any letter case, and an env file inside the repository or with whitespace in its path.
 
 ## Housekeeping worker
 
