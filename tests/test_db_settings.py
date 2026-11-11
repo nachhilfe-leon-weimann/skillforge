@@ -1,12 +1,14 @@
-"""Database settings keep a malformed URL, and the password in it, out of every validation error."""
+"""Database settings keep their URLs, and the password in them, out of every validation error and representation."""
 
 import pytest
 from pydantic import ValidationError
 
+from app.core.config import Settings
 from app.core.db.config import DatabaseSettings
 
 PASSWORD = "synthetic-password"
 VALID_URL = f"postgresql+asyncpg://skillforge:{PASSWORD}@db.example.org/skillforge"
+VALID_MIGRATION_URL = f"postgresql+asyncpg://skillforge:{PASSWORD}@direct.db.example.org/skillforge"
 MALFORMED_URL = f"postgresql://u:{PASSWORD}@:x/db"
 """Short enough that pydantic would repeat it whole, password included."""
 
@@ -34,3 +36,29 @@ def test_a_malformed_url_is_refused_without_repeating_it(clean_env, field: str):
     for shown in (str(raised.value), repr(raised.value)):
         assert MALFORMED_URL not in shown
         assert PASSWORD not in shown
+
+
+def _database_settings() -> DatabaseSettings:
+    return DatabaseSettings(_env_file=None, url=VALID_URL, migration_url=VALID_MIGRATION_URL)
+
+
+@pytest.mark.parametrize(
+    "load",
+    [_database_settings, lambda: Settings(_env_file=None, db=_database_settings())],
+    ids=["database settings", "app settings"],
+)
+def test_a_url_is_kept_out_of_the_settings_representation(clean_env, load):
+    settings = load()
+
+    for shown in (str(settings), repr(settings)):
+        assert VALID_URL not in shown
+        assert VALID_MIGRATION_URL not in shown
+        assert PASSWORD not in shown
+
+
+def test_the_urls_still_hold_their_value(clean_env):
+    """The app and the migrations connect with them."""
+    settings = _database_settings()
+
+    assert str(settings.url) == VALID_URL
+    assert str(settings.migration_url) == VALID_MIGRATION_URL

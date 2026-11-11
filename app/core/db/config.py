@@ -1,4 +1,4 @@
-from pydantic import PostgresDsn
+from pydantic import Field, PostgresDsn
 from pydantic_settings import SettingsConfigDict
 from skillcore.config import CoreSettings
 
@@ -17,8 +17,9 @@ class DatabaseSettings(CoreSettings):
     itself keeps using the pooled DB__URL. Falls back to DB__URL when unset.
     """
 
-    url: PostgresDsn
-    migration_url: PostgresDsn | None = None
+    # A URL holds the password: no representation of the settings shows it.
+    url: PostgresDsn = Field(repr=False)
+    migration_url: PostgresDsn | None = Field(default=None, repr=False)
 
     # Migrations build these settings on their own, and a URL holds a password: no validation error repeats an input.
     model_config = SettingsConfigDict(
