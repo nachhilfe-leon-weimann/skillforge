@@ -7,10 +7,10 @@ what it created.
 import asyncio
 import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 from app.core.db import Database
 from app.core.db.models import Lesson, LessonStatus, Party, PreferredMeetingTool
@@ -131,3 +131,33 @@ async def test_an_overlapping_patch_waits_and_then_starts_from_the_others_row(db
     async with db.session(write=False) as check:
         row = (await check.execute(select(Lesson.status, Lesson.billable).where(Lesson.id == lesson_id))).one()
     assert tuple(row) == (LessonStatus.CANCELLED, True)
+
+
+# A wrong lock mode makes the second transaction wait: it fails after this instead of hanging.
+LOCK_TIMEOUT = text("SET LOCAL lock_timeout = '1s'")
+# The lock the CRM's `saved` takes on every party it touches.
+NO_KEY_UPDATE = text("SELECT id FROM core.party WHERE id = :party_id FOR NO KEY UPDATE")
+
+
+async def test_the_student_lock_blocks_neither_another_lesson_write_nor_a_crm_write(
+    db: Database, students: list[uuid.UUID]
+):
+    """A lesson write holds its student `FOR KEY SHARE`, the weakest lock that keeps `delete_party` out: a second
+    lesson write naming the same student and the CRM's `FOR NO KEY UPDATE` are granted at once."""
+    student = students[0]
+    holding, other, crm = db.session_factory(), db.session_factory(), db.session_factory()
+    try:
+        # The first lesson write holds the student's lock, not committed ...
+        await _add(holding, student)
+        for session in (other, crm):
+            await session.execute(LOCK_TIMEOUT)
+
+        # ... and neither a second lesson write naming the student nor a CRM write on it waits.
+        await lessons.create_lesson(
+            other, student_id=student, subject="Mathe", starts_at=START + timedelta(days=7), minutes=60
+        )
+        assert await crm.scalar(NO_KEY_UPDATE, {"party_id": student}) == student
+    finally:
+        await holding.close()
+        await other.close()
+        await crm.close()

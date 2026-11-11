@@ -191,12 +191,14 @@ async def _get_lesson_for_update(session: AsyncSession, lesson_id: uuid.UUID) ->
 async def _require_student(session: AsyncSession, party_id: uuid.UUID) -> None:
     """Raise ``UnknownStudentError`` unless the party holds the student role, read through the CRM's loading path.
 
-    The party is locked first, ``FOR KEY SHARE`` as the CRM's ``_load_person`` does: a ``delete_party`` holding it
-    (``FOR UPDATE``) makes this wait and then find no party, instead of the ``RESTRICT`` foreign key failing the
-    write as a 500; one that comes later waits for this transaction and answers ``party_in_use``. CRM writes are not
-    blocked (``saved`` takes ``FOR NO KEY UPDATE``).
+    The party is locked first, ``FOR KEY SHARE`` - the lock the lesson's foreign key takes, taken before the write -
+    until the transaction ends. It and ``delete_party``'s ``FOR UPDATE`` exclude each other: a delete holding the
+    party makes this wait and then find no party, instead of the ``RESTRICT`` foreign key failing the write as a 500;
+    a delete that comes later waits for this transaction and answers ``party_in_use``. Nothing else waits: neither
+    another billing write naming the party nor a CRM write (``saved`` takes ``FOR NO KEY UPDATE``).
     """
-    await session.execute(select(Party.id).where(Party.id == party_id).with_for_update(key_share=True))
+    # read=True: `key_share=True` alone renders FOR NO KEY UPDATE, which would serialize billing and CRM writes.
+    await session.execute(select(Party.id).where(Party.id == party_id).with_for_update(read=True, key_share=True))
     try:
         party = await load_party(session, party_id)
     except PartyNotFoundError:
