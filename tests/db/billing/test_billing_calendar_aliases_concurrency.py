@@ -57,8 +57,9 @@ async def test_an_overlapping_alias_for_the_same_name_waits_and_then_is_calendar
         assert not pending.done(), "the second alias waits for the first"
 
         await first.commit()
-        with pytest.raises(CalendarAliasAlreadyExistsError):
+        with pytest.raises(CalendarAliasAlreadyExistsError) as conflict:
             await asyncio.wait_for(pending, timeout=10)
+        assert "race" not in f"{conflict.value} {conflict.value!r}".casefold()
     finally:
         await first.close()
         await second.close()

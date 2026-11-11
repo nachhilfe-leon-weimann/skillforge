@@ -305,9 +305,8 @@ created_at/updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 ## Billing Schema
 
 Lessons, the rates they are billed at, who pays for them and the names the lesson calendar uses for students
-([billing spec](specs/billing.md)). Every reference to
-a party is `ON DELETE RESTRICT`. Rule G holds in the database: cents per hour are divisible by 4 and minutes by 15, so every
-amount is a whole cent.
+([billing spec](specs/billing.md)). Every reference to a party is `ON DELETE RESTRICT`. Rule G holds in the
+database: cents per hour are divisible by 4 and minutes by 15, so every amount is a whole cent.
 
 ```sql
 billing.lesson_status = ('planned', 'held', 'cancelled', 'not_held')

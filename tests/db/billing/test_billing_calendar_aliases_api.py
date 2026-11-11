@@ -1,7 +1,8 @@
 """The calendar alias routes (billing spec, SF4-2), on Postgres. Every name is synthetic."""
 
+import traceback
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from typing import Any
 from unittest.mock import ANY
 
@@ -11,6 +12,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.models import CalendarAlias
+from app.core.errors import DomainError
+from app.core.logging import LogFormat, LoggingSettings, LogLevel, configure_logging
+from app.services.billing import calendar_aliases
 from app.services.crm import companies, persons
 
 pytestmark = pytest.mark.db
@@ -113,3 +117,37 @@ async def test_an_alias_is_deleted_once(client: AsyncClient, session: AsyncSessi
     assert await _count(session) == 0
     # The name is free again.
     await _create(client, "Student B", student)
+
+
+@pytest.fixture
+def restore_logging() -> Iterator[None]:
+    yield
+    configure_logging(LoggingSettings())
+
+
+async def test_the_error_paths_carry_no_name(
+    client: AsyncClient, session: AsyncSession, student: uuid.UUID, restore_logging, capsys, caplog
+):
+    """Neither the answer nor the error's own message nor a log line repeats the name - for a conflict and for an
+    unknown student."""
+    configure_logging(LoggingSettings(level=LogLevel.DEBUG, format=LogFormat.JSON))
+    capsys.readouterr()
+    name = "Student Quokka"
+    await _create(client, name, student)
+
+    responses = [
+        await client.post(ALIASES, json={"name": name, "student_id": str(student)}),
+        await client.post(ALIASES, json={"name": "Student Quokka Two", "student_id": str(uuid.uuid4())}),
+    ]
+    messages: list[str] = []
+    for alias_name, student_id in ((name, student), ("Student Quokka Two", uuid.uuid4())):
+        with pytest.raises(DomainError) as raised:
+            async with session.begin_nested():
+                await calendar_aliases.create_alias(session, name=alias_name, student_id=student_id)
+        messages += [str(raised.value), repr(raised.value), "".join(traceback.format_exception(raised.value))]
+
+    output = capsys.readouterr().out
+    assert [response.json()["code"] for response in responses] == ["calendar_alias_already_exists", "unknown_student"]
+    assert output.count("http_request_rejected") == 2
+    for text in (output, caplog.text, *messages, *(response.text for response in responses)):
+        assert "quokka" not in text.casefold()

@@ -12,7 +12,7 @@ import unicodedata
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from uuid import UUID
 
@@ -27,14 +27,18 @@ LATE_CANCELLATION_CATEGORY = "Abgesagt"
 
 # Lessons are planned in quarter hours (decision G).
 LESSON_STEP = timedelta(minutes=15)
+# The longest lesson: a longer one is a typo. The same bound as `MAX_LESSON_MINUTES` of the lesson routes, which this
+# pure module cannot import (a test ties the two together).
+MAX_LESSON_DURATION = timedelta(hours=24)
 
 _TITLE_SEPARATOR = re.compile(rf" {TITLE_SEPARATOR} ", re.IGNORECASE)
-# A location that is a phone number: an optional leading `+`, then only digits and the separators people write
-# between them, and at least `_PHONE_MIN_DIGITS` digits. A room or a Teams location has letters; a short number
-# alone is more likely a room than a phone.
+# A location that is a phone number: an optional leading `+`, then only digits, spaces and `/ ( ) -`, with 5 to 15
+# digits (15 is E.164's longest number). A room, an address or a Teams location has letters; a shorter number alone
+# is more likely a room, a longer one an id.
 _PHONE_NUMBER = re.compile(r"\+?[0-9 /()-]+")
-_PHONE_MIN_DIGITS = 5
-_UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+_PHONE_DIGITS = range(5, 16)
+# `ß` (and `ẞ`) needs no entry: `casefold` has made it `ss` already.
+_UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue"})
 _WORD_SEPARATORS = str.maketrans("-_", "  ")
 
 
@@ -72,6 +76,11 @@ class Occurrence:
     """The location's display name."""
     online_meeting: bool = False
     """A Teams meeting (``isOnlineMeeting``). Carried and never read: a Teams lesson is a lesson (decision N)."""
+
+    def __post_init__(self) -> None:
+        # The duration is measured between instants: a wall time without its offset is none.
+        if self.starts_at.utcoffset() is None or self.ends_at.utcoffset() is None:
+            raise ValueError("An occurrence starts and ends at aware datetimes")
 
 
 @dataclass(frozen=True)
@@ -150,8 +159,9 @@ def propose(occurrence: Occurrence, roster: Roster) -> Proposal:
     if title is None:
         return NoLesson(NoLessonReason.NO_TITLE_PATTERN)
 
-    duration = occurrence.ends_at - occurrence.starts_at
-    if duration <= timedelta() or duration % LESSON_STEP:
+    # Between instants: aware datetimes of one zone would subtract as wall times, wrong across a clock change.
+    duration = occurrence.ends_at.astimezone(UTC) - occurrence.starts_at.astimezone(UTC)
+    if not timedelta() < duration <= MAX_LESSON_DURATION or duration % LESSON_STEP:
         return NoLesson(NoLessonReason.DURATION, title)
 
     student_id = match_name(title.name, roster)
@@ -183,13 +193,18 @@ def parse_title(title: str) -> Title | None:
 def match_name(name: str, roster: Roster) -> NameMatch:
     """Find the one student a calendar name means.
 
-    An alias wins. Otherwise the normalised name is compared with each student's ``firstname lastname``: first an
-    exact match; then, for a name of at least two tokens, the one student whose name tokens contain all of its
-    tokens (a token named twice must be there twice). Several students at either step are ambiguous.
+    An alias wins - if it names one of the students; one that names a party outside the roster (a former student)
+    is unmatched, never a lesson. Otherwise the normalised name is compared with each student's
+    ``firstname lastname``: first an exact match; then, for a name of at least two tokens, the one student whose
+    name tokens contain all of its tokens (a token named twice must be there twice). Several students at either step
+    are ambiguous. A name that normalises to nothing matches nobody.
     """
     normalized = normalize_name(name)
+    if not normalized:
+        return Unmatched()
     if normalized in roster.aliases:
-        return roster.aliases[normalized]
+        aliased = roster.aliases[normalized]
+        return aliased if any(student.student_id == aliased for student in roster.students) else Unmatched()
 
     names = {
         student.student_id: normalize_name(f"{student.firstname} {student.lastname}") for student in roster.students
@@ -205,7 +220,8 @@ def match_name(name: str, roster: Roster) -> NameMatch:
 
 
 def normalize_name(name: str) -> str:
-    """NFKC, casefold, ``ä ö ü ß`` to ``ae oe ue ss``, hyphens and underscores to spaces, single spaces."""
+    """NFKC, casefold (which turns ``ß`` into ``ss``), ``ä ö ü`` to ``ae oe ue``, hyphens and underscores to spaces,
+    single spaces."""
     text = unicodedata.normalize("NFKC", name)
     text = text.casefold()
     text = text.translate(_UMLAUTS)
@@ -216,7 +232,7 @@ def normalize_name(name: str) -> str:
 def is_phone_number(location: str) -> bool:
     """Whether a location is a phone number: see ``_PHONE_NUMBER``."""
     text = location.strip()
-    return _PHONE_NUMBER.fullmatch(text) is not None and sum(char.isdigit() for char in text) >= _PHONE_MIN_DIGITS
+    return _PHONE_NUMBER.fullmatch(text) is not None and sum(char.isdigit() for char in text) in _PHONE_DIGITS
 
 
 def _has_category(occurrence: Occurrence, category: str) -> bool:

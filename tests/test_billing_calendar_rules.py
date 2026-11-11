@@ -3,16 +3,18 @@ the module stays pure. Every title and name is synthetic."""
 
 import ast
 import json
-import sys
 import uuid
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
+from app.api.v1.billing.schemas import MAX_LESSON_MINUTES
 from app.integrations.graph.models import CalendarEvent
 from app.services.billing.calendar_rules import (
+    MAX_LESSON_DURATION,
     Ambiguous,
     LessonProposal,
     NoLesson,
@@ -29,13 +31,13 @@ from app.services.billing.calendar_rules import (
     parse_title,
     propose,
 )
-from tests.api.test_crm_architecture import _imported_modules
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RULES = REPO_ROOT / "app/services/billing/calendar_rules.py"
 GRAPH_FIXTURES = REPO_ROOT / "tests/fixtures/graph"
 
 START = datetime(2026, 11, 2, 15, tzinfo=UTC)
+BERLIN = ZoneInfo("Europe/Berlin")
 
 ERIKA = uuid.UUID("00000000-0000-0000-0000-00000000000e")
 MAX = uuid.UUID("00000000-0000-0000-0000-00000000000a")
@@ -84,8 +86,19 @@ def test_row_1_an_all_day_entry_is_no_lesson():
         {"location": "+49 30 23125"},
         {"location": "030/23125-0"},
         {"location": " (030) 23125 "},
+        {"location": "12345"},
+        {"location": "+123456789012345"},
     ],
-    ids=["category", "category-among-others-any-case", "number", "international", "slash-and-hyphen", "brackets"],
+    ids=[
+        "category",
+        "category-among-others-any-case",
+        "number",
+        "international",
+        "slash-and-hyphen",
+        "brackets",
+        "five-digits",
+        "fifteen-digits",
+    ],
 )
 def test_row_2_a_phone_appointment_is_no_lesson(fields: dict):
     assert propose(_occurrence(**fields), ROSTER) == NoLesson(NoLessonReason.PHONE)
@@ -113,11 +126,41 @@ def test_row_4_a_title_without_the_pattern_is_no_lesson(title: str):
     assert propose(_occurrence(title), ROSTER) == NoLesson(NoLessonReason.NO_TITLE_PATTERN)
 
 
-@pytest.mark.parametrize("minutes", [50, 61, 0, -60, 60.5])
+@pytest.mark.parametrize("minutes", [50, 61, 0, -60, 60.5, 24 * 60 + 15, 7 * 24 * 60])
 def test_row_5_a_duration_off_the_quarter_hour_is_no_lesson(minutes: float):
+    """Longer than a day counts as off too: the lesson routes refuse it as a typo, so it waits for an assignment."""
     proposal = propose(_occurrence(minutes=minutes), ROSTER)
 
     assert proposal == NoLesson(NoLessonReason.DURATION, Title("Mathe", "Erika Mustermann"))
+
+
+def test_a_lesson_of_a_whole_day_is_proposed_and_the_bound_is_the_lesson_routes():
+    assert propose(_occurrence(minutes=24 * 60), ROSTER) == _lesson(ProposedStatus.PLANNED, minutes=24 * 60)
+    assert timedelta(minutes=MAX_LESSON_MINUTES) == MAX_LESSON_DURATION
+
+
+@pytest.mark.parametrize(
+    ("starts_at", "ends_at"),
+    [
+        (datetime(2026, 3, 29, 1, 30, tzinfo=BERLIN), datetime(2026, 3, 29, 3, 30, tzinfo=BERLIN)),
+        (datetime(2026, 3, 29, 0, 30, tzinfo=UTC), datetime(2026, 3, 29, 1, 30, tzinfo=UTC)),
+        (datetime(2026, 10, 25, 2, 30, tzinfo=BERLIN), datetime(2026, 10, 25, 2, 30, fold=1, tzinfo=BERLIN)),
+        (datetime(2026, 10, 25, 0, 30, tzinfo=UTC), datetime(2026, 10, 25, 1, 30, tzinfo=UTC)),
+    ],
+    ids=["spring-berlin", "spring-utc", "autumn-berlin", "autumn-utc"],
+)
+def test_the_duration_is_measured_between_instants_across_both_clock_changes(starts_at: datetime, ends_at: datetime):
+    """60 real minutes each: Berlin wall times would say 120 in spring and 0 in autumn (money rule 9)."""
+    occurrence = Occurrence(title=LESSON, starts_at=starts_at, ends_at=ends_at)
+
+    assert propose(occurrence, ROSTER) == _lesson(ProposedStatus.PLANNED)
+
+
+def test_an_occurrence_needs_aware_times():
+    with pytest.raises(ValueError, match="aware") as refused:
+        Occurrence(title=LESSON, starts_at=datetime(2026, 11, 2, 15), ends_at=datetime(2026, 11, 2, 16, tzinfo=UTC))
+
+    assert "Erika" not in str(refused.value)
 
 
 def test_row_6_a_name_nobody_has_is_no_lesson():
@@ -160,7 +203,35 @@ def test_a_teams_lesson_is_a_lesson(fields: dict):
     assert propose(_occurrence(**fields), ROSTER) == _lesson(ProposedStatus.PLANNED)
 
 
-@pytest.mark.parametrize("location", ["", "Microsoft Teams-Besprechung", "Raum 12", "1.204", "1234", "Discord"])
+@pytest.mark.parametrize(
+    "location",
+    [
+        "",
+        "Microsoft Teams-Besprechung",
+        "Raum 12",
+        "1.204",
+        "1234",
+        "Discord",
+        "Musterstrasse 1, 10115 Berlin",
+        "Tel. 030 23125",
+        "Raum 10115",
+        "1234567890123456",
+        "+49 1512 3456 7890 12",
+    ],
+    ids=[
+        "empty",
+        "teams",
+        "room",
+        "room-with-dot",
+        "four-digits",
+        "discord",
+        "address",
+        "letters-before-a-number",
+        "room-with-five-digits",
+        "sixteen-digits",
+        "international-sixteen-digits",
+    ],
+)
 def test_a_location_that_is_no_phone_number_keeps_the_lesson(location: str):
     assert not is_phone_number(location)
     assert propose(_occurrence(location=location), ROSTER) == _lesson(ProposedStatus.PLANNED)
@@ -189,6 +260,8 @@ def test_the_subject_is_the_text_before_the_first_mit_and_the_name_the_rest():
         (_occurrence("Kennenlernen mit Jonas Probe", minutes=50), NoLessonReason.FIRST_MEETING),
         (_occurrence("Vorbereitung Klausur", minutes=50), NoLessonReason.NO_TITLE_PATTERN),
         (_occurrence("Mathe mit Jonas Probe", minutes=50), NoLessonReason.DURATION),
+        (_occurrence(minutes=50, categories=("Abgesagt",)), NoLessonReason.DURATION),
+        (_occurrence(minutes=50, cancelled=True), NoLessonReason.DURATION),
         (_occurrence("Mathe mit Jonas Probe", cancelled=True), NoLessonReason.UNMATCHED),
         (_occurrence("Mathe mit Jonas Probe", categories=("Abgesagt",)), NoLessonReason.UNMATCHED),
     ],
@@ -201,6 +274,8 @@ def test_the_subject_is_the_text_before_the_first_mit_and_the_name_the_rest():
         "first-meeting-before-duration",
         "no-title-pattern-before-duration",
         "duration-before-unmatched",
+        "duration-before-late-cancellation",
+        "duration-before-is-cancelled",
         "unmatched-before-is-cancelled",
         "unmatched-before-late-cancellation",
     ],
@@ -390,10 +465,29 @@ def test_a_name_with_no_student_is_unmatched():
 @pytest.mark.parametrize("roster", [ROSTER, TWO_MAX], ids=["over-an-exact-match", "over-an-ambiguity"])
 def test_an_alias_wins(roster: Roster):
     """The alias decides even where a student has the name exactly, or several have it."""
-    with_alias = replace(roster, aliases={"erika mustermann": OTHER, "max mustermann": OTHER})
+    students = (*roster.students, StudentName(OTHER, "Jonas", "Probe"))
+    with_alias = Roster(students, aliases={"erika mustermann": OTHER, "max mustermann": OTHER})
 
     assert match_name("Erika Mustermann", with_alias) == OTHER
     assert match_name("MAX-Mustermann", with_alias) == OTHER
+
+
+def test_an_alias_naming_a_party_outside_the_roster_matches_nobody():
+    """A former student keeps the alias (``RESTRICT``) but gets no lesson: it shows as unassigned, never a guess -
+    not even the student who has the name exactly."""
+    roster = replace(ROSTER, aliases={"erika mustermann": OTHER})
+
+    assert match_name("Erika Mustermann", roster) == Unmatched()
+    assert _reason(propose(_occurrence(), roster)) == NoLessonReason.UNMATCHED
+
+
+@pytest.mark.parametrize("name", ["-", "_ -", " "])
+def test_a_name_that_normalises_to_nothing_matches_nobody(name: str):
+    """Not even a student whose name normalises to nothing, nor an alias stored as the empty string."""
+    roster = Roster(students=(StudentName(ERIKA, "-", "_"),), aliases={"": ERIKA})
+
+    assert match_name(name, roster) == Unmatched()
+    assert _reason(propose(_occurrence("Mathe mit -"), roster)) == NoLessonReason.UNMATCHED
 
 
 def test_an_alias_of_one_token_matches_and_is_proposed():
@@ -405,20 +499,58 @@ def test_an_alias_of_one_token_matches_and_is_proposed():
 # --- Pure: no session, no integration, no clock (money rule 7) ---
 
 
+# Exactly what the module imports; a new import is a decision this list records.
+ALLOWED_IMPORTS = {
+    "re",
+    "unicodedata",
+    "collections.Counter",
+    "collections.abc.Mapping",
+    "dataclasses.dataclass",
+    "dataclasses.field",
+    "datetime.UTC",
+    "datetime.datetime",
+    "datetime.timedelta",
+    "enum.StrEnum",
+    "uuid.UUID",
+}
+# What reads a clock (`datetime.now`, `date.today`, `time.*`, `uuid1`, `os.times`, the event loop's `time()`) or
+# reaches out (a dynamic import, a file, the console), named as an attribute, a name or a string (`getattr`).
+FORBIDDEN_NAMES = {
+    "now", "today", "utcnow", "time", "time_ns", "monotonic", "perf_counter", "process_time", "localtime", "gmtime",
+    "uuid1", "times", "__import__", "import_module", "eval", "exec", "open", "print", "breakpoint", "input",
+}  # fmt: skip
+
+
+def _imports(source: str, *, package: str) -> set[str]:
+    """Every name a source imports: ``re`` for ``import re``, ``uuid.UUID`` for ``from uuid import UUID``; relative
+    imports resolved against ``package``."""
+    names: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            base = package.split(".")
+            prefix = ".".join(base[: len(base) - (node.level - 1)]) if node.level else ""
+            module = ".".join(part for part in (prefix, node.module or "") if part)
+            names.update(f"{module}.{alias.name}" for alias in node.names)
+    return names
+
+
 def _impurities(source: str, *, package: str = "app.services.billing") -> list[str]:
-    """Return what makes a module impure: an import outside the standard library - SQLAlchemy, ``app.core.db``,
-    an integration, another billing module - and any read of the clock."""
-    found = sorted(
-        module
-        for module in _imported_modules(source, package=package)
-        if module.split(".")[0] not in sys.stdlib_module_names or module.split(".")[0] == "time"
-    )
-    clock = {"now", "today", "utcnow", "time", "monotonic", "perf_counter", "time_ns", "localtime", "gmtime"}
-    found += [
-        f"{node.attr} at line {node.lineno}"
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Attribute) and node.attr in clock
-    ]
+    """Return what makes the module impure: an import outside ``ALLOWED_IMPORTS`` - SQLAlchemy, ``app.core.db``, an
+    integration, another billing module, ``socket``, ``logging``, ``time`` - and every ``FORBIDDEN_NAMES`` use.
+
+    A static check cannot see everything: what an allowed import does inside (``re`` and ``datetime`` are trusted),
+    a clock or a socket reached through an object handed in (a ``datetime`` subclass), or a name built at runtime
+    (``getattr(datetime, "n" + "ow")``). The allowlist keeps that surface to the standard library's plain types.
+    """
+    found = sorted(_imports(source, package=package) - ALLOWED_IMPORTS)
+    for node in ast.walk(ast.parse(source)):
+        match node:
+            case ast.Attribute(attr=name) | ast.Name(id=name) | ast.Constant(value=str(name)) if (
+                name in FORBIDDEN_NAMES
+            ):
+                found.append(f"{name} at line {node.lineno}")
     return found
 
 
@@ -447,16 +579,31 @@ def test_the_calendar_rules_are_pure():
         "import time\ntime.time()",
         "from time import monotonic",
         "import time",
+        "import socket",
+        "import urllib.request",
+        "from http import client",
+        "import logging",
+        "from uuid import uuid1",
+        "import uuid\nuuid.uuid1()",
+        "import os\nos.times()",
+        "from datetime import datetime\ngetattr(datetime, 'now')()",
+        "__import__('socket')",
+        "from importlib import import_module",
+        "import asyncio\nasyncio.get_running_loop().time()",
+        "print('x')",
+        "open('x')",
+        "from datetime import date",
     ],
 )
 def test_the_purity_check_catches_every_form(source: str):
     assert _impurities(source)
 
 
-def test_the_purity_check_lets_the_standard_library_pass():
+def test_the_purity_check_lets_the_modules_own_imports_pass():
     allowed = (
-        "import re\nimport unicodedata\nfrom collections import Counter\nfrom dataclasses import dataclass\n"
-        "from datetime import datetime, time, timedelta\nfrom uuid import UUID"
+        "import re\nimport unicodedata\nfrom collections import Counter\nfrom collections.abc import Mapping\n"
+        "from dataclasses import dataclass, field\nfrom datetime import UTC, datetime, timedelta\n"
+        "from enum import StrEnum\nfrom uuid import UUID\ndatetime(2026, 1, 1, tzinfo=UTC) - timedelta(minutes=15)"
     )
 
     assert _impurities(allowed) == []

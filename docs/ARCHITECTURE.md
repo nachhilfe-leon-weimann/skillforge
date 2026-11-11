@@ -193,10 +193,10 @@ CRM rules only, never against Discord state. The full design is in the [CRM API 
   (`require_storable_text`), and the engine runs with `hide_parameters=True`.
 - **Deleting a party** is refused (`party_in_use`) while a row of `EXTERNAL_LINKS` names it: an active
   Discord link, another `ext` link, or a billing row: a lesson or a rate, a lesson it pays for, its mark as billed
-  by hand, or a calendar alias naming it - a deactivated Discord link goes with the party. The `ext` foreign keys into `core.party` cascade, so the
-  guard - taken under a row lock - is what keeps external systems from being orphaned; the billing ones are
-  `RESTRICT`, and the guard answers 409 before the database refuses. The CRM reads these tables there and nowhere
-  else.
+  by hand, or a calendar alias naming it - a deactivated Discord link goes with the party. The `ext` foreign keys
+  into `core.party` cascade, so the guard - taken under a row lock - is what keeps external systems from being
+  orphaned; the billing ones are `RESTRICT`, and the guard answers 409 before the database refuses. The CRM reads
+  these tables there and nowhere else.
 - **Commit before the response.** The CRM routes use `DBSession`, whose `scope="function"` ends the
   request transaction before the response is sent: a failing commit is a 500, not a 201.
 
@@ -247,12 +247,16 @@ writes `billing:write`.
   CRM's `party_not_found`, one named in a body `unknown_student`.
 - **Calendar rules.** `calendar_rules.py` decides what an occurrence of the lesson calendar is - a `planned` or
   `cancelled` lesson of one student, or no lesson with its reason - by the spec's table, first match wins
-  (`propose`). It is pure: it takes plain data (`Occurrence`, `Roster`), imports only the standard library and reads
-  no clock (architecture test in `tests/test_billing_calendar_rules.py`), and holds the match tokens (`mit`,
-  `Kennenlernen`, `Telefon`, `Abgesagt`). A location is a phone number when it holds only digits and `+ / - ( )`
-  and at least five digits (`is_phone_number`). A name matches through an alias first, then exactly, then as the
-  one student whose name tokens contain all of its at least two tokens (`match_name`), after `normalize_name`;
-  several candidates are ambiguous. It logs nothing and keeps titles out of `repr`.
+  (`propose`). It is pure: it takes plain data (`Occurrence`, `Roster`), imports only an allowlist of the standard
+  library and reads no clock (architecture test in `tests/test_billing_calendar_rules.py`), and holds the match
+  tokens (`mit`, `Kennenlernen`, `Telefon`, `Abgesagt`). Durations are measured between instants, so a lesson across
+  a clock change keeps its minutes; one longer than a day (`MAX_LESSON_DURATION`, the bound of the lesson routes) is
+  `duration`. A location is a phone number when, stripped, it is an optional leading `+` followed only by digits,
+  spaces and `/ ( ) -`, with 5 to 15 digits (`is_phone_number`); letters - a room, an address, Teams - never make
+  one. A name matches through an alias first - only one that names a student of the roster - then exactly, then as
+  the one student whose name tokens contain all of its at least two tokens (`match_name`), after `normalize_name`;
+  several candidates are ambiguous, and a name that normalises to nothing matches nobody. It logs nothing and keeps
+  titles out of `repr`.
 - **Calendar aliases.** `GET`/`POST /billing/calendar/aliases`, `DELETE .../{alias_id}` (`calendar_aliases.py`):
   `POST` takes the name as written and stores it normalised, so every spelling that normalises alike is
   `calendar_alias_already_exists` - one `INSERT ... ON CONFLICT DO NOTHING` decides, racing requests included. A
