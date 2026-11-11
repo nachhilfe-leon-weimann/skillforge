@@ -27,6 +27,7 @@ from app.services.billing.errors import (
     CalendarAliasAlreadyExistsError,
     CalendarAliasNotFoundError,
     CalendarEventAlreadyAssignedError,
+    CalendarEventNotAssignableError,
     CalendarEventNotFoundError,
     CalendarUnavailableError,
     LessonAlreadyExistsError,
@@ -48,6 +49,7 @@ NOT_BILLABLE = "Only a held or cancelled lesson can be billable"
 ALREADY_LINKED = "The party or the sevDesk contact is already linked"
 ALIAS_EXISTS = "An alias for this calendar name already exists"
 EVENT_ASSIGNED = "The calendar event already has a lesson"
+EVENT_NOT_ASSIGNABLE = "The calendar event cannot become a lesson: its start is not on a whole minute"
 CALENDAR_UNAVAILABLE = "The lesson calendar could not be read"
 ASSIGNMENT = {"student_id": ID, "subject": "Mathe", "minutes": 60}
 
@@ -116,6 +118,7 @@ EXPECTATIONS: list[Expectation] = [
     ("import_calendar", CalendarUnavailableError(INTERNAL), 502, CALENDAR_UNAVAILABLE),
     ("assign_calendar_event", CalendarEventNotFoundError(INTERNAL), 404, "Calendar event not found"),
     ("assign_calendar_event", UnknownStudentError(INTERNAL), 422, "Unknown student"),
+    ("assign_calendar_event", CalendarEventNotAssignableError(INTERNAL), 422, EVENT_NOT_ASSIGNABLE),
     ("assign_calendar_event", CalendarEventAlreadyAssignedError(INTERNAL), 409, EVENT_ASSIGNED),
     ("assign_calendar_event", LessonAlreadyExistsError(INTERNAL), 409, ALREADY_EXISTS),
     ("assign_calendar_event", CalendarAliasAlreadyExistsError(INTERNAL), 409, ALIAS_EXISTS),
@@ -149,6 +152,7 @@ CATALOG: dict[type[DomainError], tuple[str, int, str, bool]] = {
     UnknownStudentError: ("unknown_student", 422, "Unknown student", False),
     RateNotQuarterHourError: ("rate_not_quarter_hour", 422, NOT_QUARTER_HOUR, False),
     LessonNotBillableError: ("lesson_not_billable", 422, NOT_BILLABLE, False),
+    CalendarEventNotAssignableError: ("calendar_event_not_assignable", 422, EVENT_NOT_ASSIGNABLE, False),
     CalendarUnavailableError: ("calendar_unavailable", 502, CALENDAR_UNAVAILABLE, False),
 }
 
@@ -160,8 +164,8 @@ SPEC_CATALOG = {
     "CalendarEventAlreadyAssignedError", "SevdeskContactAlreadyLinkedError", "PreviewOutdatedError",
     "InvoiceStateError", "PrepaidAccountAlreadyOpenError", "PrepaidAccountNotSettledError",
     "PrepaidAccountStartsBeforeLastCloseError", "PrepaidEntryAlreadyVoidedError",
-    "UnknownStudentError", "RateNotQuarterHourError", "LessonNotBillableError", "MixedPayersError",
-    "InvoiceBlockedError", "PrepaidEntryNotVoidableError", "TopupAmountOutOfRangeError",
+    "UnknownStudentError", "RateNotQuarterHourError", "LessonNotBillableError", "CalendarEventNotAssignableError",
+    "MixedPayersError", "InvoiceBlockedError", "PrepaidEntryNotVoidableError", "TopupAmountOutOfRangeError",
     "SevdeskUnavailableError", "SevdeskRefusedError", "CalendarUnavailableError",
 }  # fmt: skip
 BILLING_PACKAGES = ("app.services.billing", "app.api.v1.billing")

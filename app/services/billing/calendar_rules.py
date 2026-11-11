@@ -165,7 +165,7 @@ def propose(occurrence: Occurrence, roster: Roster) -> Proposal:
     if (
         not timedelta() < duration <= MAX_LESSON_DURATION
         or duration % LESSON_STEP
-        or not (_on_the_minute(occurrence.starts_at) and _on_the_minute(occurrence.ends_at))
+        or not (is_on_the_minute(occurrence.starts_at) and is_on_the_minute(occurrence.ends_at))
     ):
         return NoLesson(NoLessonReason.DURATION, title)
 
@@ -244,7 +244,7 @@ def is_phone_number(location: str) -> bool:
     return _PHONE_NUMBER.fullmatch(text) is not None and sum(char.isdigit() for char in text) in _PHONE_DIGITS
 
 
-def _on_the_minute(moment: datetime) -> bool:
+def is_on_the_minute(moment: datetime) -> bool:
     """Whether the instant is a whole minute. Graph's times carry seconds and fractions: a lesson at ``16:00:30`` would
     stand beside one set at ``16:00`` (``uq_lesson_student_start``), and nothing rounds a time."""
     instant = moment.astimezone(UTC)

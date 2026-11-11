@@ -350,9 +350,10 @@ What happens to an occurrence, first match wins:
   code skipped Teams meetings, billing must not. An alias counts only if its party is among the current students: a
   former student's alias leaves the name `unmatched`. A name that normalises to nothing matches nobody.
 - **Unassigned occurrences** are listed until the maintainer assigns them (a student and a subject, optionally
-  stored as an alias) or dismisses them. A dismissed occurrence is not proposed again. Nor is an occurrence that
-  could not get its lesson - its student has a lesson at that start already: it is flagged `changed` and waits for
-  the maintainer.
+  stored as an alias) or dismisses them. The assigned lesson starts at the occurrence's start, so one whose start is
+  off the whole minute cannot be assigned (`calendar_event_not_assignable`); its lesson is added by hand at the whole
+  minute. A dismissed occurrence is not proposed again. Nor is an occurrence that could not get its lesson - its
+  student has a lesson at that start already: it is flagged `changed` and waits for the maintainer.
 - **Idempotent.** An occurrence is upserted by `external_id`; importing the same range twice changes nothing.
 - **A lesson nobody touched follows the calendar** - while the title rules still give that student and subject. A
   lesson is untouched while it is `planned`, carries no note and no own rate, and has the start and length of its
@@ -365,11 +366,11 @@ What happens to an occurrence, first match wins:
 - **The rules are applied at every import** to an occurrence that has a lesson as well; a dismissed or flagged
   occurrence without one is not judged again. If the title of an occurrence with a lesson names another student -
   by the rules' lesson, or by its name where the rules stop before it (a phone call, an all-day entry, a first
-  meeting, a duration no lesson can have) - or another subject, which is compared only for the rules' lesson and a
-  duration no lesson can have, the import flags `changed` at every import until the lesson, the title or an alias
-  settles it; then a dismiss clears the flag. If the rules give no lesson, a touched lesson's appointment changed,
-  or the lesson cannot follow because its student has a lesson at the new start already, it flags `changed`. In no
-  case does it change the lesson.
+  meeting, a `duration` answer) - or another subject, which is compared only for the rules' lesson and a `duration`
+  answer, the import flags `changed` at every import until the lesson, the title or an alias settles it; then a
+  dismiss clears the flag. If the rules give no lesson, a touched lesson's appointment changed, or the lesson cannot
+  follow because its student has a lesson at the new start already, it flags `changed`. In no case does it change the
+  lesson.
 - **For an occurrence with a lesson, dismissing acknowledges** what was seen - and so does assigning an
   occurrence: a "no lesson" answer and a change already seen stay quiet until start, end, cancellation, subject, a
   new no-lesson reason or the presence changes again. Another student, and another subject where it is compared, is
@@ -731,7 +732,7 @@ Target shape, under `/api/v1/billing`, tag `billing`. R is `billing:read`, W is 
 | `GET`, `POST /calendar/aliases`, `DELETE /calendar/aliases/{alias_id}` | R, W, W | SF4-2 | The alias table. |
 | `POST /calendar/import` | W | SF4-3 | Imports a range of days; answers with counts only. |
 | `GET /calendar/events` | R | SF4-3 | `Page` of unassigned and changed occurrences. |
-| `POST /calendar/events/{event_id}/assign` | W | SF4-3 | Student and subject for an occurrence, optionally stored as an alias; creates the lesson. |
+| `POST /calendar/events/{event_id}/assign` | W | SF4-3 | Student and subject for an occurrence, optionally stored as an alias; creates the lesson. A start off the whole minute is `calendar_event_not_assignable`. |
 | `POST /calendar/events/{event_id}/dismiss` | W | SF4-3 | Takes an occurrence off the list. |
 | `GET /billable-lessons` | R | SF5-3 | `Page` of every open lesson with its payer and route. |
 | `POST /invoices/preview` | R | SF5-4 | The planned invoice for lesson ids of one payer; stores nothing. |
@@ -763,7 +764,7 @@ Closed. The classes live in `app/services/billing/errors.py`; the `code` is deri
 |---|---|
 | `NotFoundError` (404) | `LessonNotFoundError`, `RateNotFoundError`, `CalendarEventNotFoundError`, `CalendarAliasNotFoundError`, `InvoiceNotFoundError`, `PrepaidAccountNotFoundError`, `PrepaidEntryNotFoundError` |
 | `ConflictError` (409) | `LessonAlreadyExistsError`, `LessonChargedError`, `CalendarAliasAlreadyExistsError`, `CalendarEventAlreadyAssignedError`, `SevdeskContactAlreadyLinkedError`, `PreviewOutdatedError`, `InvoiceStateError`, `PrepaidAccountAlreadyOpenError`, `PrepaidAccountNotSettledError`, `PrepaidAccountStartsBeforeLastCloseError`, `PrepaidEntryAlreadyVoidedError` |
-| `DomainValidationError` (422) | `UnknownStudentError`, `RateNotQuarterHourError`, `LessonNotBillableError`, `MixedPayersError`, `InvoiceBlockedError`, `PrepaidEntryNotVoidableError`, `TopupAmountOutOfRangeError` |
+| `DomainValidationError` (422) | `UnknownStudentError`, `RateNotQuarterHourError`, `LessonNotBillableError`, `CalendarEventNotAssignableError`, `MixedPayersError`, `InvoiceBlockedError`, `PrepaidEntryNotVoidableError`, `TopupAmountOutOfRangeError` |
 | `UpstreamError` (502; PD6) | `SevdeskUnavailableError`, `SevdeskRefusedError`, `CalendarUnavailableError` |
 
 - A preview never raises for a blocker: it lists them. `InvoiceBlockedError` answers a create whose preview has
