@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0, SF1-1 to SF1-3c and SF2-1 done; SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
+> Status: Draft - SF0, SF1-1 to SF1-3c, SF2-1 and SF2-2 done; SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
 > then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
@@ -1097,18 +1097,18 @@ write (`invoices.py`)._
   (pattern: `tests/api/test_crm_architecture.py`) and error-contract test (pattern:
   `tests/api/test_crm_error_contract.py`).
 - _Tests that change:_ `test_the_bot_api_is_gone` in `tests/api/test_openapi_contract.py`: the areas and tags gain
-  `billing`.
+  `billing`; in the same file `OPERATION_ID_PATTERN` gains the `billing` prefix.
 - _Acceptance criteria:_
-  - [ ] A tick sets `held` and `billable`; a `cancelled` lesson is billable only after the maintainer said so;
+  - [x] A tick sets `held` and `billable`; a `cancelled` lesson is billable only after the maintainer said so;
         `billable` on a `planned` or `not_held` lesson is `lesson_not_billable`, and moving a
         billable lesson to `planned` or `not_held` clears the flag (`ck_lesson_billable_status` holds in the
         database).
-  - [ ] Minutes not divisible by 15 are a `422`; a second lesson of one student at one start is
+  - [x] Minutes not divisible by 15 are a `422`; a second lesson of one student at one start is
         `lesson_already_exists`.
-  - [ ] The list filters by Berlin days: a lesson late in the evening belongs to its Berlin day, in summer and in
+  - [x] The list filters by Berlin days: a lesson late in the evening belongs to its Berlin day, in summer and in
         winter time and in the nights of both clock changes.
-  - [ ] No route deletes a lesson.
-  - [ ] The error-contract test pins every route's errors.
+  - [x] No route deletes a lesson.
+  - [x] The error-contract test pins every route's errors.
 
 **SF2-3 - Rates and demo data.**
 

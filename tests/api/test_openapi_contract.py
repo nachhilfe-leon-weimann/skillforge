@@ -13,7 +13,7 @@ from app.core.auth import Scope
 from app.main import app
 
 HTTP_METHODS = {"get", "put", "post", "delete", "patch", "head", "options", "trace"}
-OPERATION_ID_PATTERN = re.compile(r"(auth|crm|system)_[a-z0-9_]+")
+OPERATION_ID_PATTERN = re.compile(r"(auth|billing|crm|system)_[a-z0-9_]+")
 COMMITTED_OPENAPI_PATH = Path(__file__).resolve().parents[2] / "openapi.json"
 
 
@@ -250,8 +250,8 @@ def test_auth_client_operations_document_auth_errors(schema: dict[str, Any]):
 def test_the_bot_api_is_gone(schema: dict[str, Any]):
     areas = {path.split("/")[3] for path in schema["paths"] if path.startswith("/api/v1/")}
 
-    assert areas == {"auth", "crm"}
-    assert {tag["name"] for tag in schema["tags"]} == {"auth", "crm", "system"}
+    assert areas == {"auth", "billing", "crm"}
+    assert {tag["name"] for tag in schema["tags"]} == {"auth", "billing", "crm", "system"}
 
 
 # A Discord snowflake - of a user, guild, channel or role - by the name of the property or parameter holding it.
