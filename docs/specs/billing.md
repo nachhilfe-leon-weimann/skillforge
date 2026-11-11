@@ -319,8 +319,8 @@ Every column that references a party has its row in `EXTERNAL_LINKS`, and the de
 
 ## Calendar import
 
-The import reads one calendar of one mailbox (`GRAPH__MAILBOX`, `GRAPH__CALENDAR_NAME`) for a range of days through
-`calendarView`, which expands a series into occurrences. It asks for times in UTC and converts with
+The import reads one calendar of one mailbox (`GRAPH__MAILBOX`, `GRAPH__CALENDAR_NAME`) for a range of at most 92
+Berlin days through `calendarView`, which expands a series into occurrences. It asks for times in UTC and converts with
 `Europe/Berlin`. It requests only the fields of fixture G1 - never a body, attendees or an organizer.
 
 What happens to an occurrence, first match wins:
@@ -328,10 +328,10 @@ What happens to an occurrence, first match wins:
 | Occurrence | Result |
 |---|---|
 | All day | No lesson; `reason = all_day`. |
-| Category "Telefon", or a location that is a phone number | No lesson; `reason = phone`. |
+| Category "Telefon", or a location that is a phone number: stripped, an optional leading `+`, then only digits, spaces and `/ ( ) -`, with 5 to 15 digits | No lesson; `reason = phone`. |
 | Title `Kennenlernen mit <Name>`: a subject that contains `kennenlern` after normalisation, such as `Erstes Kennenlernen` or `Kennenlerngespräch` | No lesson; `reason = first_meeting`. `Kennenlernen` is never read as a subject. |
 | Title without ` mit ` | No lesson; `reason = no_title_pattern`. Shows as unassigned. |
-| Duration not a multiple of 15 minutes | No lesson; `reason = duration`. Shows as unassigned. |
+| Duration not a multiple of 15 minutes, not positive, or longer than 1440 minutes | No lesson; `reason = duration`. Shows as unassigned. |
 | Name matches no student | No lesson; `reason = unmatched`. Shows as unassigned. |
 | Name matches several students | No lesson; `reason = ambiguous`. Shows as unassigned. Never a guess. |
 | Carries the late-cancellation category `Abgesagt` (Q9), or `isCancelled` | A `cancelled` lesson, not billable. |
@@ -346,16 +346,35 @@ What happens to an occurrence, first match wins:
   spaces, single spaces. First an exact match; then the one student whose name tokens contain all tokens of the
   calendar name, if that name has at least two tokens. These are the rules of the legacy SkillBot's matcher
   (`extract_student_name`, `normalize_name`, `match_name` in its `schedule.py`) - with one difference: the legacy
-  code skipped Teams meetings, billing must not.
+  code skipped Teams meetings, billing must not. An alias counts only if its party is among the current students: a
+  former student's alias leaves the name `unmatched`. A name that normalises to nothing matches nobody.
 - **Unassigned occurrences** are listed until the maintainer assigns them (a student and a subject, optionally
-  stored as an alias) or dismisses them.
+  stored as an alias) or dismisses them. A dismissed occurrence is not proposed again. Nor is an occurrence that
+  could not get its lesson - its student has a lesson at that start already: it is flagged `changed` and waits for
+  the maintainer.
 - **Idempotent.** An occurrence is upserted by `external_id`; importing the same range twice changes nothing.
-- **A lesson nobody touched follows the calendar:** a `planned` lesson moves with its appointment and goes when it
-  vanishes. An appointment cancelled early is deleted from the calendar and so never shows.
+- **A lesson nobody touched follows the calendar** - while the title rules still give that student and subject. A
+  lesson is untouched while it is `planned`, carries no note and no own rate, and has the start and length of its
+  occurrence as last seen; it follows a move, a resize or a cancellation, and it goes when its occurrence vanishes,
+  whatever the title said. Only an occurrence that starts inside the imported range can vanish. An appointment
+  cancelled early is deleted from the calendar and so never shows.
 - **A ticked or charged lesson is never changed.** If its appointment moved, shrank or vanished, the import sets
   `changed` on the event and the maintainer decides.
-- **Names are kept only as long as needed** (PD13): `title_name` only while an occurrence waits for an assignment;
-  unassigned and dismissed occurrences are deleted 90 days after their start.
+- **The rules are applied at every import**, also to an occurrence that has a lesson. If the title names another
+  student or subject - by the rules' lesson, or by its name where the rules stop before it (a phone call, an
+  all-day entry, a first meeting, a duration no lesson can have) - the import flags `changed` at every import until
+  the lesson, the title or an alias settles it. If the rules give no lesson, a touched lesson's appointment changed,
+  or the lesson cannot follow because its student has a lesson at the new start already, it flags `changed`. In no
+  case does it change the lesson.
+- **Dismissing acknowledges** what was seen - and so does assigning an occurrence: a "no lesson" answer and a
+  change already seen stay quiet until start, end, cancellation, subject, a new no-lesson reason or the presence
+  changes again. Another student or subject is never acknowledged.
+- **A vanished appointment of a touched lesson** is flagged once (`calendar_event.vanished`); seen again, the
+  occurrence is compared as usual, and a later vanishing is flagged again.
+- **Names are kept only as long as needed** (PD13): `title_name` only while an occurrence waits for an assignment.
+  Every occurrence without a lesson - unassigned or dismissed, whether or not it held a name - is deleted 90 Berlin
+  days after its start, with the next import. Its dismissal goes with it: importing that range again proposes the
+  occurrence anew, and the same import deletes it again unless it gets a lesson.
 
 ## Pricing, charges and invoices
 
