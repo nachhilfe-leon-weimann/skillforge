@@ -719,3 +719,129 @@ def test_the_calendar_alias_revision_is_reversible_and_restricts_its_student(mig
 
     _alembic(migration_db_url, "upgrade", _REVISION_0017)
     assert _billing_constraints(migration_db_url) == sorted(_BILLING_CONSTRAINTS_AT_0017)
+
+
+# --- 0018_billing_calendar_event (billing spec, SF4-3) ---
+
+_REVISION_0018 = "0018_billing_calendar_event"
+_EVENT_STUDENT_ID = "55555555-5555-5555-5555-555555555555"
+_EVENT_ID = "44444444-4444-4444-4444-444444444444"
+_WAITING_EVENT_ID = "33333333-3333-3333-3333-333333333333"
+_BILLING_CONSTRAINTS_AT_0018 = [
+    *_BILLING_CONSTRAINTS_AT_0017,
+    ("calendar_event", "calendar_event_external_id_key", "UNIQUE (external_id)"),
+    (
+        "calendar_event",
+        "ck_calendar_event_reason",
+        "CHECK ((reason = ANY (ARRAY['all_day'::text, 'phone'::text, 'first_meeting'::text, "
+        "'no_title_pattern'::text, 'duration'::text, 'unmatched'::text, 'ambiguous'::text])))",
+    ),
+    (
+        "calendar_event",
+        "ck_calendar_event_title_name",
+        "CHECK (((title_name IS NULL) OR ((NOT dismissed) AND (reason IS NOT NULL) AND "
+        "(reason = ANY (ARRAY['duration'::text, 'unmatched'::text, 'ambiguous'::text])))))",
+    ),
+    (
+        "lesson",
+        "lesson_calendar_event_id_fkey",
+        "FOREIGN KEY (calendar_event_id) REFERENCES billing.calendar_event(id) ON DELETE RESTRICT",
+    ),
+    ("lesson", "lesson_calendar_event_id_key", "UNIQUE (calendar_event_id)"),
+]
+_EVENT_RELATIONS = {"calendar_event", "calendar_event_pkey", "calendar_event_external_id_key"}
+_EVENT_RELATIONS |= {"ix_calendar_event_starts_at", "lesson_calendar_event_id_key"}
+# What the schema accepts: an occurrence with its lesson, one waiting with its name, a dismissed one without a name,
+# one with no reason and no lesson (it collided with a lesson added by hand), and a lesson without an occurrence.
+_EVENT_SEED = f"""
+INSERT INTO core.party (id, type) VALUES ('{_EVENT_STUDENT_ID}', 'PERSON');
+INSERT INTO billing.calendar_event (id, external_id, starts_at, ends_at, title_subject, title_name, cancelled, reason,
+                                    dismissed, changed, last_seen_at) VALUES
+    ('{_EVENT_ID}', 'event-a', '2026-11-02 15:00+00', '2026-11-02 16:00+00', 'Mathe', NULL, false, NULL,
+     false, false, now()),
+    ('{_WAITING_EVENT_ID}', 'event-b', '2026-11-03 15:00+00', '2026-11-03 15:50+00', 'Mathe', 'Student B', false,
+     'duration', false, false, now()),
+    (gen_random_uuid(), 'event-c', '2026-11-04 15:00+00', '2026-11-04 16:00+00', NULL, NULL, true, 'no_title_pattern',
+     true, false, now()),
+    (gen_random_uuid(), 'event-d', '2026-11-05 15:00+00', '2026-11-05 16:00+00', 'Mathe', NULL, false, NULL,
+     false, true, now());
+INSERT INTO billing.lesson (id, student_party_id, subject, starts_at, minutes, calendar_event_id) VALUES
+    (gen_random_uuid(), '{_EVENT_STUDENT_ID}', 'Mathe', '2026-11-02 15:00+00', 60, '{_EVENT_ID}'),
+    (gen_random_uuid(), '{_EVENT_STUDENT_ID}', 'Mathe', '2026-11-05 15:00+00', 60, NULL);
+"""
+_SEEDED_EVENTS = "SELECT external_id, dismissed, changed FROM billing.calendar_event ORDER BY starts_at"
+_EVENT_REFUSALS = [
+    (
+        "INSERT INTO billing.calendar_event (id, external_id, starts_at, ends_at, cancelled, last_seen_at) "
+        "VALUES (gen_random_uuid(), 'event-a', now(), now(), false, now())",
+        "calendar_event_external_id_key",
+    ),
+    (
+        "INSERT INTO billing.calendar_event (id, external_id, starts_at, ends_at, cancelled, reason, last_seen_at) "
+        "VALUES (gen_random_uuid(), 'event-e', now(), now(), false, 'holiday', now())",
+        "ck_calendar_event_reason",
+    ),
+    # PD13: a name only while the occurrence waits - never for all-day, phone and first-meeting occurrences, never
+    # once it has a lesson (no reason) or is dismissed.
+    *(
+        (
+            "INSERT INTO billing.calendar_event (id, external_id, starts_at, ends_at, title_name, cancelled, reason, "
+            f"dismissed, last_seen_at) VALUES (gen_random_uuid(), 'event-{index}', now(), now(), 'Student B', false, "
+            f"{reason}, {dismissed}, now())",
+            "ck_calendar_event_title_name",
+        )
+        for index, (reason, dismissed) in enumerate((
+            ("'all_day'", "false"),
+            ("'phone'", "false"),
+            ("'first_meeting'", "false"),
+            ("'no_title_pattern'", "false"),
+            ("NULL", "false"),
+            ("'unmatched'", "true"),
+        ))
+    ),
+    # One lesson per occurrence, an occurrence that exists, and RESTRICT: no occurrence goes before its lesson.
+    (
+        f"INSERT INTO billing.lesson (id, student_party_id, subject, starts_at, minutes, calendar_event_id) "
+        f"VALUES (gen_random_uuid(), '{_EVENT_STUDENT_ID}', 'Mathe', '2026-11-06 15:00+00', 60, '{_EVENT_ID}')",
+        "lesson_calendar_event_id_key",
+    ),
+    (
+        f"INSERT INTO billing.lesson (id, student_party_id, subject, starts_at, minutes, calendar_event_id) "
+        f"VALUES (gen_random_uuid(), '{_EVENT_STUDENT_ID}', 'Mathe', '2026-11-06 15:00+00', 60, '{uuid.uuid4()}')",
+        "lesson_calendar_event_id_fkey",
+    ),
+    (f"DELETE FROM billing.calendar_event WHERE id = '{_EVENT_ID}'", "lesson_calendar_event_id_fkey"),
+]
+
+
+def test_the_calendar_event_revision_is_reversible_and_keeps_names_only_while_waiting(migration_db_url: str) -> None:
+    # `alembic check` compares neither a check's expression nor a foreign key's ON DELETE: pin every definition, and
+    # what the schema accepts and refuses; the downgrade by one leaves the 0017 schema, the lessons with it.
+    _alembic(migration_db_url, "upgrade", _REVISION_0018)
+    assert _billing_constraints(migration_db_url) == sorted(_BILLING_CONSTRAINTS_AT_0018)
+    relations = {name for (name,) in asyncio.run(_rows(migration_db_url, _BILLING_RELATIONS))}
+    assert _EVENT_RELATIONS <= relations
+
+    asyncio.run(_run_on_server(migration_db_url, _EVENT_SEED))
+    assert asyncio.run(_rows(migration_db_url, _SEEDED_EVENTS)) == [
+        ("event-a", False, False),
+        ("event-b", False, False),
+        ("event-c", True, False),
+        ("event-d", False, True),
+    ]
+    for statement, constraint in _EVENT_REFUSALS:
+        assert asyncio.run(_refusing_constraint(migration_db_url, statement)) == constraint
+    # An occurrence without a lesson can go.
+    asyncio.run(
+        _run_on_server(migration_db_url, f"DELETE FROM billing.calendar_event WHERE id = '{_WAITING_EVENT_ID}'")
+    )
+
+    _alembic(migration_db_url, "downgrade", _REVISION_0017)
+    assert _billing_constraints(migration_db_url) == sorted(_BILLING_CONSTRAINTS_AT_0017)
+    relations = {name for (name,) in asyncio.run(_rows(migration_db_url, _BILLING_RELATIONS))}
+    assert {"lesson", "rate", "manual_payer", "calendar_alias"} <= relations
+    assert relations.isdisjoint(_EVENT_RELATIONS)
+    assert asyncio.run(_rows(migration_db_url, "SELECT count(*) FROM billing.lesson")) == [(2,)]
+
+    _alembic(migration_db_url, "upgrade", _REVISION_0018)
+    assert _billing_constraints(migration_db_url) == sorted(_BILLING_CONSTRAINTS_AT_0018)

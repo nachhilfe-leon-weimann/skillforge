@@ -12,7 +12,7 @@ from app.api.v1.common.errors import (
     register_exception_handlers,
     status_for,
 )
-from app.core.errors import ConflictError, DomainError, DomainValidationError, NotFoundError
+from app.core.errors import ConflictError, DomainError, DomainValidationError, NotFoundError, UpstreamError
 
 INVALID_CLIENT = ApiError(
     401, code="invalid_client", detail="Invalid client credentials", headers={"WWW-Authenticate": "Bearer"}
@@ -48,6 +48,7 @@ class UncategorizedWidgetError(DomainError):
         (NotFoundError, 404),
         (ConflictError, 409),
         (DomainValidationError, 422),
+        (UpstreamError, 502),
         (WidgetNotFoundError, 404),
         (WidgetLockedError, 409),
         (WidgetRuleError, 422),
@@ -82,7 +83,7 @@ def test_status_derived_codes_are_pinned(status_code: int, expected: str):
 
 
 def test_status_table_only_maps_taxonomy_categories():
-    assert STATUS_BY_ERROR == {NotFoundError: 404, ConflictError: 409, DomainValidationError: 422}
+    assert STATUS_BY_ERROR == {NotFoundError: 404, ConflictError: 409, DomainValidationError: 422, UpstreamError: 502}
 
 
 async def test_domain_error_becomes_the_envelope_with_its_code():

@@ -71,6 +71,12 @@ class Lesson(TimestampMixin, BillingBase):
     """Who pays, stored when the lesson becomes billable (PD1): the CRM's payer then, kept when ``pays_for`` changes
     later. ``None`` while the lesson is not billable, and for a billable one whose student had several payers."""
 
+    calendar_event_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("billing.calendar_event.id", ondelete="RESTRICT"), nullable=True, unique=True
+    )
+    """The occurrence the lesson comes from; ``None`` for a lesson added by hand. ``RESTRICT``: only the import deletes
+    an occurrence with its lesson, and the lesson first."""
+
     rate_cents_per_hour: Mapped[int | None] = mapped_column(nullable=True)
     """The lesson's own rate (PD3); ``None`` resolves the student's rate or the default."""
     note: Mapped[str | None] = mapped_column(Text, nullable=True)

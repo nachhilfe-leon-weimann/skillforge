@@ -26,6 +26,9 @@ from app.main import app
 from app.services.billing.errors import (
     CalendarAliasAlreadyExistsError,
     CalendarAliasNotFoundError,
+    CalendarEventAlreadyAssignedError,
+    CalendarEventNotFoundError,
+    CalendarUnavailableError,
     LessonAlreadyExistsError,
     LessonNotBillableError,
     LessonNotFoundError,
@@ -44,6 +47,9 @@ NOT_QUARTER_HOUR = "A rate must be at least 0 cents per hour and divisible by 4"
 NOT_BILLABLE = "Only a held or cancelled lesson can be billable"
 ALREADY_LINKED = "The party or the sevDesk contact is already linked"
 ALIAS_EXISTS = "An alias for this calendar name already exists"
+EVENT_ASSIGNED = "The calendar event already has a lesson"
+CALENDAR_UNAVAILABLE = "The lesson calendar could not be read"
+ASSIGNMENT = {"student_id": ID, "subject": "Mathe", "minutes": 60}
 
 
 @dataclass(frozen=True)
@@ -74,6 +80,16 @@ ENDPOINTS = {
         "POST", "/calendar/aliases", "calendar_aliases.create_alias", json={"name": "Student B", "student_id": ID}
     ),
     "delete_calendar_alias": Endpoint("DELETE", f"/calendar/aliases/{ID}", "calendar_aliases.delete_alias"),
+    "import_calendar": Endpoint(
+        "POST",
+        "/calendar/import",
+        "calendar.import_calendar",
+        json={"first_day": "2026-11-02", "last_day": "2026-11-08"},
+    ),
+    "assign_calendar_event": Endpoint(
+        "POST", f"/calendar/events/{ID}/assign", "calendar.assign_event", json=ASSIGNMENT
+    ),
+    "dismiss_calendar_event": Endpoint("POST", f"/calendar/events/{ID}/dismiss", "calendar.dismiss_event"),
 }
 
 # (endpoint, raised error, status, detail) - one row per error a route documents.
@@ -97,6 +113,13 @@ EXPECTATIONS: list[Expectation] = [
     ("create_calendar_alias", UnknownStudentError(INTERNAL), 422, "Unknown student"),
     ("create_calendar_alias", CalendarAliasAlreadyExistsError(INTERNAL), 409, ALIAS_EXISTS),
     ("delete_calendar_alias", CalendarAliasNotFoundError(INTERNAL), 404, "Calendar alias not found"),
+    ("import_calendar", CalendarUnavailableError(INTERNAL), 502, CALENDAR_UNAVAILABLE),
+    ("assign_calendar_event", CalendarEventNotFoundError(INTERNAL), 404, "Calendar event not found"),
+    ("assign_calendar_event", UnknownStudentError(INTERNAL), 422, "Unknown student"),
+    ("assign_calendar_event", CalendarEventAlreadyAssignedError(INTERNAL), 409, EVENT_ASSIGNED),
+    ("assign_calendar_event", LessonAlreadyExistsError(INTERNAL), 409, ALREADY_EXISTS),
+    ("assign_calendar_event", CalendarAliasAlreadyExistsError(INTERNAL), 409, ALIAS_EXISTS),
+    ("dismiss_calendar_event", CalendarEventNotFoundError(INTERNAL), 404, "Calendar event not found"),
 ]
 
 # The CRM's errors a billing route answers with (billing spec, "Route map": a party in a path that does not exist),
@@ -118,12 +141,15 @@ CATALOG: dict[type[DomainError], tuple[str, int, str, bool]] = {
     LessonNotFoundError: ("lesson_not_found", 404, "Lesson not found", False),
     RateNotFoundError: ("rate_not_found", 404, "Rate not found", False),
     CalendarAliasNotFoundError: ("calendar_alias_not_found", 404, "Calendar alias not found", False),
+    CalendarEventNotFoundError: ("calendar_event_not_found", 404, "Calendar event not found", False),
     LessonAlreadyExistsError: ("lesson_already_exists", 409, ALREADY_EXISTS, False),
     SevdeskContactAlreadyLinkedError: ("sevdesk_contact_already_linked", 409, ALREADY_LINKED, False),
     CalendarAliasAlreadyExistsError: ("calendar_alias_already_exists", 409, ALIAS_EXISTS, False),
+    CalendarEventAlreadyAssignedError: ("calendar_event_already_assigned", 409, EVENT_ASSIGNED, False),
     UnknownStudentError: ("unknown_student", 422, "Unknown student", False),
     RateNotQuarterHourError: ("rate_not_quarter_hour", 422, NOT_QUARTER_HOUR, False),
     LessonNotBillableError: ("lesson_not_billable", 422, NOT_BILLABLE, False),
+    CalendarUnavailableError: ("calendar_unavailable", 502, CALENDAR_UNAVAILABLE, False),
 }
 
 # The closed catalog of the billing spec: no class outside it may ever exist.

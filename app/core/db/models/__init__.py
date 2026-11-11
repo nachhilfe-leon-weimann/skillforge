@@ -16,6 +16,7 @@ from .auth import (
 )
 from .billing import (
     CalendarAlias,
+    CalendarEvent,
     Lesson,
     LessonStatus,
     ManualPayer,
@@ -69,6 +70,7 @@ __all__ = [
     "UserActionTokenPurpose",
     "UserSession",
     "CalendarAlias",
+    "CalendarEvent",
     "Lesson",
     "LessonStatus",
     "ManualPayer",

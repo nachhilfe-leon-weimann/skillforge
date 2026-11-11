@@ -69,6 +69,10 @@ def test_the_billing_endpoints_carry_no_boilerplate():
     endpoints = [endpoint.name for module in modules for endpoint in _endpoints(ast.parse(module.read_text()))]
 
     assert endpoints == [
+        "import_calendar",
+        "list_calendar_events",
+        "assign_calendar_event",
+        "dismiss_calendar_event",
         "list_calendar_aliases",
         "create_calendar_alias",
         "delete_calendar_alias",
@@ -88,6 +92,58 @@ def test_the_billing_endpoints_carry_no_boilerplate():
     ]
     for module in modules:
         assert _boilerplate(module.read_text()) == [], module.name
+
+
+def _integration_handling(source: str, *, package: str) -> list[str]:
+    """Return what in an endpoint module could handle an integration error: an import of ``app.integrations`` - its
+    errors included - and ``contextlib.suppress``. A ``try/except`` is ``_boilerplate``'s."""
+    found = sorted(
+        module
+        for module in _imported_modules(source, package=package)
+        if module == "app.integrations" or module.startswith("app.integrations.")
+    )
+    found += [
+        f"suppress at line {node.lineno}"
+        for node in ast.walk(ast.parse(source))
+        if (isinstance(node, ast.Name) and node.id == "suppress")
+        or (isinstance(node, ast.Attribute) and node.attr == "suppress")
+        or (isinstance(node, ast.alias) and node.name == "suppress")
+    ]
+    return found
+
+
+def test_no_billing_endpoint_handles_an_integration_error():
+    """The billing services translate integration errors (billing spec, "Errors from an integration"); an endpoint
+    neither catches nor even names one."""
+    package = ".".join(API_PACKAGE.relative_to(REPO_ROOT).parts)
+
+    for module in sorted(API_PACKAGE.glob("*.py")):
+        assert _integration_handling(module.read_text(), package=package) == [], module.name
+        assert _boilerplate(module.read_text()) == [], module.name
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from app.integrations.errors import IntegrationError",
+        "import app.integrations.errors",
+        "from app.integrations import errors",
+        "from contextlib import suppress\nwith suppress(Exception):\n    pass",
+        "import contextlib\nwith contextlib.suppress(Exception):\n    pass",
+    ],
+)
+def test_the_integration_error_check_catches_every_form(source: str):
+    assert _integration_handling(source, package="app.api.v1.billing")
+
+
+def test_the_boilerplate_check_catches_an_endpoint_catching_an_integration_error():
+    source = (
+        "from fastapi import APIRouter\nrouter = APIRouter()\n"
+        "@router.post('/import')\nasync def import_calendar() -> None:\n"
+        "    try:\n        pass\n    except Exception:\n        pass\n"
+    )
+
+    assert _boilerplate(source) == ["try/except at line 5"]
 
 
 @pytest.mark.parametrize("path", [LESSONS, f"{LESSONS}/00000000-0000-0000-0000-0000000000aa"])

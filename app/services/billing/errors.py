@@ -5,7 +5,7 @@ gets its ``code`` from the class name. A slice adds the catalog classes it raise
 catalog. No message repeats a name, a calendar title or a sevDesk id.
 """
 
-from app.core.errors import ConflictError, DomainValidationError, NotFoundError
+from app.core.errors import ConflictError, DomainValidationError, NotFoundError, UpstreamError
 
 
 class LessonNotFoundError(NotFoundError):
@@ -39,6 +39,18 @@ class CalendarAliasAlreadyExistsError(ConflictError):
     message = "An alias for this calendar name already exists"
 
 
+class CalendarEventNotFoundError(NotFoundError):
+    """No calendar occurrence exists for the requested event_id."""
+
+    message = "Calendar event not found"
+
+
+class CalendarEventAlreadyAssignedError(ConflictError):
+    """The calendar occurrence has a lesson already: it was assigned, or the import matched it."""
+
+    message = "The calendar event already has a lesson"
+
+
 class SevdeskContactAlreadyLinkedError(ConflictError):
     """The sevDesk contact is linked to another party, or the party to another contact: a party has at most one
     contact and a contact one party (``ext.sevdesk_contact``). A link is removed before another one is made."""
@@ -65,3 +77,10 @@ class LessonNotBillableError(DomainValidationError):
     billable."""
 
     message = "Only a held or cancelled lesson can be billable"
+
+
+class CalendarUnavailableError(UpstreamError):
+    """The lesson calendar could not be read - refused, unconfirmed, failed or not configured; nothing was imported.
+    The instance message names the integration error's class, never a name, a title or a mailbox."""
+
+    message = "The lesson calendar could not be read"

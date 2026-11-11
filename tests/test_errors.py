@@ -1,4 +1,4 @@
-from app.core.errors import ConflictError, DomainError, DomainValidationError, NotFoundError
+from app.core.errors import ConflictError, DomainError, DomainValidationError, NotFoundError, UpstreamError
 
 
 class WidgetNotFoundError(NotFoundError):
@@ -34,13 +34,14 @@ def test_explicit_code_is_not_inherited_by_subclasses():
 
 
 def test_categories_carry_their_own_code_and_a_safe_default_message():
-    for category in (DomainError, NotFoundError, ConflictError, DomainValidationError):
+    for category in (DomainError, NotFoundError, ConflictError, DomainValidationError, UpstreamError):
         assert category.code
         assert category.message
         assert category.expose_message is False
 
     assert NotFoundError.code == "not_found"
     assert ConflictError.code == "conflict"
+    assert UpstreamError.code == "upstream"
 
 
 def test_subclass_inherits_the_category_message_unless_it_sets_its_own():

@@ -50,3 +50,9 @@ class DomainValidationError(DomainError):
     """The request is well-formed but violates a domain rule."""
 
     message = "Request violates a domain rule"
+
+
+class UpstreamError(DomainError):
+    """Another system the request needs failed or refused; the request itself may be fine (ADR 0010, point 10)."""
+
+    message = "An upstream system could not be used"

@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3, SF3-1, SF3-2, SF4-1, SF4-2 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
+> Status: Draft - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3, SF3-1, SF3-2, SF4-1 to SF4-3 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
 > then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
@@ -219,7 +219,7 @@ title_name TEXT NULL                                     -- text after " mit ": 
 cancelled BOOLEAN NOT NULL
 reason TEXT NULL                                         -- why no lesson was proposed (Calendar import)
 dismissed BOOLEAN NOT NULL DEFAULT false
-changed BOOLEAN NOT NULL DEFAULT false                   -- differs from its ticked or charged lesson
+changed BOOLEAN NOT NULL DEFAULT false                   -- differs from a lesson the import must not change
 last_seen_at TIMESTAMPTZ NOT NULL
 
 -- billing.invoice  (SF5-3)
@@ -1217,17 +1217,25 @@ write (`invoices.py`)._
 **SF4-3 - Calendar import.** _Needs PD13._
 
 - _Technique:_ `billing.calendar_event` with its revision; `import_calendar` in
-  `app/services/billing/calendar.py`; the calendar routes; what is kept of a name follows PD13.
+  `app/services/billing/calendar.py`; the calendar routes; what is kept of a name follows PD13. `UpstreamError` in
+  `app/core/errors.py` with its 502 in `STATUS_BY_ERROR` lands here, not with SF5-4: `CalendarUnavailableError` is
+  the first class of the category, and the import is the first route that reads another system.
+- _Tests that change:_ `tests/test_errors.py` and `tests/api/test_common_errors.py`, only where they list the
+  categories, to add the fourth. The registries of the billing route tests gain the calendar routes: `PATH_VALUES`
+  in `tests/api/test_billing_auth.py` gains `event_id`; the endpoint list of
+  `test_the_billing_endpoints_carry_no_boilerplate` in `tests/api/test_billing_architecture.py`; in
+  `tests/api/test_billing_error_contract.py`, `ENDPOINTS`, `EXPECTATIONS` and `CATALOG` gain the calendar routes,
+  `CalendarEventNotFoundError`, `CalendarEventAlreadyAssignedError` and `CalendarUnavailableError`.
 - _Acceptance criteria:_
-  - [ ] Importing a range twice changes no row.
-  - [ ] A ticked or charged lesson is never changed or removed: a moved, shortened or vanished appointment sets
+  - [x] Importing a range twice changes no row.
+  - [x] A ticked or charged lesson is never changed or removed: a moved, shortened or vanished appointment sets
         `changed` (one test each).
-  - [ ] A `planned` lesson nobody touched follows its appointment: moved, or removed.
-  - [ ] A late cancellation becomes a `cancelled` lesson that is not billable (G3).
-  - [ ] Lessons in the weeks of both clock changes land on the right Berlin day and time (G5).
-  - [ ] `title_name` is stored and cleared as PD13 says, and old unassigned occurrences are deleted (one test per
+  - [x] A `planned` lesson nobody touched follows its appointment: moved, or removed.
+  - [x] A late cancellation becomes a `cancelled` lesson that is not billable (G3).
+  - [x] Lessons in the weeks of both clock changes land on the right Berlin day and time (G5).
+  - [x] `title_name` is stored and cleared as PD13 says, and old unassigned occurrences are deleted (one test per
         rule).
-  - [ ] The import answers with counts only.
+  - [x] The import answers with counts only.
 
 **SF5-1 - Scenarios and golden fixtures.** _After the freeze. Own PR, no code under `app/`._
 
@@ -1279,10 +1287,8 @@ write (`invoices.py`)._
   client (`app/services/billing/payment_methods.py`), `SEVDESK__PART_IDS`. The one place the sevDesk client is
   injected into the billing services, and the mode `fake` with its fake client
   ([sevDesk in `dry_run` and without a token](#sevdesk-in-dry_run-and-without-a-token)); `just seed-demo` sets
-  the mode and fills the fake. `UpstreamError` in `app/core/errors.py` with its 502 in `STATUS_BY_ERROR`, and the
-  mapping of [Errors from an integration](#errors-from-an-integration).
-- _Tests that change:_ `tests/test_errors.py` and `tests/api/test_common_errors.py`, only where they list the
-  categories, to add the fourth.
+  the mode and fills the fake. The sevDesk mapping of [Errors from an integration](#errors-from-an-integration);
+  `UpstreamError` itself came with SF4-3.
 - _Acceptance criteria:_
   - [ ] The preview changes no row. The same state gives the same fingerprint; a changed rate, duration, payer or
         payment method gives another.

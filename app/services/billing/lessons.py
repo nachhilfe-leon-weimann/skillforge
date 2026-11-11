@@ -79,8 +79,10 @@ async def create_lesson(
     minutes: int,
     rate_cents_per_hour: int | None = None,
     note: str | None = None,
+    calendar_event_id: uuid.UUID | None = None,
 ) -> Lesson:
-    """Add a lesson by hand. It starts ``planned`` and not billable: the tick is a change of its status."""
+    """Add a lesson - by hand, or for an occurrence of the lesson calendar (``calendar_event_id``; the import and an
+    assignment). It starts ``planned`` and not billable: the tick is a change of its status."""
     await _require_student(session, student_id)
     if rate_cents_per_hour is not None:
         require_quarter_hour_rate(rate_cents_per_hour)
@@ -92,6 +94,7 @@ async def create_lesson(
         minutes=minutes,
         rate_cents_per_hour=rate_cents_per_hour,
         note=note,
+        calendar_event_id=calendar_event_id,
     )
     async with _unique_start(session):
         session.add(lesson)

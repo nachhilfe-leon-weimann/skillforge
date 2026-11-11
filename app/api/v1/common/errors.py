@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from fastapi.utils import is_body_allowed_for_status_code
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.core.errors import ConflictError, DomainError, DomainValidationError, NotFoundError
+from app.core.errors import ConflictError, DomainError, DomainValidationError, NotFoundError, UpstreamError
 from app.core.logging import REQUEST_ID_HEADER, get_request_id
 
 from .schemas import ErrorResponse, FieldError
@@ -25,6 +25,7 @@ STATUS_BY_ERROR: dict[type[DomainError], int] = {
     NotFoundError: 404,
     ConflictError: 409,
     DomainValidationError: 422,
+    UpstreamError: 502,
 }
 
 VALIDATION_ERROR_CODE = "validation_error"
@@ -78,7 +79,7 @@ def status_for(error_type: type[DomainError]) -> int:
 
     raise LookupError(
         f"{error_type.__name__} is not mapped to a status code: derive it from a category in "
-        "app/core/errors.py (NotFoundError, ConflictError, DomainValidationError)."
+        "app/core/errors.py (NotFoundError, ConflictError, DomainValidationError, UpstreamError)."
     )
 
 

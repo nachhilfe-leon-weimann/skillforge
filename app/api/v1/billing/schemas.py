@@ -8,12 +8,13 @@ import uuid
 from datetime import UTC, date, datetime
 from typing import Annotated, Self
 
-from pydantic import AfterValidator, AwareDatetime, Field, StringConstraints
+from pydantic import AfterValidator, AwareDatetime, Field, StringConstraints, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
 from app.api.v1.common import ApiModel
 from app.core.db.models import CalendarAlias, Lesson, LessonStatus, ManualPayer, Rate, SevdeskContact
-from app.services.billing.calendar_rules import normalize_name
+from app.services.billing.calendar import ImportCounts, ListedEvent
+from app.services.billing.calendar_rules import NoLessonReason, normalize_name
 from app.services.billing.payers import StudentPayer
 from app.services.crm.inputs import require_storable_text
 
@@ -23,6 +24,8 @@ MAX_LESSON_MINUTES = 24 * 60
 # A Postgres INTEGER; a larger value could not be bound. Rule G for a rate (divisible by 4) is the service's, so a
 # lesson's own rate answers `rate_not_quarter_hour` like a student's rate does.
 MAX_CENTS_PER_HOUR = 2**31 - 1
+# One import reads at most this many days: a longer range is a typo, and a read is bounded (billing spec, SF4-3).
+MAX_IMPORT_DAYS = 92
 
 
 # The instants a Python datetime can hold in UTC: one outside could neither be stored in UTC nor read back.
@@ -333,3 +336,111 @@ class CalendarAliasResponse(ApiModel):
             student_id=alias.student_party_id,
             created_at=alias.created_at,
         )
+
+
+# The first and the last day of the calendar are refused: their Berlin midnight has no UTC datetime.
+ImportDay = Annotated[date, Field(gt=date.min, lt=date.max, examples=["2026-11-02"])]
+
+
+class CalendarImportRequest(ApiModel):
+    """Body of `POST /calendar/import`: a range of days in `Europe/Berlin`, both included, at most 92 days."""
+
+    first_day: ImportDay
+    """The first day whose occurrences are imported."""
+    last_day: ImportDay
+    """The last day whose occurrences are imported; not before `first_day`."""
+
+    @model_validator(mode="after")
+    def _a_range(self) -> Self:
+        if self.last_day < self.first_day:
+            raise ValueError("last_day must not be before first_day")
+        if (self.last_day - self.first_day).days >= MAX_IMPORT_DAYS:
+            raise ValueError(f"A range holds at most {MAX_IMPORT_DAYS} days")
+        return self
+
+
+class CalendarImportResponse(ApiModel):
+    """What an import did, in counts only."""
+
+    occurrences: int
+    """Occurrences read from the calendar and stored as seen."""
+    lessons_created: int
+    """Lessons the import proposed: `planned`, or `cancelled` for a late cancellation."""
+    lessons_updated: int
+    """`planned` lessons that followed their appointment: moved, resized or cancelled."""
+    lessons_removed: int
+    """`planned` lessons whose appointment vanished from the range."""
+    changed: int
+    """Occurrences of the range that differ from a lesson the import does not change, or could not get their lesson:
+    they are listed until dismissed."""
+    unassigned: int
+    """Occurrences of the range that wait for an assignment."""
+    deleted: int
+    """Occurrences deleted: gone from the calendar without a lesson, or 90 days past their start without one."""
+
+    @classmethod
+    def from_model(cls, counts: ImportCounts) -> Self:
+        return cls(
+            occurrences=counts.occurrences,
+            lessons_created=counts.lessons_created,
+            lessons_updated=counts.lessons_updated,
+            lessons_removed=counts.lessons_removed,
+            changed=counts.changed,
+            unassigned=counts.unassigned,
+            deleted=counts.deleted,
+        )
+
+
+class CalendarEventResponse(ApiModel):
+    """An occurrence of the lesson calendar that waits for an assignment, or differs from its lesson."""
+
+    id: uuid.UUID
+    """ID of the occurrence."""
+    starts_at: datetime
+    """When the appointment starts, in UTC, as last seen."""
+    ends_at: datetime
+    """When the appointment ends, in UTC, as last seen."""
+    title_subject: str | None
+    """The text before ` mit ` in the title, if it has one."""
+    title_name: str | None
+    """The name after ` mit `, as written, while the occurrence waits for an assignment; `null` otherwise."""
+    cancelled: bool
+    """Cancelled in the calendar or by the late-cancellation category."""
+    reason: NoLessonReason | None
+    """Why no lesson was proposed; `null` when it has one, or when its student has a lesson at that start already."""
+    changed: bool
+    """The appointment moved, was resized, cancelled or vanished - and its lesson was not changed - or it could not
+    get its lesson. Dismissing acknowledges it."""
+    lesson_id: uuid.UUID | None
+    """ID of the occurrence's lesson, if it has one."""
+    last_seen_at: datetime
+    """When an import last read the occurrence: before the last import of its day, it vanished from the calendar."""
+
+    @classmethod
+    def from_model(cls, listed: ListedEvent) -> Self:
+        event = listed.event
+        return cls(
+            id=event.id,
+            starts_at=event.starts_at,
+            ends_at=event.ends_at,
+            title_subject=event.title_subject,
+            title_name=event.title_name,
+            cancelled=event.cancelled,
+            reason=NoLessonReason(event.reason) if event.reason is not None else None,
+            changed=event.changed,
+            lesson_id=listed.lesson_id,
+            last_seen_at=event.last_seen_at,
+        )
+
+
+class CalendarEventAssignRequest(ApiModel):
+    """Body of `POST /calendar/events/{event_id}/assign`: the lesson an occurrence without one stands for."""
+
+    student_id: uuid.UUID
+    """ID of a party holding the student role."""
+    subject: SubjectLabel
+    """The subject as a label (`Mathe`). Surrounding whitespace is stripped."""
+    minutes: Minutes
+    """The duration to bill, a multiple of 15: the appointment's, or a correction of it."""
+    alias: CalendarName | None = None
+    """A calendar name to store as the student's alias, so the import matches it from now on; usually `title_name`."""

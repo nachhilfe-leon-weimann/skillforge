@@ -170,13 +170,17 @@ def propose(occurrence: Occurrence, roster: Roster) -> Proposal:
     if isinstance(student_id, Ambiguous):
         return NoLesson(NoLessonReason.AMBIGUOUS, title)
 
-    cancelled = occurrence.cancelled or _has_category(occurrence, LATE_CANCELLATION_CATEGORY)
     return LessonProposal(
         student_id=student_id,
         subject=title.subject,
         minutes=duration // timedelta(minutes=1),
-        status=ProposedStatus.CANCELLED if cancelled else ProposedStatus.PLANNED,
+        status=ProposedStatus.CANCELLED if is_cancelled(occurrence) else ProposedStatus.PLANNED,
     )
+
+
+def is_cancelled(occurrence: Occurrence) -> bool:
+    """Whether the occurrence is cancelled: in the calendar (``isCancelled``) or by the late-cancellation category."""
+    return occurrence.cancelled or _has_category(occurrence, LATE_CANCELLATION_CATEGORY)
 
 
 def parse_title(title: str) -> Title | None:

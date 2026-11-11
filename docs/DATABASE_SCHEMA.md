@@ -11,7 +11,8 @@ under `app/core/db/models/` - keep it in sync when models change.
 - `ext` - links from external system identifiers to a `core.party`
 - `auth` - OAuth2 application clients, secrets, scope grants per mode, user accounts (stored roles, sessions, one-time tokens), and the auth audit trail
 - `system` - internal runtime state (background-worker liveness heartbeats)
-- `billing` - lessons, students' rates, payers billed by hand and calendar aliases ([billing spec](specs/billing.md))
+- `billing` - lessons, students' rates, payers billed by hand, calendar aliases and the lesson calendar's
+  occurrences ([billing spec](specs/billing.md))
 
 ## Shared Columns
 
@@ -304,9 +305,10 @@ created_at/updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 
 ## Billing Schema
 
-Lessons, the rates they are billed at, who pays for them and the names the lesson calendar uses for students
-([billing spec](specs/billing.md)). Every reference to a party is `ON DELETE RESTRICT`. Rule G holds in the
-database: cents per hour are divisible by 4 and minutes by 15, so every amount is a whole cent.
+Lessons, the rates they are billed at, who pays for them, the names the lesson calendar uses for students and its
+occurrences as the import last saw them ([billing spec](specs/billing.md)). Every reference to a party is
+`ON DELETE RESTRICT`. Rule G holds in the database: cents per hour are divisible by 4 and minutes by 15, so every
+amount is a whole cent.
 
 ```sql
 billing.lesson_status = ('planned', 'held', 'cancelled', 'not_held')
@@ -330,6 +332,7 @@ status lesson_status NOT NULL DEFAULT 'planned'
 billable BOOLEAN NOT NULL DEFAULT false    -- ck_lesson_billable_status: only when held or cancelled
 rate_cents_per_hour INTEGER NULL           -- the lesson's own rate; ck_lesson_quarter_hour_cents as on billing.rate
 payer_party_id UUID NULL REFERENCES core.party(id) ON DELETE RESTRICT  -- stored when the lesson becomes billable
+calendar_event_id UUID NULL UNIQUE REFERENCES billing.calendar_event(id) ON DELETE RESTRICT  -- NULL when added by hand
 note TEXT NULL
 created_at/updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 UNIQUE (student_party_id, starts_at)  -- uq_lesson_student_start
@@ -346,6 +349,23 @@ name_normalized TEXT NOT NULL UNIQUE      -- as the import compares it (normaliz
 student_party_id UUID NOT NULL REFERENCES core.party(id) ON DELETE RESTRICT
 created_at/updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 INDEX (student_party_id)                  -- ix_calendar_alias_student_party_id
+
+-- billing.calendar_event  (one occurrence of the lesson calendar as the import last saw it)
+id UUID PRIMARY KEY DEFAULT uuid4
+external_id TEXT NOT NULL UNIQUE          -- Graph's event id; an occurrence keeps it when it moves
+starts_at TIMESTAMPTZ NOT NULL
+ends_at TIMESTAMPTZ NOT NULL
+title_subject TEXT NULL                   -- the text before " mit "
+title_name TEXT NULL                      -- the text after " mit ": a name, kept only while waiting (PD13)
+cancelled BOOLEAN NOT NULL
+reason TEXT NULL                          -- ck_calendar_event_reason: a NoLessonReason; NULL once it has a lesson
+dismissed BOOLEAN NOT NULL DEFAULT false
+changed BOOLEAN NOT NULL DEFAULT false    -- differs from a lesson the import must not change, or got no lesson
+last_seen_at TIMESTAMPTZ NOT NULL
+created_at/updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+CHECK (title_name IS NULL OR (NOT dismissed AND reason IN ('duration', 'unmatched', 'ambiguous')))
+                                          -- ck_calendar_event_title_name
+INDEX (starts_at)                         -- ix_calendar_event_starts_at
 ```
 
 `lesson.payer_party_id` is the CRM's payer at the moment the lesson became billable, so a later change of `pays_for`
