@@ -24,7 +24,7 @@ MAX_LESSON_MINUTES = 24 * 60
 # A Postgres INTEGER; a larger value could not be bound. Rule G for a rate (divisible by 4) is the service's, so a
 # lesson's own rate answers `rate_not_quarter_hour` like a student's rate does.
 MAX_CENTS_PER_HOUR = 2**31 - 1
-# One import reads at most this many days - a bound of this slice, not of the spec: a quarter covers any
+# One import reads at most this many days (billing spec, "Calendar import"): a quarter covers any
 # catch-up, a longer range is most likely a typo, and it keeps one Graph read within its page and time limits.
 MAX_IMPORT_DAYS = 92
 

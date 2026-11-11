@@ -264,7 +264,7 @@ writes `billing:write`.
   name with nothing left once normalised is a `422`; the student is held `FOR KEY SHARE` first
   (`require_named_student`).
 - **Calendar import.** `POST /billing/calendar/import` (`import_calendar` in `calendar.py`) reads a range of at most
-  92 Berlin days (`MAX_IMPORT_DAYS`, a bound of the import, not of the spec) through the Graph client and answers with
+  92 Berlin days (`MAX_IMPORT_DAYS`, checked by `CalendarImportRequest`) through the Graph client and answers with
   counts only. The read comes first, outside any lock and before any statement: every integration error of it is
   logged by its class and status and becomes `calendar_unavailable` (`502`), with no row written - the endpoint names
   no integration error (architecture test). Then a transaction-level advisory lock serializes the import with assign
