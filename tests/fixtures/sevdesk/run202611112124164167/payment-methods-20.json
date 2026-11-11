@@ -1,0 +1,48 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/ContactCustomField",
+    "params": {
+      "contact[id]": "140992442",
+      "contact[objectName]": "Contact",
+      "countAll": "true",
+      "limit": "1000"
+    },
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "total": 1,
+      "objects": [
+        {
+          "id": "1452121",
+          "objectName": "ContactCustomField",
+          "additionalInformation": null,
+          "create": "2026-11-11T22:27:11+01:00",
+          "update": "2026-11-11T22:27:11+01:00",
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "contact": {
+            "id": "140992442",
+            "objectName": "Contact"
+          },
+          "contactCustomFieldSetting": {
+            "id": "19398",
+            "objectName": "ContactCustomFieldSetting"
+          },
+          "value": "PayPal"
+        }
+      ]
+    }
+  }
+}

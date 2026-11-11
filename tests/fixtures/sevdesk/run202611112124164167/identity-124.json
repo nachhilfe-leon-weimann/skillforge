@@ -1,0 +1,60 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/SevUser",
+    "params": {},
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "objects": [
+        {
+          "id": "1570859",
+          "objectName": "SevUser",
+          "additionalInformation": null,
+          "create": "2026-11-10T23:56:34+01:00",
+          "update": "2026-11-11T23:05:58+01:00",
+          "fullname": "[SCRUBBED]",
+          "firstName": "[SCRUBBED]",
+          "lastName": "[SCRUBBED]",
+          "username": "[SCRUBBED]",
+          "status": "[SCRUBBED]",
+          "email": "[SCRUBBED]",
+          "gender": "[SCRUBBED]",
+          "role": "[SCRUBBED]",
+          "memberCode": "[SCRUBBED]",
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "lastLogin": "[SCRUBBED]",
+          "lastLoginIp": "[SCRUBBED]",
+          "welcomeScreenSeen": "[SCRUBBED]",
+          "smtpName": null,
+          "smtpMail": null,
+          "smtpUser": null,
+          "smtpPort": "[SCRUBBED]",
+          "smtpSsl": "[SCRUBBED]",
+          "smtpHost": null,
+          "languageCode": "[SCRUBBED]",
+          "twoFactorAuth": "[SCRUBBED]",
+          "forcePasswordChange": "[SCRUBBED]",
+          "clientOwner": "[SCRUBBED]",
+          "defaultReceiveMailCopy": "[SCRUBBED]",
+          "hideMapsDirections": "[SCRUBBED]",
+          "startDate": null,
+          "endDate": null,
+          "lastPasswordChange": "[SCRUBBED]"
+        }
+      ]
+    }
+  }
+}

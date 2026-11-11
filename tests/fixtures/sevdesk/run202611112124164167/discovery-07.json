@@ -1,0 +1,131 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/Part",
+    "params": {
+      "countAll": "true",
+      "limit": "1000"
+    },
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "total": 3,
+      "objects": [
+        {
+          "id": "58956698",
+          "objectName": "Part",
+          "additionalInformation": null,
+          "create": "2026-11-11T00:05:42+01:00",
+          "update": "2026-11-11T00:05:42+01:00",
+          "name": "Physik-Online",
+          "partNumber": "1002",
+          "text": null,
+          "category": {
+            "id": "1",
+            "objectName": "Category"
+          },
+          "stock": "0",
+          "stockEnabled": "1",
+          "unity": {
+            "id": "1",
+            "objectName": "Unity"
+          },
+          "pricePartner": null,
+          "priceCustomer": null,
+          "price": "30",
+          "secondUnityFactor": null,
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "pricePurchase": "0",
+          "taxRate": "0",
+          "image": null,
+          "status": "100",
+          "internalComment": null,
+          "priceNet": "30",
+          "priceGross": "30"
+        },
+        {
+          "id": "58956697",
+          "objectName": "Part",
+          "additionalInformation": null,
+          "create": "2026-11-11T00:05:28+01:00",
+          "update": "2026-11-11T00:05:28+01:00",
+          "name": "Informatik-Online",
+          "partNumber": "1001",
+          "text": null,
+          "category": {
+            "id": "1",
+            "objectName": "Category"
+          },
+          "stock": "0",
+          "stockEnabled": "1",
+          "unity": {
+            "id": "1",
+            "objectName": "Unity"
+          },
+          "pricePartner": null,
+          "priceCustomer": null,
+          "price": "30",
+          "secondUnityFactor": null,
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "pricePurchase": "0",
+          "taxRate": "0",
+          "image": null,
+          "status": "100",
+          "internalComment": null,
+          "priceNet": "30",
+          "priceGross": "30"
+        },
+        {
+          "id": "58956695",
+          "objectName": "Part",
+          "additionalInformation": null,
+          "create": "2026-11-11T00:05:15+01:00",
+          "update": "2026-11-11T00:05:15+01:00",
+          "name": "Mathe-Online",
+          "partNumber": "1000",
+          "text": null,
+          "category": {
+            "id": "97430",
+            "objectName": "Category"
+          },
+          "stock": "0",
+          "stockEnabled": "1",
+          "unity": {
+            "id": "9",
+            "objectName": "Unity"
+          },
+          "pricePartner": null,
+          "priceCustomer": null,
+          "price": "30",
+          "secondUnityFactor": null,
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "pricePurchase": "0",
+          "taxRate": "0",
+          "image": null,
+          "status": "100",
+          "internalComment": null,
+          "priceNet": "30",
+          "priceGross": "30"
+        }
+      ]
+    }
+  }
+}

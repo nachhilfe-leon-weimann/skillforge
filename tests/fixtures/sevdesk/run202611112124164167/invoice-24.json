@@ -1,0 +1,77 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/Invoice/Factory/saveInvoice",
+    "params": {},
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge",
+      "content-type": "application/json"
+    },
+    "body": {
+      "invoice": {
+        "objectName": "Invoice",
+        "mapAll": true,
+        "invoiceDate": "2026-11-11",
+        "deliveryDate": "2026-11-01",
+        "deliveryDateUntil": "2026-11-11",
+        "contact": {
+          "id": 140992441,
+          "objectName": "Contact"
+        },
+        "contactPerson": {
+          "id": 1570859,
+          "objectName": "SevUser"
+        },
+        "status": 100,
+        "invoiceType": "RE",
+        "currency": "[SCRUBBED]",
+        "taxRule": {
+          "id": 11,
+          "objectName": "TaxRule"
+        },
+        "taxText": "Spike run202611112124164167 tax text",
+        "header": "Spike run202611112124164167",
+        "headText": "Spike run202611112124164167: [%VOLLEANREDE%],<br>\n<br>\nvielen Dank für Ihren Auftrag und das damit verbundene Vertrauen!<br>\nNachfolgend finden Sie die Abrechnung der vereinbarten Leistungen im oben genannten Zeitraum:",
+        "footText": "Spike run202611112124164167: <strong>Zahlungsverfahren:</strong> <em>PayPal (<a href=\"https://pay.example.org/zahlung?re=[%RECHNUNGSNUMMER%]&betrag=[%BETRAG%]\">Weiter mit PayPal</a>)</em><br>\nBitte begleichen Sie den Rechnungsbetrag <strong>bis zum [%ZAHLUNGSZIEL%]</strong> unter Angabe der Rechnungs- oder Kundennummer.<br>\nBei Rückfragen stehe ich Ihnen gerne zur Verfügung.<br>\nMit freundlichen Grüßen<br>\n[%KONTAKTPERSON%]",
+        "customerInternalNote": "skillforge-spike:run202611112124164167"
+      },
+      "invoicePosSave": [
+        {
+          "objectName": "InvoicePos",
+          "mapAll": true,
+          "name": "Spike run202611112124164167 position",
+          "text": "Montag, 3. November 2025 / 14:00 – 15:30",
+          "quantity": "1.5",
+          "price": "10.00",
+          "taxRate": "0",
+          "unity": {
+            "id": 9,
+            "objectName": "Unity"
+          }
+        }
+      ],
+      "invoicePosDelete": null,
+      "discountSave": null,
+      "discountDelete": null,
+      "takeDefaultAddress": true
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "error": {
+        "exceptionUUID": "4dee4583-aa44-47a1-b8df-f63e907f9ac4",
+        "message": "SQLSTATE[23000]: Integrity constraint violation: 1048 Column 'tax_rate' cannot be null, query was: INSERT INTO `invoice` (`invoice_number`, `contact`, `create`, `update`, `sev_client`, `invoice_date`, `header`, `head_text`, `foot_text`, `time_to_pay`, `discount_time`, `discount`, `address_name`, `address_street`, `address_zip`, `address_city`, `address_country`, `delivery_address_country`, `pay_date`, `create_user`, `delivery_date`, `status`, `small_settlement`, `contact_person`, `tax_rate`, `tax_text`, `dunning_level`, `address_parent_name`, `address_contact_ref`, `tax_type`, `payment_method`, `cost_centre`, `send_date`, `origin`, `type_origin`, `invoice_type`, `account_intervall`, `account_last_invoice`, `account_next_invoice`, `reminder_total`, `reminder_debit`, `reminder_deadline`, `reminder_charge`, `address_parent_name2`, `address_name2`, `tax_set`, `address_gender`, `account_start_date`, `account_end_date`, `address`, `currency`, `sum_net`, `sum_tax`, `sum_gross`, `sum_discounts`, `sum_net_foreign_currency`, `sum_tax_foreign_currency`, `sum_gross_foreign_currency`, `sum_discounts_foreign_currency`, `sum_net_accounting`, `sum_tax_accounting`, `sum_gross_accounting`, `paid_amount`, `entry_type`, `customer_internal_note`, `einvoice_reference`, `sepa_mandate_reference`, `sepa_creditor_id`, `sepa_payer_iban`, `show_net`, `enshrined`, `send_type`, `delivery_date_until`, `datev_connect_online`, `send_payment_received_notification_date`, `account_datev`, `sum_discount_net`, `sum_discount_gross`, `sum_discount_net_foreign_currency`, `sum_discount_gross_foreign_currency`, `tax_rule`) VALUES (?, ?, UNIX_TIMESTAMP(NOW()), UNIX_TIMESTAMP(NOW()), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "errorCode": 0,
+        "code": null,
+        "data": [],
+        "responseCode": 400
+      },
+      "objects": null
+    }
+  }
+}

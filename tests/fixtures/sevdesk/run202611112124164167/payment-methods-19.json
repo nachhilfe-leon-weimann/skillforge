@@ -1,0 +1,27 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/ContactCustomField",
+    "params": {
+      "contact[id]": "140992441",
+      "contact[objectName]": "Contact",
+      "countAll": "true",
+      "limit": "1000"
+    },
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "total": 0,
+      "objects": []
+    }
+  }
+}

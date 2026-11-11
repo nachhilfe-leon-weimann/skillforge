@@ -1,6 +1,5 @@
 """The spike script, against a synthetic sevDesk only: it refuses anything but live on the trial and records it all."""
 
-import base64
 import json
 import re
 from collections import Counter
@@ -20,7 +19,7 @@ from tests.test_fixture_scan import leaks
 
 RUN_ID = "run202611101200000042"
 TAG = f"skillforge-spike:{RUN_ID}"
-TRANSFER = f"Spike {RUN_ID}: <strong>Zahlungsverfahren:</strong> <em>Überweisung</em>"
+TRANSFER = f"Spike {RUN_ID}: <strong>Zahlungsverfahren:</strong> <i>Überweisung</i>"
 INVOICE = {"id": "501", "objectName": "Invoice", "status": "100", "contact": {"id": "21", "objectName": "Contact"}}
 PDF = b"%PDF-1.7 synthetic"
 HEX_TOKEN = "0123456789abcdef0123456789abcdef"
@@ -77,16 +76,11 @@ def trial(fake_sevdesk: FakeSevdesk) -> FakeSevdesk:
         ("GET", "/Invoice/501/getPositions"): page([]),
         ("GET", "/Invoice"): page([{**INVOICE, "customerInternalNote": TAG}]),
         ("POST", "/Invoice/501/render"): httpx.Response(200, json={"pdf": None, "docId": "x"}),
-        ("GET", "/Invoice/501/getPdf"): objects({
-            "filename": "RE-1001.pdf",
-            "mimeType": "application/pdf",
-            "base64encoded": True,
-            "content": base64.b64encode(PDF).decode(),
-        }),
+        ("GET", "/Invoice/501/getPdf"): httpx.Response(200, content=PDF, headers={"content-type": "application/pdf"}),
         ("DELETE", "/Invoice/501"): httpx.Response(200, json={"objects": [None]}),
         ("GET", "/SevSequence/Factory/getByType"): objects({
             "id": "7",
-            "format": "RE-[%NUMBER%]",
+            "format": "RE-%NUMBER",
             "nextSequence": "1001",
             "type": "RE",
         }),
@@ -128,7 +122,7 @@ async def test_a_full_walk_creates_tagged_objects_records_everything_and_saves_t
     assert written["/api/v1/Contact"]["familyname"] == RUN_ID
     drafts = [json.loads(r.content)["invoice"] for r in trial.requests if r.url.path.endswith("/saveInvoice")]
     assert all(draft["customerInternalNote"] in (TAG, f"{TAG}:S20", f"{TAG}:S21") for draft in drafts)
-    assert drafts[0]["footText"].startswith(f"Spike {RUN_ID}: <strong>Zahlungsverfahren:</strong> <em>PayPal")
+    assert drafts[0]["footText"].startswith(f"Spike {RUN_ID}: <strong>Zahlungsverfahren:</strong> <i>PayPal")
     assert "?re=[%RECHNUNGSNUMMER%]&betrag=" in drafts[0]["footText"]
     assert [d.get("footText", "").split("<br>")[0] for d in drafts].count(TRANSFER) == 1, (
         "one variant with FOOT_TRANSFER"
@@ -184,6 +178,16 @@ async def test_a_single_step_runs_alone(live_settings, trial, tmp_path):
         "GET /Invoice/501/getPositions",
         "GET /Invoice",
     ]
+
+
+async def test_a_pdf_answer_that_is_no_pdf_stops_the_step_and_saves_nothing(live_settings, trial, tmp_path):
+    trial.on("GET", "/Invoice/501/getPdf", objects({"content": "not a document"}))
+
+    code, lines = await _spike(live_settings, trial, tmp_path, "--step", "pdf", "--invoice-id", "501")
+
+    assert code == 1
+    assert lines[-1].startswith("stopped: sevdesk GET /Invoice/{id}/getPdf: the answer is no PDF")
+    assert not (tmp_path / "pdf").exists()
 
 
 NOT_THIS_RUNS_DRAFT = {
@@ -286,7 +290,7 @@ async def test_the_sevuser_names_are_learned_before_a_step_run_on_its_own(live_s
     trial.on(
         "GET",
         "/SevSequence/Factory/getByType",
-        objects({"id": "7", "format": "Synthia-[%NUMBER%]", "nextSequence": "1", "type": "RE"}),
+        objects({"id": "7", "format": "Synthia-%NUMBER", "nextSequence": "1", "type": "RE"}),
     )
 
     code, _ = await _spike(live_settings, trial, tmp_path, "--step", "sequence")
@@ -425,6 +429,19 @@ async def test_the_numbered_drafts_send_the_numbers_of_the_sequence(live_setting
     assert code == 0
     sent = [json.loads(r.content)["invoice"] for r in trial.requests if r.url.path.endswith("/saveInvoice")]
     assert [draft["invoiceNumber"] for draft in sent] == ["RE-1001", "RE-1002"]
+
+
+async def test_a_sequence_format_without_its_number_sends_no_draft(live_settings, trial, tmp_path):
+    trial.on(
+        "GET",
+        "/SevSequence/Factory/getByType",
+        objects({"id": "7", "format": "RE-[NR]", "nextSequence": "1001", "type": "RE"}),
+    )
+
+    with pytest.raises(SystemExit, match="holds no %NUMBER"):
+        await _spike(live_settings, trial, tmp_path, "--contact-id", "21", "--step", "numbers")
+
+    assert not [request for request in trial.requests if request.method == "POST"]
 
 
 async def test_the_cut_connection_sends_its_write_once_then_only_reads(live_settings, trial, tmp_path):

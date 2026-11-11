@@ -1,0 +1,22 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/Invoice/139163757/getPdf",
+    "params": {
+      "download": "true",
+      "preventSendBy": "true"
+    },
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/pdf; charset=UTF-8"
+    },
+    "body": "[124941 bytes application/pdf; charset=UTF-8]"
+  }
+}

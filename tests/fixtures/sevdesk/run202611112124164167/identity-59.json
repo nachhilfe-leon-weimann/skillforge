@@ -1,0 +1,128 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/SevClient",
+    "params": {},
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "objects": [
+        {
+          "id": "0",
+          "objectName": "SevClient",
+          "additionalInformation": null,
+          "create": "2026-11-10T23:56:34+01:00",
+          "update": "2026-11-11T00:03:58+01:00",
+          "name": "[SCRUBBED]",
+          "templateMainColor": "[SCRUBBED]",
+          "templateSubColor": "[SCRUBBED]",
+          "status": "[SCRUBBED]",
+          "addressStreet": "[SCRUBBED]",
+          "addressCity": "[SCRUBBED]",
+          "addressZip": "[SCRUBBED]",
+          "muncipalityKey": null,
+          "contactPhone": null,
+          "contactEmail": "[SCRUBBED]",
+          "paypalEmail": null,
+          "vatNumber": null,
+          "ceoName": "[SCRUBBED]",
+          "contactFax": null,
+          "domain": "[SCRUBBED]",
+          "templateHeadlineColor": "[SCRUBBED]",
+          "website": null,
+          "bank": "[SCRUBBED]",
+          "bankNumber": null,
+          "bankAccountNumber": null,
+          "districtCourt": null,
+          "smallSettlement": "[SCRUBBED]",
+          "hasSeenBasicSettingsModal": "[SCRUBBED]",
+          "bank2": null,
+          "bankIban": "[SCRUBBED]",
+          "bankBic": null,
+          "orderPaymentTerms": null,
+          "orderDeliveryTerms": null,
+          "invoiceTimeToPay": "[SCRUBBED]",
+          "type": "[SCRUBBED]",
+          "foreignId": null,
+          "defaultBillingTime": null,
+          "billingAccountNumber": null,
+          "billingBankCode": null,
+          "companyRegister": null,
+          "nameAddition": null,
+          "showNet": "[SCRUBBED]",
+          "printShowQr": "[SCRUBBED]",
+          "printShowPayPal": "[SCRUBBED]",
+          "printDeliveryDate": "[SCRUBBED]",
+          "printContactPerson": "[SCRUBBED]",
+          "taxNumber": "[SCRUBBED]",
+          "printDeliveryReturn": "[SCRUBBED]",
+          "printPartNumber": "[SCRUBBED]",
+          "printPosDescription": "[SCRUBBED]",
+          "chartOfAccounts": "[SCRUBBED]",
+          "accountingChart": {
+            "id": "1",
+            "objectName": "AccountingChart"
+          },
+          "accountingSystem": {
+            "id": "2",
+            "objectName": "AccountingSystem"
+          },
+          "contractNotePaymentTerms": null,
+          "contractNoteDeliveryTerms": null,
+          "packingListDeliveryTerms": null,
+          "invitedBy": null,
+          "partnerId": null,
+          "inviterRewarded": "[SCRUBBED]",
+          "invoiceReminderDuration": null,
+          "invoiceReminderCharge": null,
+          "autosetDeliveryDate": "[SCRUBBED]",
+          "addressCountry": {
+            "id": "1",
+            "objectName": "StaticCountry"
+          },
+          "printPdfFooter": "[SCRUBBED]",
+          "defaultCurrency": "[SCRUBBED]",
+          "printPageNumbers": "[SCRUBBED]",
+          "formOfCompany": "[SCRUBBED]",
+          "companySize": null,
+          "referralProgram": {
+            "id": "4",
+            "objectName": "StaticReferralProgram"
+          },
+          "onBoardingStatus": null,
+          "pactasId": null,
+          "docServer": "[SCRUBBED]",
+          "createInvoiceReminder": "[SCRUBBED]",
+          "accountantNumber": null,
+          "accountantClientNumber": null,
+          "accountingYearBegin": null,
+          "cancelationDate": null,
+          "figoUsername": null,
+          "subscriptionStartDate": null,
+          "subscriptionEndDate": null,
+          "subscriptionCycle": null,
+          "printFoldLines": "[SCRUBBED]",
+          "discoveredAt": null,
+          "formerBookkeepingTool": null,
+          "hasAccountant": "[SCRUBBED]",
+          "partnerBrand": null,
+          "partnerCustomerId": null,
+          "partnerProvisioningId": null,
+          "partnerWhitelabeled": "[SCRUBBED]",
+          "tenant": "[SCRUBBED]",
+          "state": null,
+          "trialToFreeTransitionAt": null
+        }
+      ]
+    }
+  }
+}

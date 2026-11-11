@@ -1,0 +1,71 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/Invoice/139163120/getPositions",
+    "params": {
+      "countAll": "true",
+      "limit": "1000"
+    },
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "objects": [
+        {
+          "id": "372801242",
+          "objectName": "InvoicePos",
+          "additionalInformation": null,
+          "create": "2026-11-11T22:47:35+01:00",
+          "update": "2026-11-11T22:47:35+01:00",
+          "invoice": {
+            "id": "139163120",
+            "objectName": "Invoice"
+          },
+          "quantity": "1.5",
+          "price": "10",
+          "name": "Spike run202611112124164167 position",
+          "priority": "100",
+          "unity": {
+            "id": "9",
+            "objectName": "Unity"
+          },
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "positionNumber": "1000",
+          "text": "Montag, 3. November 2025 / 14:00 – 15:30",
+          "discount": "0",
+          "isPercentage": "1",
+          "discountedValue": null,
+          "taxRate": "0",
+          "temporary": "0",
+          "sumNet": "15",
+          "sumGross": "15",
+          "sumDiscount": "0",
+          "sumTax": "0",
+          "sumNetAccounting": "15",
+          "sumTaxAccounting": "0",
+          "sumGrossAccounting": "15",
+          "priceNet": "10",
+          "priceGross": "10",
+          "priceTax": "0",
+          "sumNetForeignCurrency": "0",
+          "sumTaxForeignCurrency": "0",
+          "sumGrossForeignCurrency": "0",
+          "sumDiscountForeignCurrency": "0",
+          "createNextPart": null
+        }
+      ],
+      "total": null
+    }
+  }
+}

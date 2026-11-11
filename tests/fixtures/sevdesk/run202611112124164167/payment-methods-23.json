@@ -1,0 +1,67 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/Contact/Factory/findContactsByCustomFieldValue",
+    "params": {
+      "customFieldName": "Zahlungsverfahren",
+      "value": "Überweisung"
+    },
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "objects": [
+        {
+          "id": "140992443",
+          "objectName": "Contact",
+          "additionalInformation": null,
+          "create": "2026-11-11T22:27:11+01:00",
+          "update": "2026-11-11T22:27:11+01:00",
+          "name": null,
+          "status": "100",
+          "customerNumber": "1002",
+          "surename": "[SCRUBBED]",
+          "familyname": "[SCRUBBED]",
+          "titel": null,
+          "category": {
+            "id": "3",
+            "objectName": "Category"
+          },
+          "description": null,
+          "academicTitle": null,
+          "gender": null,
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "name2": null,
+          "birthday": null,
+          "vatNumber": null,
+          "bankAccount": null,
+          "bankNumber": null,
+          "mandateReference": null,
+          "defaultCashbackTime": null,
+          "defaultCashbackPercent": null,
+          "defaultTimeToPay": null,
+          "taxNumber": null,
+          "taxOffice": null,
+          "exemptVat": "[SCRUBBED]",
+          "taxType": null,
+          "defaultDiscountAmount": null,
+          "defaultDiscountPercentage": "[SCRUBBED]",
+          "buyerReference": null,
+          "governmentAgency": "[SCRUBBED]",
+          "defaultShowVat": "[SCRUBBED]"
+        }
+      ]
+    }
+  }
+}

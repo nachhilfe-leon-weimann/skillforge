@@ -1,0 +1,431 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/Invoice/139163240/getPositions",
+    "params": {
+      "countAll": "true",
+      "limit": "1000"
+    },
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "objects": [
+        {
+          "id": "372801572",
+          "objectName": "InvoicePos",
+          "additionalInformation": null,
+          "create": "2026-11-11T22:51:12+01:00",
+          "update": "2026-11-11T23:17:54+01:00",
+          "invoice": {
+            "id": "139163240",
+            "objectName": "Invoice"
+          },
+          "quantity": "0.25",
+          "price": "29.96",
+          "name": "[SCRUBBED]",
+          "priority": "100",
+          "unity": {
+            "id": "9",
+            "objectName": "Unity"
+          },
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "positionNumber": "0",
+          "text": "[SCRUBBED]",
+          "discount": "0",
+          "isPercentage": "1",
+          "discountedValue": null,
+          "taxRate": "0",
+          "temporary": "0",
+          "sumNet": "7.49",
+          "sumGross": "7.49",
+          "sumDiscount": "0",
+          "sumTax": "0",
+          "sumNetAccounting": "7.49",
+          "sumTaxAccounting": "0",
+          "sumGrossAccounting": "7.49",
+          "priceNet": "29.96",
+          "priceGross": "29.96",
+          "priceTax": "0",
+          "sumNetForeignCurrency": "0",
+          "sumTaxForeignCurrency": "0",
+          "sumGrossForeignCurrency": "0",
+          "sumDiscountForeignCurrency": "0",
+          "createNextPart": null
+        },
+        {
+          "id": "372801573",
+          "objectName": "InvoicePos",
+          "additionalInformation": null,
+          "create": "2026-11-11T22:51:12+01:00",
+          "update": "2026-11-11T23:17:54+01:00",
+          "invoice": {
+            "id": "139163240",
+            "objectName": "Invoice"
+          },
+          "quantity": "0.25",
+          "price": "30",
+          "name": "[SCRUBBED]",
+          "priority": "100",
+          "unity": {
+            "id": "9",
+            "objectName": "Unity"
+          },
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "positionNumber": "1",
+          "text": "[SCRUBBED]",
+          "discount": "0",
+          "isPercentage": "1",
+          "discountedValue": null,
+          "taxRate": "0",
+          "temporary": "0",
+          "sumNet": "7.5",
+          "sumGross": "7.5",
+          "sumDiscount": "0",
+          "sumTax": "0",
+          "sumNetAccounting": "7.5",
+          "sumTaxAccounting": "0",
+          "sumGrossAccounting": "7.5",
+          "priceNet": "30",
+          "priceGross": "30",
+          "priceTax": "0",
+          "sumNetForeignCurrency": "0",
+          "sumTaxForeignCurrency": "0",
+          "sumGrossForeignCurrency": "0",
+          "sumDiscountForeignCurrency": "0",
+          "createNextPart": null
+        },
+        {
+          "id": "372801574",
+          "objectName": "InvoicePos",
+          "additionalInformation": null,
+          "create": "2026-11-11T22:51:12+01:00",
+          "update": "2026-11-11T23:17:54+01:00",
+          "invoice": {
+            "id": "139163240",
+            "objectName": "Invoice"
+          },
+          "quantity": "0.25",
+          "price": "45",
+          "name": "[SCRUBBED]",
+          "priority": "100",
+          "unity": {
+            "id": "9",
+            "objectName": "Unity"
+          },
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "positionNumber": "2",
+          "text": "[SCRUBBED]",
+          "discount": "0",
+          "isPercentage": "1",
+          "discountedValue": null,
+          "taxRate": "0",
+          "temporary": "0",
+          "sumNet": "11.25",
+          "sumGross": "11.25",
+          "sumDiscount": "0",
+          "sumTax": "0",
+          "sumNetAccounting": "11.25",
+          "sumTaxAccounting": "0",
+          "sumGrossAccounting": "11.25",
+          "priceNet": "45",
+          "priceGross": "45",
+          "priceTax": "0",
+          "sumNetForeignCurrency": "0",
+          "sumTaxForeignCurrency": "0",
+          "sumGrossForeignCurrency": "0",
+          "sumDiscountForeignCurrency": "0",
+          "createNextPart": null
+        },
+        {
+          "id": "372801575",
+          "objectName": "InvoicePos",
+          "additionalInformation": null,
+          "create": "2026-11-11T22:51:12+01:00",
+          "update": "2026-11-11T23:17:54+01:00",
+          "invoice": {
+            "id": "139163240",
+            "objectName": "Invoice"
+          },
+          "quantity": "0.75",
+          "price": "29.96",
+          "name": "[SCRUBBED]",
+          "priority": "100",
+          "unity": {
+            "id": "9",
+            "objectName": "Unity"
+          },
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "positionNumber": "3",
+          "text": "[SCRUBBED]",
+          "discount": "0",
+          "isPercentage": "1",
+          "discountedValue": null,
+          "taxRate": "0",
+          "temporary": "0",
+          "sumNet": "22.47",
+          "sumGross": "22.47",
+          "sumDiscount": "0",
+          "sumTax": "0",
+          "sumNetAccounting": "22.47",
+          "sumTaxAccounting": "0",
+          "sumGrossAccounting": "22.47",
+          "priceNet": "29.96",
+          "priceGross": "29.96",
+          "priceTax": "0",
+          "sumNetForeignCurrency": "0",
+          "sumTaxForeignCurrency": "0",
+          "sumGrossForeignCurrency": "0",
+          "sumDiscountForeignCurrency": "0",
+          "createNextPart": null
+        },
+        {
+          "id": "372801576",
+          "objectName": "InvoicePos",
+          "additionalInformation": null,
+          "create": "2026-11-11T22:51:12+01:00",
+          "update": "2026-11-11T23:17:54+01:00",
+          "invoice": {
+            "id": "139163240",
+            "objectName": "Invoice"
+          },
+          "quantity": "0.75",
+          "price": "30",
+          "name": "[SCRUBBED]",
+          "priority": "100",
+          "unity": {
+            "id": "9",
+            "objectName": "Unity"
+          },
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "positionNumber": "4",
+          "text": "[SCRUBBED]",
+          "discount": "0",
+          "isPercentage": "1",
+          "discountedValue": null,
+          "taxRate": "0",
+          "temporary": "0",
+          "sumNet": "22.5",
+          "sumGross": "22.5",
+          "sumDiscount": "0",
+          "sumTax": "0",
+          "sumNetAccounting": "22.5",
+          "sumTaxAccounting": "0",
+          "sumGrossAccounting": "22.5",
+          "priceNet": "30",
+          "priceGross": "30",
+          "priceTax": "0",
+          "sumNetForeignCurrency": "0",
+          "sumTaxForeignCurrency": "0",
+          "sumGrossForeignCurrency": "0",
+          "sumDiscountForeignCurrency": "0",
+          "createNextPart": null
+        },
+        {
+          "id": "372801577",
+          "objectName": "InvoicePos",
+          "additionalInformation": null,
+          "create": "2026-11-11T22:51:12+01:00",
+          "update": "2026-11-11T23:17:54+01:00",
+          "invoice": {
+            "id": "139163240",
+            "objectName": "Invoice"
+          },
+          "quantity": "0.75",
+          "price": "45",
+          "name": "[SCRUBBED]",
+          "priority": "100",
+          "unity": {
+            "id": "9",
+            "objectName": "Unity"
+          },
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "positionNumber": "5",
+          "text": "[SCRUBBED]",
+          "discount": "0",
+          "isPercentage": "1",
+          "discountedValue": null,
+          "taxRate": "0",
+          "temporary": "0",
+          "sumNet": "33.75",
+          "sumGross": "33.75",
+          "sumDiscount": "0",
+          "sumTax": "0",
+          "sumNetAccounting": "33.75",
+          "sumTaxAccounting": "0",
+          "sumGrossAccounting": "33.75",
+          "priceNet": "45",
+          "priceGross": "45",
+          "priceTax": "0",
+          "sumNetForeignCurrency": "0",
+          "sumTaxForeignCurrency": "0",
+          "sumGrossForeignCurrency": "0",
+          "sumDiscountForeignCurrency": "0",
+          "createNextPart": null
+        },
+        {
+          "id": "372801578",
+          "objectName": "InvoicePos",
+          "additionalInformation": null,
+          "create": "2026-11-11T22:51:12+01:00",
+          "update": "2026-11-11T23:17:54+01:00",
+          "invoice": {
+            "id": "139163240",
+            "objectName": "Invoice"
+          },
+          "quantity": "1.5",
+          "price": "29.96",
+          "name": "[SCRUBBED]",
+          "priority": "100",
+          "unity": {
+            "id": "9",
+            "objectName": "Unity"
+          },
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "positionNumber": "6",
+          "text": "[SCRUBBED]",
+          "discount": "0",
+          "isPercentage": "1",
+          "discountedValue": null,
+          "taxRate": "0",
+          "temporary": "0",
+          "sumNet": "44.94",
+          "sumGross": "44.94",
+          "sumDiscount": "0",
+          "sumTax": "0",
+          "sumNetAccounting": "44.94",
+          "sumTaxAccounting": "0",
+          "sumGrossAccounting": "44.94",
+          "priceNet": "29.96",
+          "priceGross": "29.96",
+          "priceTax": "0",
+          "sumNetForeignCurrency": "0",
+          "sumTaxForeignCurrency": "0",
+          "sumGrossForeignCurrency": "0",
+          "sumDiscountForeignCurrency": "0",
+          "createNextPart": null
+        },
+        {
+          "id": "372801579",
+          "objectName": "InvoicePos",
+          "additionalInformation": null,
+          "create": "2026-11-11T22:51:12+01:00",
+          "update": "2026-11-11T23:17:54+01:00",
+          "invoice": {
+            "id": "139163240",
+            "objectName": "Invoice"
+          },
+          "quantity": "1.5",
+          "price": "30",
+          "name": "[SCRUBBED]",
+          "priority": "100",
+          "unity": {
+            "id": "9",
+            "objectName": "Unity"
+          },
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "positionNumber": "7",
+          "text": "[SCRUBBED]",
+          "discount": "0",
+          "isPercentage": "1",
+          "discountedValue": null,
+          "taxRate": "0",
+          "temporary": "0",
+          "sumNet": "45",
+          "sumGross": "45",
+          "sumDiscount": "0",
+          "sumTax": "0",
+          "sumNetAccounting": "45",
+          "sumTaxAccounting": "0",
+          "sumGrossAccounting": "45",
+          "priceNet": "30",
+          "priceGross": "30",
+          "priceTax": "0",
+          "sumNetForeignCurrency": "0",
+          "sumTaxForeignCurrency": "0",
+          "sumGrossForeignCurrency": "0",
+          "sumDiscountForeignCurrency": "0",
+          "createNextPart": null
+        },
+        {
+          "id": "372801580",
+          "objectName": "InvoicePos",
+          "additionalInformation": null,
+          "create": "2026-11-11T22:51:12+01:00",
+          "update": "2026-11-11T23:17:54+01:00",
+          "invoice": {
+            "id": "139163240",
+            "objectName": "Invoice"
+          },
+          "quantity": "1.5",
+          "price": "45",
+          "name": "[SCRUBBED]",
+          "priority": "100",
+          "unity": {
+            "id": "9",
+            "objectName": "Unity"
+          },
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "positionNumber": "8",
+          "text": "[SCRUBBED]",
+          "discount": "0",
+          "isPercentage": "1",
+          "discountedValue": null,
+          "taxRate": "0",
+          "temporary": "0",
+          "sumNet": "67.5",
+          "sumGross": "67.5",
+          "sumDiscount": "0",
+          "sumTax": "0",
+          "sumNetAccounting": "67.5",
+          "sumTaxAccounting": "0",
+          "sumGrossAccounting": "67.5",
+          "priceNet": "45",
+          "priceGross": "45",
+          "priceTax": "0",
+          "sumNetForeignCurrency": "0",
+          "sumTaxForeignCurrency": "0",
+          "sumGrossForeignCurrency": "0",
+          "sumDiscountForeignCurrency": "0",
+          "createNextPart": null
+        }
+      ],
+      "total": null
+    }
+  }
+}
