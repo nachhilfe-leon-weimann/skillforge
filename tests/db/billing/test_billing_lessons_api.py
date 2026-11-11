@@ -116,6 +116,49 @@ async def test_a_start_without_offset_or_without_a_utc_instant_is_a_422(
     assert response.json()["errors"][0]["loc"] == ["body", "starts_at"]
 
 
+@pytest.mark.parametrize(
+    ("starts_at", "stored"),
+    [
+        ("2026-11-02T16:00:00+01:00", "2026-11-02T15:00:00Z"),
+        ("2026-11-02T16:07Z", "2026-11-02T16:07:00Z"),
+        ("2026-11-02T16:07:00.000+05:45", "2026-11-02T10:22:00Z"),
+    ],
+    ids=["seconds-zero", "no-seconds", "quarter-hour-offset"],
+)
+async def test_a_start_on_a_whole_minute_is_accepted(
+    client: AsyncClient, student: uuid.UUID, starts_at: str, stored: str
+):
+    added = await _add(client, student, starts_at=starts_at)
+    other = await _add(client, student, starts_at="2026-11-03T16:00:00+01:00")
+
+    patched = await _patch(client, other, starts_at=starts_at.replace("11-02", "11-04"))
+
+    assert added["starts_at"] == stored
+    assert patched.status_code == 200
+    assert patched.json()["starts_at"] == stored.replace("11-02", "11-04")
+
+
+@pytest.mark.parametrize(
+    "starts_at",
+    ["2026-11-02T16:00:30+01:00", "2026-11-02T16:00:00.000001+01:00", "2026-11-02T16:00:00.5Z"],
+    ids=["seconds", "microsecond", "fraction"],
+)
+async def test_a_start_off_the_minute_is_a_422(client: AsyncClient, student: uuid.UUID, starts_at: str):
+    """`uq_lesson_student_start` compares instants: a lesson at `16:00:30` would stand beside one at `16:00`."""
+    lesson = await _add(client, student)
+
+    created = await client.post(
+        "/lessons", json={"student_id": str(student), "subject": "Mathe", "starts_at": starts_at, "minutes": 60}
+    )
+    patched = await _patch(client, lesson, starts_at=starts_at)
+
+    for response in (created, patched):
+        assert response.status_code == 422, response.request.method
+        assert _error(response) == "validation_error"
+        assert response.json()["errors"][0]["loc"][:2] == ["body", "starts_at"]
+    assert (await client.get(f"/lessons/{lesson['id']}")).json() == lesson
+
+
 async def test_a_lessons_own_rate_obeys_rule_g(client: AsyncClient, student: uuid.UUID):
     """PD3: cents per hour, 0 allowed, divisible by 4; the service answers before ck_lesson_quarter_hour_cents."""
     free = await _add(client, student, rate_cents_per_hour=0)

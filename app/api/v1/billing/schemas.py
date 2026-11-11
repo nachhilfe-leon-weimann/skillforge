@@ -41,6 +41,13 @@ def _in_utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
+def _whole_minute(value: datetime) -> datetime:
+    """A start on the minute: one with seconds would escape `uq_lesson_student_start` - `16:00:30` beside `16:00`."""
+    if value.second or value.microsecond:
+        raise ValueError("Value must be a whole minute, without seconds or a fraction of a second")
+    return value
+
+
 def _names_something(value: str) -> str:
     """A calendar name must keep something once normalised; the error repeats no part of it."""
     if not normalize_name(value):
@@ -60,7 +67,12 @@ Note = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1, max_length=2000),
     AfterValidator(require_storable_text),
 ]
-StartsAt = Annotated[AwareDatetime, AfterValidator(_in_utc), Field(examples=["2026-11-02T16:00:00+01:00"])]
+StartsAt = Annotated[
+    AwareDatetime,
+    AfterValidator(_in_utc),
+    AfterValidator(_whole_minute),
+    Field(examples=["2026-11-02T16:00:00+01:00"]),
+]
 Minutes = Annotated[int, Field(gt=0, le=MAX_LESSON_MINUTES, multiple_of=15, examples=[60])]
 CentsPerHour = Annotated[int, Field(ge=0, le=MAX_CENTS_PER_HOUR, examples=[3000])]
 CalendarName = Annotated[
@@ -132,7 +144,7 @@ class LessonCreateRequest(ApiModel):
     subject: SubjectLabel
     """The subject as a label (`Mathe`). Surrounding whitespace is stripped."""
     starts_at: StartsAt
-    """When the lesson starts, with its UTC offset (`Z` or `+01:00`)."""
+    """When the lesson starts, with its UTC offset (`Z` or `+01:00`), on a whole minute."""
     minutes: Minutes
     """The duration, a multiple of 15."""
     rate_cents_per_hour: CentsPerHour | None = None
@@ -159,7 +171,7 @@ class LessonUpdateRequest(ApiModel):
     subject: SubjectLabel | MISSING = MISSING
     """The subject as a label. Surrounding whitespace is stripped."""
     starts_at: StartsAt | MISSING = MISSING
-    """When the lesson starts, with its UTC offset."""
+    """When the lesson starts, with its UTC offset, on a whole minute."""
     minutes: Minutes | MISSING = MISSING
     """The duration, a multiple of 15 - corrected when a lesson ran differently."""
     rate_cents_per_hour: CentsPerHour | None | MISSING = MISSING
