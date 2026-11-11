@@ -10,6 +10,7 @@ from app.services.billing.errors import (
     CalendarAliasAlreadyExistsError,
     CalendarAliasNotFoundError,
     CalendarEventAlreadyAssignedError,
+    CalendarEventNotAssignableError,
     CalendarEventNotFoundError,
     CalendarUnavailableError,
     LessonAlreadyExistsError,
@@ -69,6 +70,7 @@ async def list_calendar_events(params: PageQuery, session: DBSession) -> Page[Ca
     responses=error_responses(
         CalendarEventNotFoundError,
         UnknownStudentError,
+        CalendarEventNotAssignableError,
         CalendarEventAlreadyAssignedError,
         LessonAlreadyExistsError,
         CalendarAliasAlreadyExistsError,
@@ -78,7 +80,8 @@ async def assign_calendar_event(
     event_id: EventId, request: CalendarEventAssignRequest, response: Response, session: DBSession
 ) -> LessonResponse:
     """Create the lesson of an occurrence without one - `cancelled` for a cancelled occurrence - and optionally store
-    its name as the student's alias. The `Location` header points to the lesson."""
+    its name as the student's alias. The lesson starts at the occurrence's start: one off the whole minute cannot be
+    assigned. The `Location` header points to the lesson."""
     lesson = await calendar_service.assign_event(session, event_id, **request.model_dump())
     response.headers["Location"] = LESSON_LOCATION.format(lesson_id=lesson.id)
     return LessonResponse.from_model(lesson)

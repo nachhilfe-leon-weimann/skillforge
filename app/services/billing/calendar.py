@@ -60,12 +60,14 @@ from .calendar_rules import (
     Roster,
     StudentName,
     is_cancelled,
+    is_on_the_minute,
     match_name,
     parse_title,
     propose,
 )
 from .errors import (
     CalendarEventAlreadyAssignedError,
+    CalendarEventNotAssignableError,
     CalendarEventNotFoundError,
     CalendarUnavailableError,
     LessonAlreadyExistsError,
@@ -217,11 +219,16 @@ async def assign_event(
     alias: str | None = None,
 ) -> Lesson:
     """Give an occurrence without a lesson its lesson, through the lesson services: a ``cancelled`` one for a cancelled
-    occurrence. ``alias`` is stored for the student first, as ``POST /calendar/aliases`` would."""
+    occurrence. ``alias`` is stored for the student first, as ``POST /calendar/aliases`` would.
+
+    The lesson starts at the occurrence's start, so a start off the minute is refused before anything is written; the
+    end does not count, the request's ``minutes`` give the length."""
     await _lock_calendar(session)
     event = await _get_event(session, event_id)
     if await session.scalar(select(exists().where(Lesson.calendar_event_id == event.id))):
         raise CalendarEventAlreadyAssignedError(f"Calendar event {event_id} has a lesson")
+    if not is_on_the_minute(event.starts_at):
+        raise CalendarEventNotAssignableError(f"Calendar event {event_id} starts off the minute")
     if alias is not None:
         await calendar_aliases.create_alias(session, name=alias, student_id=student_id)
 
@@ -438,9 +445,9 @@ class _Named:
 
 
 def _named(proposal: Proposal, occurrence: Occurrence, roster: Roster) -> _Named | None:
-    """Whom the title names: the rules' lesson, or - where they stop before the name (a duration no lesson can have, a
-    phone call, an all-day entry, a first meeting) - the one student its name matches. ``None`` for a name that
-    matches nobody or several: PD13 keeps no name, so there is nothing to compare it with."""
+    """Whom the title names: the rules' lesson, or - where they stop before the name (a duration or a time no lesson
+    can have, a phone call, an all-day entry, a first meeting) - the one student its name matches. ``None`` for a name
+    that matches nobody or several: PD13 keeps no name, so there is nothing to compare it with."""
     match proposal:
         case LessonProposal(student_id=student_id, subject=subject):
             return _Named(student_id, subject)
@@ -448,8 +455,9 @@ def _named(proposal: Proposal, occurrence: Occurrence, roster: Roster) -> _Named
             title = parse_title(occurrence.title)
             if title is None or not isinstance(student_id := match_name(title.name, roster), uuid.UUID):
                 return None
-            # Only a lesson title of an odd length has a subject: before a phone call's, an all-day entry's or a first
-            # meeting's ` mit ` stands any word ("Telefonat", "Ferien"; `Kennenlernen` is never read as a subject).
+            # Only a lesson title refused for its times (`duration`: an odd length or a time off the minute) has a
+            # subject: before a phone call's, an all-day entry's or a first meeting's ` mit ` stands any word
+            # ("Telefonat", "Ferien"; `Kennenlernen` is never read as a subject).
             return _Named(student_id, title.subject if reason is NoLessonReason.DURATION else None)
 
 

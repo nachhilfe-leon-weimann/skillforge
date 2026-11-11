@@ -7328,7 +7328,7 @@
     },
     "/api/v1/billing/calendar/events/{event_id}/assign": {
       "post": {
-        "description": "Create the lesson of an occurrence without one - `cancelled` for a cancelled occurrence - and optionally store\nits name as the student's alias. The `Location` header points to the lesson.",
+        "description": "Create the lesson of an occurrence without one - `cancelled` for a cancelled occurrence - and optionally store\nits name as the student's alias. The lesson starts at the occurrence's start: one off the whole minute cannot be\nassigned. The `Location` header points to the lesson.",
         "operationId": "billing_assign_calendar_event",
         "parameters": [
           {
@@ -7462,6 +7462,12 @@
             "content": {
               "application/json": {
                 "examples": {
+                  "calendar_event_not_assignable": {
+                    "value": {
+                      "code": "calendar_event_not_assignable",
+                      "detail": "The calendar event cannot become a lesson: its start is not on a whole minute"
+                    }
+                  },
                   "unknown_student": {
                     "value": {
                       "code": "unknown_student",
@@ -7490,7 +7496,7 @@
                 }
               }
             },
-            "description": "Unknown student"
+            "description": "Unknown student / The calendar event cannot become a lesson: its start is not on a whole minute"
           }
         },
         "security": [

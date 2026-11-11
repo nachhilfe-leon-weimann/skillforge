@@ -23,6 +23,8 @@ from app.integrations.graph import client as graph_client
 from app.integrations.graph.client import READ_DEADLINE_SECONDS
 from app.integrations.graph.config import GraphSettings
 from app.main import app
+from app.services.billing import calendar, lessons
+from app.services.billing.errors import CalendarEventNotAssignableError
 from app.services.crm import companies
 from tests.db.billing.calendar_support import (
     MAX,
@@ -439,6 +441,98 @@ async def test_assign_takes_minutes_on_the_quarter_hour_only(
     )
 
     assert (response.status_code, response.json()["code"]) == (422, "validation_error")
+
+
+def _graph_time(moment: dt.datetime) -> dict[str, str]:
+    """Graph's ``dateTimeTimeZone`` with all seven fractional digits, so a fraction of a second reaches the import."""
+    return {"dateTime": f"{moment:%Y-%m-%dT%H:%M:%S}.{moment.microsecond:06d}0", "timeZone": "UTC"}
+
+
+async def _waiting_at(
+    api: AsyncClient, fake: FakeGraph, session: AsyncSession, start: dt.timedelta, end: dt.timedelta
+) -> uuid.UUID:
+    """One occurrence of `DAY` from `START` to an hour later, moved by ``start`` and ``end``; it waits as `duration`."""
+    event = graph_event("odd", "Mathe mit Student Z", START)
+    answer_view(
+        fake,
+        [{**event, "start": _graph_time(START + start), "end": _graph_time(START + dt.timedelta(hours=1) + end)}],
+    )
+    await _import(api, ONE_DAY)
+    return await _event_id(session, "odd")
+
+
+@pytest.mark.parametrize(
+    "offset", [dt.timedelta(seconds=30), dt.timedelta(milliseconds=500)], ids=["seconds", "milliseconds"]
+)
+async def test_assign_of_an_occurrence_that_starts_off_the_minute_is_calendar_event_not_assignable(
+    api: AsyncClient, fake: FakeGraph, session: AsyncSession, student: uuid.UUID, offset: dt.timedelta
+):
+    """Its lesson would start at `16:00:30` beside one set at `16:00`: nothing is written - no alias, no lesson, no
+    acknowledgment - and the occurrence still waits."""
+    event_id = await _waiting_at(api, fake, session, offset, offset)
+    before = await snapshot(session)
+
+    response = await api.post(
+        f"{EVENTS}/{event_id}/assign",
+        json={"student_id": str(student), "subject": "Mathe", "minutes": 60, "alias": "Student Z"},
+    )
+
+    assert (response.status_code, response.json()) == (
+        422,
+        {
+            "detail": "The calendar event cannot become a lesson: its start is not on a whole minute",
+            "code": "calendar_event_not_assignable",
+        },
+    )
+    assert await snapshot(session) == before
+    assert await session.scalar(select(func.count()).select_from(CalendarAlias)) == 0
+    listed = (await api.get(EVENTS)).json()["items"]
+    assert [(item["id"], item["reason"], item["lesson_id"]) for item in listed] == [(str(event_id), "duration", None)]
+
+
+async def test_assign_refuses_a_start_off_the_minute_before_it_stores_the_alias(
+    api: AsyncClient, fake: FakeGraph, session: AsyncSession, student: uuid.UUID
+):
+    """The service writes nothing first - not only the request's rollback keeps the alias out."""
+    event_id = await _waiting_at(api, fake, session, dt.timedelta(seconds=30), dt.timedelta(seconds=30))
+
+    with pytest.raises(CalendarEventNotAssignableError):
+        await calendar.assign_event(
+            session, event_id, student_id=student, subject="Mathe", minutes=60, alias="Student Z"
+        )
+
+    assert await session.scalar(select(func.count()).select_from(CalendarAlias)) == 0
+
+
+async def test_assign_of_an_occurrence_off_the_minute_that_has_a_lesson_is_calendar_event_already_assigned(
+    api: AsyncClient, fake: FakeGraph, session: AsyncSession, student: uuid.UUID
+):
+    """A lesson at `16:00:30`, as the import stored it before the minute rule: that it has one is the answer."""
+    off = dt.timedelta(seconds=30)
+    event_id = await _waiting_at(api, fake, session, off, off)
+    await lessons.create_lesson(
+        session, student_id=student, subject="Mathe", starts_at=START + off, minutes=60, calendar_event_id=event_id
+    )
+
+    response = await api.post(
+        f"{EVENTS}/{event_id}/assign", json={"student_id": str(student), "subject": "Mathe", "minutes": 60}
+    )
+
+    assert (response.status_code, response.json()["code"]) == (409, "calendar_event_already_assigned")
+
+
+async def test_assign_of_an_occurrence_that_only_ends_off_the_minute_starts_its_lesson_at_the_minute(
+    api: AsyncClient, fake: FakeGraph, session: AsyncSession, student: uuid.UUID
+):
+    """`minutes` comes from the request: only the start becomes the lesson's, so `16:00` to `17:00:30` is assignable."""
+    event_id = await _waiting_at(api, fake, session, dt.timedelta(), dt.timedelta(seconds=30))
+
+    response = await api.post(
+        f"{EVENTS}/{event_id}/assign", json={"student_id": str(student), "subject": "Mathe", "minutes": 60}
+    )
+
+    assert response.status_code == 201, response.text
+    assert (response.json()["starts_at"], response.json()["minutes"]) == ("2026-12-02T15:00:00Z", 60)
 
 
 # --- dismiss ---

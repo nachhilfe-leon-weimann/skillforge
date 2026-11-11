@@ -79,6 +79,14 @@ class LessonNotBillableError(DomainValidationError):
     message = "Only a held or cancelled lesson can be billable"
 
 
+class CalendarEventNotAssignableError(DomainValidationError):
+    """The calendar occurrence cannot become a lesson by assignment: its start is not on a whole minute, and a lesson
+    there would stand beside one at the whole minute (``uq_lesson_student_start``). Nothing rounds a time; such a
+    lesson is added by hand."""
+
+    message = "The calendar event cannot become a lesson: its start is not on a whole minute"
+
+
 class CalendarUnavailableError(UpstreamError):
     """The lesson calendar could not be read - refused, unconfirmed, failed or not configured; nothing was imported.
     The instance message names the integration error's class, never a name, a title or a mailbox."""

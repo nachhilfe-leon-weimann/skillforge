@@ -162,7 +162,11 @@ def propose(occurrence: Occurrence, roster: Roster) -> Proposal:
 
     # Between instants: aware datetimes of one zone would subtract as wall times, wrong across a clock change.
     duration = occurrence.ends_at.astimezone(UTC) - occurrence.starts_at.astimezone(UTC)
-    if not timedelta() < duration <= MAX_LESSON_DURATION or duration % LESSON_STEP:
+    if (
+        not timedelta() < duration <= MAX_LESSON_DURATION
+        or duration % LESSON_STEP
+        or not (is_on_the_minute(occurrence.starts_at) and is_on_the_minute(occurrence.ends_at))
+    ):
         return NoLesson(NoLessonReason.DURATION, title)
 
     student_id = match_name(title.name, roster)
@@ -238,6 +242,13 @@ def is_phone_number(location: str) -> bool:
     """Whether a location is a phone number: see ``_PHONE_NUMBER``."""
     text = location.strip()
     return _PHONE_NUMBER.fullmatch(text) is not None and sum(char.isdigit() for char in text) in _PHONE_DIGITS
+
+
+def is_on_the_minute(moment: datetime) -> bool:
+    """Whether the instant is a whole minute. Graph's times carry seconds and fractions: a lesson at ``16:00:30`` would
+    stand beside one set at ``16:00`` (``uq_lesson_student_start``), and nothing rounds a time."""
+    instant = moment.astimezone(UTC)
+    return not (instant.second or instant.microsecond)
 
 
 def _has_category(occurrence: Occurrence, category: str) -> bool:
