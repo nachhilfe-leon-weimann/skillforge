@@ -1,0 +1,233 @@
+"""What an occurrence of the lesson calendar is: a lesson for one student, or no lesson and why (billing spec,
+"Calendar import").
+
+Pure: plain data in, plain data out - no session, no network, no clock (money rule 7, architecture test). The import
+maps Graph's events onto ``Occurrence`` and the students and aliases it read onto ``Roster``; nothing here knows
+either. The match tokens are German matching data, not family-visible text, and live only here. A title holds a
+name: nothing here logs, and no exception carries a title.
+"""
+
+import re
+import unicodedata
+from collections import Counter
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import StrEnum
+from uuid import UUID
+
+# The match tokens (billing spec, "Match tokens are not family-visible text").
+TITLE_SEPARATOR = "mit"
+"""``<Fach> mit <Vorname Nachname>``: the subject before the first ``mit``, the name after it."""
+FIRST_MEETING = "Kennenlernen"
+"""The subject of the free first meeting: never a subject of a lesson."""
+PHONE_CATEGORY = "Telefon"
+LATE_CANCELLATION_CATEGORY = "Abgesagt"
+"""The category of a late cancellation and a no-show alike (Q9)."""
+
+# Lessons are planned in quarter hours (decision G).
+LESSON_STEP = timedelta(minutes=15)
+
+_TITLE_SEPARATOR = re.compile(rf" {TITLE_SEPARATOR} ", re.IGNORECASE)
+# A location that is a phone number: an optional leading `+`, then only digits and the separators people write
+# between them, and at least `_PHONE_MIN_DIGITS` digits. A room or a Teams location has letters; a short number
+# alone is more likely a room than a phone.
+_PHONE_NUMBER = re.compile(r"\+?[0-9 /()-]+")
+_PHONE_MIN_DIGITS = 5
+_UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+_WORD_SEPARATORS = str.maketrans("-_", "  ")
+
+
+class NoLessonReason(StrEnum):
+    """Why an occurrence is no lesson: ``calendar_event.reason``."""
+
+    ALL_DAY = "all_day"
+    PHONE = "phone"
+    FIRST_MEETING = "first_meeting"
+    NO_TITLE_PATTERN = "no_title_pattern"
+    DURATION = "duration"
+    UNMATCHED = "unmatched"
+    AMBIGUOUS = "ambiguous"
+
+
+class ProposedStatus(StrEnum):
+    """The status a proposed lesson starts with; the values are ``billing.lesson_status``'s."""
+
+    PLANNED = "planned"
+    CANCELLED = "cancelled"
+
+
+@dataclass(frozen=True)
+class Occurrence:
+    """One occurrence as the calendar shows it."""
+
+    title: str = field(repr=False)
+    starts_at: datetime
+    ends_at: datetime
+    all_day: bool = False
+    cancelled: bool = False
+    """Cancelled in the calendar (``isCancelled``)."""
+    categories: tuple[str, ...] = ()
+    location: str = field(default="", repr=False)
+    """The location's display name."""
+    online_meeting: bool = False
+    """A Teams meeting (``isOnlineMeeting``). Carried and never read: a Teams lesson is a lesson (decision N)."""
+
+
+@dataclass(frozen=True)
+class StudentName:
+    """A student the import can match: the party with the first and last name of its person."""
+
+    student_id: UUID
+    firstname: str = field(repr=False)
+    lastname: str = field(repr=False)
+
+
+@dataclass(frozen=True)
+class Roster:
+    """Who a calendar name can match: the students, and the aliases by normalised name (``billing.calendar_alias``)."""
+
+    students: tuple[StudentName, ...] = ()
+    aliases: Mapping[str, UUID] = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
+class Title:
+    """A title split at the first `` mit ``: both parts stripped and never empty."""
+
+    subject: str = field(repr=False)
+    name: str = field(repr=False)
+
+
+@dataclass(frozen=True)
+class LessonProposal:
+    """The occurrence is a lesson of this student."""
+
+    student_id: UUID
+    subject: str
+    minutes: int
+    status: ProposedStatus
+
+
+@dataclass(frozen=True)
+class NoLesson:
+    """The occurrence is no lesson, for ``reason``.
+
+    ``title`` is set for the reasons that leave the occurrence waiting for an assignment with a title that has a
+    subject and a name - ``duration``, ``unmatched`` and ``ambiguous`` - and ``None`` otherwise.
+    """
+
+    reason: NoLessonReason
+    title: Title | None = field(default=None, repr=False)
+
+
+type Proposal = LessonProposal | NoLesson
+
+
+@dataclass(frozen=True)
+class Unmatched:
+    """No student has the name."""
+
+
+@dataclass(frozen=True)
+class Ambiguous:
+    """Several students have the name: never a guess."""
+
+
+type NameMatch = UUID | Unmatched | Ambiguous
+
+
+def propose(occurrence: Occurrence, roster: Roster) -> Proposal:
+    """Decide what the occurrence is. The rules run in the order of the spec's table; the first that applies wins."""
+    if occurrence.all_day:
+        return NoLesson(NoLessonReason.ALL_DAY)
+    if _has_category(occurrence, PHONE_CATEGORY) or is_phone_number(occurrence.location):
+        return NoLesson(NoLessonReason.PHONE)
+
+    title = parse_title(occurrence.title)
+    if title is not None and normalize_name(title.subject) == normalize_name(FIRST_MEETING):
+        return NoLesson(NoLessonReason.FIRST_MEETING)
+    if title is None:
+        return NoLesson(NoLessonReason.NO_TITLE_PATTERN)
+
+    duration = occurrence.ends_at - occurrence.starts_at
+    if duration <= timedelta() or duration % LESSON_STEP:
+        return NoLesson(NoLessonReason.DURATION, title)
+
+    student_id = match_name(title.name, roster)
+    if isinstance(student_id, Unmatched):
+        return NoLesson(NoLessonReason.UNMATCHED, title)
+    if isinstance(student_id, Ambiguous):
+        return NoLesson(NoLessonReason.AMBIGUOUS, title)
+
+    cancelled = occurrence.cancelled or _has_category(occurrence, LATE_CANCELLATION_CATEGORY)
+    return LessonProposal(
+        student_id=student_id,
+        subject=title.subject,
+        minutes=duration // timedelta(minutes=1),
+        status=ProposedStatus.CANCELLED if cancelled else ProposedStatus.PLANNED,
+    )
+
+
+def parse_title(title: str) -> Title | None:
+    """Split ``<subject> mit <name>`` at the first `` mit `` (case-insensitive); ``None`` without one, or when either
+    side is empty."""
+    parts = _TITLE_SEPARATOR.split(title, maxsplit=1)
+    if len(parts) != 2:
+        return None
+
+    subject, name = (part.strip() for part in parts)
+    return Title(subject, name) if subject and name else None
+
+
+def match_name(name: str, roster: Roster) -> NameMatch:
+    """Find the one student a calendar name means.
+
+    An alias wins. Otherwise the normalised name is compared with each student's ``firstname lastname``: first an
+    exact match; then, for a name of at least two tokens, the one student whose name tokens contain all of its
+    tokens (a token named twice must be there twice). Several students at either step are ambiguous.
+    """
+    normalized = normalize_name(name)
+    if normalized in roster.aliases:
+        return roster.aliases[normalized]
+
+    names = {
+        student.student_id: normalize_name(f"{student.firstname} {student.lastname}") for student in roster.students
+    }
+    exact = {student_id for student_id, student_name in names.items() if student_name == normalized}
+    if exact:
+        return _one(exact)
+
+    tokens = Counter(normalized.split())
+    if tokens.total() < 2:
+        return Unmatched()
+    return _one({student_id for student_id, student_name in names.items() if tokens <= Counter(student_name.split())})
+
+
+def normalize_name(name: str) -> str:
+    """NFKC, casefold, ``ä ö ü ß`` to ``ae oe ue ss``, hyphens and underscores to spaces, single spaces."""
+    text = unicodedata.normalize("NFKC", name)
+    text = text.casefold()
+    text = text.translate(_UMLAUTS)
+    text = text.translate(_WORD_SEPARATORS)
+    return " ".join(text.split())
+
+
+def is_phone_number(location: str) -> bool:
+    """Whether a location is a phone number: see ``_PHONE_NUMBER``."""
+    text = location.strip()
+    return _PHONE_NUMBER.fullmatch(text) is not None and sum(char.isdigit() for char in text) >= _PHONE_MIN_DIGITS
+
+
+def _has_category(occurrence: Occurrence, category: str) -> bool:
+    wanted = category.casefold()
+    return any(given.strip().casefold() == wanted for given in occurrence.categories)
+
+
+def _one(student_ids: set[UUID]) -> NameMatch:
+    match len(student_ids):
+        case 0:
+            return Unmatched()
+        case 1:
+            return next(iter(student_ids))
+    return Ambiguous()

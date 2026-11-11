@@ -25,6 +25,7 @@ PATH_VALUES = {
     "lesson_id": "00000000-0000-0000-0000-0000000000aa",
     "party_id": "00000000-0000-0000-0000-0000000000bb",
     "valid_from": "2026-09-01",
+    "alias_id": "00000000-0000-0000-0000-0000000000cc",
 }
 
 
@@ -71,6 +72,16 @@ def test_the_operation_table_holds_the_payer_routes():
         ("DELETE", f"{party}/sevdesk-contact"),
         ("PUT", f"{party}/manual-billing"),
         ("DELETE", f"{party}/manual-billing"),
+    }
+
+
+def test_the_operation_table_holds_the_calendar_alias_routes():
+    aliases = "/api/v1/billing/calendar/aliases"
+
+    assert set(_billing_operations()) >= {
+        ("GET", aliases),
+        ("POST", aliases),
+        ("DELETE", f"{aliases}/{PATH_VALUES['alias_id']}"),
     }
 
 

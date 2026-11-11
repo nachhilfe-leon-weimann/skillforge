@@ -10,7 +10,7 @@ from sqlalchemy import Column, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db.models import Lesson, LessonStatus, ManualPayer, Party, PartyType, Rate
+from app.core.db.models import CalendarAlias, Lesson, LessonStatus, ManualPayer, Party, PartyType, Rate
 from app.core.db.models.base import Base
 from app.services.crm.parties import EXTERNAL_LINKS
 
@@ -57,6 +57,7 @@ def test_the_billing_party_references_are_lesson_and_rate_and_restrict():
         "rate.student_party_id",
         "lesson.payer_party_id",
         "manual_payer.party_id",
+        "calendar_alias.student_party_id",
     }
     assert {foreign_key.ondelete for column in references for foreign_key in column.foreign_keys} == {"RESTRICT"}
 
@@ -306,3 +307,21 @@ async def test_the_database_refuses_to_delete_a_payer(
     assert orig is not None and isinstance(orig.__cause__, ForeignKeyViolationError)
     assert getattr(orig.__cause__, "constraint_name", None) == constraint
     assert await session.get(Party, party_id) is not None
+
+
+@pytest.mark.db
+async def test_a_calendar_name_maps_to_one_student_who_cannot_be_deleted_under_it(session: AsyncSession):
+    """One normalised name, one alias; ``RESTRICT`` behind the CRM's guard keeps the student the alias names."""
+    party_id, other_id = await _party(session), await _party(session)
+    session.add(CalendarAlias(student_party_id=party_id, name_normalized="student b"))
+    await session.flush()
+
+    second = CalendarAlias(student_party_id=other_id, name_normalized="student b")
+    assert await _refused(session, second) == (UniqueViolationError, "calendar_alias_name_normalized_key")
+
+    with pytest.raises(IntegrityError) as refused:
+        async with session.begin_nested():
+            await session.execute(delete(Party).where(Party.id == party_id))
+    orig = refused.value.orig
+    assert orig is not None and isinstance(orig.__cause__, ForeignKeyViolationError)
+    assert getattr(orig.__cause__, "constraint_name", None) == "calendar_alias_student_party_id_fkey"

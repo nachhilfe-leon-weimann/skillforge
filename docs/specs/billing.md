@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3, SF3-1, SF3-2, SF4-1 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
+> Status: Draft - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3, SF3-1, SF3-2, SF4-1, SF4-2 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
 > then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
@@ -1199,13 +1199,20 @@ write (`invoices.py`)._
 - _Technique:_ `app/services/billing/calendar_rules.py`, pure: the table, the match tokens and the matching of
   [Calendar import](#calendar-import); `billing.calendar_alias` with its revision and routes;
   `CalendarAlias.student_party_id` joins `EXTERNAL_LINKS`.
-- _Tests that change:_ `LINKS` in `tests/db/crm/test_crm_party_delete_api.py` gains `calendar_alias`.
+- _Tests that change:_ `BILLING_ROWS` in `tests/db/crm/test_crm_party_delete_api.py` gains `calendar_alias` - the
+  alias names its party in `student_party_id`, as the other billing rows do, not in `party_id` as `LINKS` expects.
+  The registries of the billing route tests gain the alias routes: `PATH_VALUES` in `tests/api/test_billing_auth.py`
+  gains `alias_id`; the endpoint list of `test_the_billing_endpoints_carry_no_boilerplate` in
+  `tests/api/test_billing_architecture.py`; in `tests/api/test_billing_error_contract.py`, `ENDPOINTS`,
+  `EXPECTATIONS` and `CATALOG` gain the alias routes, `CalendarAliasNotFoundError` and
+  `CalendarAliasAlreadyExistsError`. `test_the_billing_party_references_are_lesson_and_rate_and_restrict` in
+  `tests/db/models/test_billing_models.py` gains `calendar_alias.student_party_id`.
 - _Acceptance criteria:_
-  - [ ] One test per row of the table, on synthetic titles: a Teams lesson is kept; phone, all-day, `Kennenlernen`
+  - [x] One test per row of the table, on synthetic titles: a Teams lesson is kept; phone, all-day, `Kennenlernen`
         and a title without ` mit ` propose no lesson.
-  - [ ] Matching: exact; the one student whose tokens contain the name's tokens; several candidates are ambiguous;
+  - [x] Matching: exact; the one student whose tokens contain the name's tokens; several candidates are ambiguous;
         an alias wins.
-  - [ ] The module imports no session, no integration and reads no clock (architecture test).
+  - [x] The module imports no session, no integration and reads no clock (architecture test).
 
 **SF4-3 - Calendar import.** _Needs PD13._
 

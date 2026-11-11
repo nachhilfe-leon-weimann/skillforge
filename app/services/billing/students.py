@@ -4,6 +4,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.crm.errors import PartyNotFoundError
 from app.services.crm.parties import load_party
 
 from .errors import UnknownStudentError
@@ -23,3 +24,12 @@ async def require_student(session: AsyncSession, party_id: uuid.UUID) -> None:
     party = await load_party(session, party_id)
     if party.person is None or party.person.student is None:
         raise UnknownStudentError(f"Party {party_id} holds no student role")
+
+
+async def require_named_student(session: AsyncSession, party_id: uuid.UUID) -> None:
+    """``require_student`` for a student named in a body: a party that does not exist is no student either (422, not
+    404)."""
+    try:
+        await require_student(session, party_id)
+    except PartyNotFoundError:
+        raise UnknownStudentError(f"No party with id {party_id}") from None

@@ -26,6 +26,19 @@ class RateNotFoundError(NotFoundError):
     message = "Rate not found"
 
 
+class CalendarAliasNotFoundError(NotFoundError):
+    """No calendar alias exists for the requested alias_id."""
+
+    message = "Calendar alias not found"
+
+
+class CalendarAliasAlreadyExistsError(ConflictError):
+    """An alias for the same normalised calendar name exists: one name maps to one student. It is removed before
+    another one is stored."""
+
+    message = "An alias for this calendar name already exists"
+
+
 class SevdeskContactAlreadyLinkedError(ConflictError):
     """The sevDesk contact is linked to another party, or the party to another contact: a party has at most one
     contact and a contact one party (``ext.sevdesk_contact``). A link is removed before another one is made."""

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, selectinload
 
 from app.core.db.models import (
+    CalendarAlias,
     ClockodoCustomer,
     ClockodoProject,
     Company,
@@ -76,6 +77,7 @@ EXTERNAL_LINKS = (
     ExternalLink("rate", Rate.student_party_id, true()),
     ExternalLink("lesson_payer", Lesson.payer_party_id, true()),
     ExternalLink("manual_payer", ManualPayer.party_id, true()),
+    ExternalLink("calendar_alias", CalendarAlias.student_party_id, true()),
 )
 
 # Sorts persons ("Mustermann Max") and companies into one case-insensitive order.
