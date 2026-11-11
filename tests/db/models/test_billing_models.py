@@ -1,8 +1,8 @@
 """The billing models: rule G and the lesson rules in the database, and every party reference guarded by the CRM."""
 
 import uuid
-from collections.abc import Callable
-from datetime import UTC, date, datetime
+from collections.abc import Awaitable, Callable
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from asyncpg.exceptions import CheckViolationError, ForeignKeyViolationError, PostgresError, UniqueViolationError
@@ -10,7 +10,7 @@ from sqlalchemy import Column, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db.models import Lesson, LessonStatus, Party, PartyType, Rate
+from app.core.db.models import Lesson, LessonStatus, ManualPayer, Party, PartyType, Rate
 from app.core.db.models.base import Base
 from app.services.crm.parties import EXTERNAL_LINKS
 
@@ -55,6 +55,8 @@ def test_the_billing_party_references_are_lesson_and_rate_and_restrict():
     assert {f"{column.table.name}.{column.name}" for column in references} == {
         "lesson.student_party_id",
         "rate.student_party_id",
+        "lesson.payer_party_id",
+        "manual_payer.party_id",
     }
     assert {foreign_key.ondelete for column in references for foreign_key in column.foreign_keys} == {"RESTRICT"}
 
@@ -229,4 +231,78 @@ async def test_the_database_refuses_to_delete_a_party_with_a_billing_row(
 
     orig = refused.value.orig
     assert orig is not None and isinstance(orig.__cause__, ForeignKeyViolationError)
+    assert await session.get(Party, party_id) is not None
+
+
+async def _company(session: AsyncSession) -> uuid.UUID:
+    party = Party(type=PartyType.COMPANY)
+    session.add(party)
+    await session.flush()
+    return party.id
+
+
+@pytest.mark.db
+async def test_a_lesson_stores_without_a_payer_and_with_a_company_as_payer(session: AsyncSession):
+    """The payer is empty until the lesson becomes billable, and an authority that pays is a company (decision I)."""
+    student_id, company_id = await _party(session), await _company(session)
+    without = Lesson(student_party_id=student_id, subject="Mathe", starts_at=START, minutes=60)
+    with_company = Lesson(
+        student_party_id=student_id,
+        subject="Mathe",
+        starts_at=START + timedelta(days=7),
+        minutes=60,
+        status=LessonStatus.HELD,
+        billable=True,
+        payer_party_id=company_id,
+    )
+    session.add_all([without, with_company, ManualPayer(party_id=company_id)])
+    await session.flush()
+
+    assert (without.payer_party_id, with_company.payer_party_id) == (None, company_id)
+    assert (await session.get(ManualPayer, company_id)) is not None
+
+
+@pytest.mark.db
+async def test_a_party_is_marked_as_billed_by_hand_once(session: AsyncSession):
+    party_id = await _party(session)
+    session.add(ManualPayer(party_id=party_id, note="by hand"))
+    await session.flush()
+
+    assert await _refused(session, ManualPayer(party_id=party_id)) == (UniqueViolationError, "manual_payer_pkey")
+
+
+async def _paid_lesson(session: AsyncSession, payer_id: uuid.UUID) -> Lesson:
+    """A lesson of another student that names the party as its payer."""
+    lesson = _lesson(await _party(session))
+    lesson.payer_party_id = payer_id
+    return lesson
+
+
+async def _manual_payer(session: AsyncSession, party_id: uuid.UUID) -> ManualPayer:
+    return ManualPayer(party_id=party_id)
+
+
+@pytest.mark.db
+@pytest.mark.parametrize(
+    ("payer_row", "constraint"),
+    [(_paid_lesson, "lesson_payer_party_id_fkey"), (_manual_payer, "manual_payer_party_id_fkey")],
+    ids=["lesson_payer", "manual_payer"],
+)
+async def test_the_database_refuses_to_delete_a_payer(
+    session: AsyncSession,
+    payer_row: Callable[[AsyncSession, uuid.UUID], Awaitable[Lesson | ManualPayer]],
+    constraint: str,
+):
+    """``RESTRICT`` behind the CRM's guard: a payer never takes its lessons or its mark along."""
+    party_id = await _party(session)
+    session.add(await payer_row(session, party_id))
+    await session.flush()
+
+    with pytest.raises(IntegrityError) as refused:
+        async with session.begin_nested():
+            await session.execute(delete(Party).where(Party.id == party_id))
+
+    orig = refused.value.orig
+    assert orig is not None and isinstance(orig.__cause__, ForeignKeyViolationError)
+    assert getattr(orig.__cause__, "constraint_name", None) == constraint
     assert await session.get(Party, party_id) is not None

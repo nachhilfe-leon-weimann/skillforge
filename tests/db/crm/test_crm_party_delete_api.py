@@ -15,6 +15,8 @@ from app.core.db.models import (
     ContactInfo,
     DiscordAccount,
     Lesson,
+    LessonStatus,
+    ManualPayer,
     MicrosoftAccount,
     MicrosoftContact,
     Party,
@@ -40,6 +42,7 @@ LINKS = {
     "clockodo_project": lambda party_id: ClockodoProject(clockodo_project_id="cp-1", party_id=party_id),
     "microsoft_account": lambda party_id: MicrosoftAccount(user_id="ms-user-1", party_id=party_id),
     "microsoft_contact": lambda party_id: MicrosoftContact(contact_id="ms-contact-1", party_id=party_id),
+    "manual_payer": lambda party_id: ManualPayer(party_id=party_id),
 }
 
 
@@ -115,6 +118,35 @@ async def test_delete_is_409_party_in_use_while_a_billing_row_exists_and_names_i
     assert await _count(session, Party, Party.id == party_id) == 1
     assert await _count(session, type(row), type(row).student_party_id == party_id) == 1
     assert (await client.get(f"/parties/{party_id}")).json() == person
+
+
+async def test_delete_is_409_party_in_use_while_the_party_is_a_lessons_payer(
+    client: AsyncClient, session: AsyncSession
+):
+    """A payer stored on a lesson (billing spec, PD1) keeps its party, as the lesson's student does."""
+    payer = await _person(client)
+    payer_id = uuid.UUID(payer["id"])
+    student_id = uuid.UUID((await _person(client, "Erika"))["id"])
+    session.add(
+        Lesson(
+            student_party_id=student_id,
+            payer_party_id=payer_id,
+            subject="Mathe",
+            starts_at=datetime(2026, 11, 2, 15, tzinfo=UTC),
+            minutes=60,
+            status=LessonStatus.HELD,
+            billable=True,
+        )
+    )
+    await session.flush()
+
+    response = await client.delete(f"/parties/{payer_id}")
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Party is still in use: lesson_payer", "code": "party_in_use"}
+    assert await _count(session, Party, Party.id == payer_id) == 1
+    assert await _count(session, Lesson, Lesson.payer_party_id == payer_id) == 1
+    assert (await client.get(f"/parties/{payer_id}")).json() == payer
 
 
 async def test_delete_names_billing_kinds_after_the_external_links(client: AsyncClient, session: AsyncSession):

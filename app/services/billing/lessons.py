@@ -1,7 +1,7 @@
 """Lessons: one appointment of one student, from ``planned`` to ticked (billing spec, "A lesson's life")."""
 
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from datetime import date, datetime, time, timedelta
 from typing import Any
@@ -15,6 +15,7 @@ from app.core.db.models import Lesson, LessonStatus
 from app.core.unset import UNSET, Unset
 from app.services.crm.errors import PartyNotFoundError
 
+from . import payers
 from .errors import LessonAlreadyExistsError, LessonNotBillableError, LessonNotFoundError, UnknownStudentError
 from .rates import require_quarter_hour_rate
 from .students import require_student
@@ -116,7 +117,8 @@ async def update_lesson(
     whose ``None`` clears them. A field sent with its current value changes nothing, and neither does an empty body.
 
     The lesson is locked first: two overlapping changes of one lesson - a tick and a move to ``planned`` - must not
-    combine into a row ``ck_lesson_billable_status`` refuses.
+    combine into a row ``ck_lesson_billable_status`` refuses. A change that makes the lesson billable stores its
+    payer (PD1, ``_resolves_payer``).
     """
     lesson = await _get_lesson_for_update(session, lesson_id)
     if student_id is not None and student_id != lesson.student_party_id:
@@ -144,6 +146,12 @@ async def update_lesson(
     changes = {name: value for name, value in sent.items() if getattr(lesson, name) != value}
     if not changes:
         return lesson
+    if _resolves_payer(lesson, changes):
+        changes["payer_party_id"] = await payers.lesson_payer(
+            session,
+            student_id=changes.get("student_party_id", lesson.student_party_id),
+            billable=changes.get("billable", lesson.billable),
+        )
 
     async with _unique_start(session):
         for name, value in changes.items():
@@ -168,6 +176,23 @@ def billable_after(lesson: Lesson, *, status: LessonStatus | None, billable: boo
         raise LessonNotBillableError(f"A {new_status} lesson cannot be billable")
 
     return billable
+
+
+def _resolves_payer(lesson: Lesson, changes: Mapping[str, Any]) -> bool:
+    """Whether ``changes`` set the lesson's payer afresh (PD1): it becomes billable, or a billable lesson changes its
+    student or its Berlin day - and a lesson that stops being billable drops its payer. Every other edit keeps the
+    stored payer, even when the CRM's payer has changed since."""
+    if "billable" in changes:
+        return True
+    if not lesson.billable:
+        return False
+
+    moved_day = "starts_at" in changes and _berlin_day(changes["starts_at"]) != _berlin_day(lesson.starts_at)
+    return moved_day or "student_party_id" in changes
+
+
+def _berlin_day(instant: datetime) -> date:
+    return instant.astimezone(BILLING_TIME_ZONE).date()
 
 
 def berlin_midnight(day: date) -> datetime:

@@ -1031,6 +1031,49 @@
         "title": "LessonCreateRequest",
         "type": "object"
       },
+      "LessonPayerResponse": {
+        "description": "The payer stored on a lesson.",
+        "properties": {
+          "billable": {
+            "description": "Whether the lesson is billable; only a billable lesson stores a payer.",
+            "title": "Billable",
+            "type": "boolean"
+          },
+          "lesson_id": {
+            "description": "ID of the lesson.",
+            "format": "uuid",
+            "title": "Lesson Id",
+            "type": "string"
+          },
+          "payer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The payer stored on the lesson. `null` when the lesson is not billable, or when several parties pay for the\nstudent: such a lesson is not billed until it has a payer.",
+            "title": "Payer Id"
+          },
+          "student_id": {
+            "description": "ID of the student's party.",
+            "format": "uuid",
+            "title": "Student Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lesson_id",
+          "student_id",
+          "billable",
+          "payer_id"
+        ],
+        "title": "LessonPayerResponse",
+        "type": "object"
+      },
       "LessonResponse": {
         "description": "One appointment of one student.",
         "properties": {
@@ -1216,6 +1259,70 @@
           }
         },
         "title": "LessonUpdateRequest",
+        "type": "object"
+      },
+      "ManualBillingPutRequest": {
+        "description": "Body of `PUT /parties/{party_id}/manual-billing`: the whole mark. The same note again changes nothing.",
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Free-text note, such as why the payer is billed by hand; leaving it out clears it.",
+            "title": "Note"
+          }
+        },
+        "title": "ManualBillingPutRequest",
+        "type": "object"
+      },
+      "ManualBillingResponse": {
+        "description": "A payer billed by hand: their lessons show as \"bill manually\" and never reach a draft.",
+        "properties": {
+          "created_at": {
+            "description": "When the party was marked.",
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Free-text note.",
+            "title": "Note"
+          },
+          "party_id": {
+            "description": "ID of the party.",
+            "format": "uuid",
+            "title": "Party Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When the note last changed.",
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "party_id",
+          "note",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ManualBillingResponse",
         "type": "object"
       },
       "MeResponse": {
@@ -2044,6 +2151,104 @@
         ],
         "title": "Role",
         "type": "string"
+      },
+      "SevdeskContactPutRequest": {
+        "description": "Body of `PUT /parties/{party_id}/sevdesk-contact`: the contact the party's invoices go to.",
+        "properties": {
+          "sevdesk_contact_id": {
+            "description": "ID of the contact in sevDesk: a positive integer without leading zeros. It is stored as given; nothing is\nlooked up in sevDesk.",
+            "examples": [
+              "1234567"
+            ],
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[1-9][0-9]*$",
+            "title": "Sevdesk Contact Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sevdesk_contact_id"
+        ],
+        "title": "SevdeskContactPutRequest",
+        "type": "object"
+      },
+      "SevdeskContactResponse": {
+        "description": "The link between a party and its sevDesk contact.",
+        "properties": {
+          "created_at": {
+            "description": "When the link was made.",
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "party_id": {
+            "description": "ID of the party.",
+            "format": "uuid",
+            "title": "Party Id",
+            "type": "string"
+          },
+          "sevdesk_contact_id": {
+            "description": "ID of the contact in sevDesk.",
+            "title": "Sevdesk Contact Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "party_id",
+          "sevdesk_contact_id",
+          "created_at"
+        ],
+        "title": "SevdeskContactResponse",
+        "type": "object"
+      },
+      "StudentPayerResponse": {
+        "description": "Who pays for a student's lessons: what a lesson that becomes billable now stores (PD1).",
+        "properties": {
+          "ambiguous": {
+            "description": "Whether several parties pay for the student: a lesson that becomes billable then stores no payer, and the\nCRM's `pays_for` relations are corrected first.",
+            "title": "Ambiguous",
+            "type": "boolean"
+          },
+          "manual_billing": {
+            "description": "Whether the payer is billed by hand: their lessons never reach a draft. `false` while ambiguous.",
+            "title": "Manual Billing",
+            "type": "boolean"
+          },
+          "payer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The party that pays: the one party with a `pays_for` relation to the student - a person or a company - or the\nstudent itself when none has. `null` when several have.",
+            "title": "Payer Id"
+          },
+          "sevdesk_contact_linked": {
+            "description": "Whether the payer has a sevDesk contact; without one there is no invoice draft. `false` while ambiguous.",
+            "title": "Sevdesk Contact Linked",
+            "type": "boolean"
+          },
+          "student_id": {
+            "description": "ID of the student's party.",
+            "format": "uuid",
+            "title": "Student Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "student_id",
+          "payer_id",
+          "ambiguous",
+          "sevdesk_contact_linked",
+          "manual_billing"
+        ],
+        "title": "StudentPayerResponse",
+        "type": "object"
       },
       "StudentRole": {
         "description": "The student role of a person.",
@@ -6867,6 +7072,806 @@
           }
         ],
         "summary": "Update Lesson",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/lessons/{lesson_id}/resolve-payer": {
+      "post": {
+        "description": "Resolve the payer of a billable lesson afresh and store it, replacing the payer it got when it became billable.\n\nA lesson that is not billable has no payer and stays as it is.",
+        "operationId": "billing_resolve_lesson_payer",
+        "parameters": [
+          {
+            "description": "ID of the lesson.",
+            "in": "path",
+            "name": "lesson_id",
+            "required": true,
+            "schema": {
+              "description": "ID of the lesson.",
+              "examples": [
+                "5c1e7a2b-3d4f-4a6b-8c9d-0e1f2a3b4c5d"
+              ],
+              "format": "uuid",
+              "title": "Lesson Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonPayerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:write"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "lesson_not_found": {
+                    "value": {
+                      "code": "lesson_not_found",
+                      "detail": "Lesson not found"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Lesson not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:write"
+            ]
+          }
+        ],
+        "summary": "Resolve Lesson Payer",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/parties/{party_id}/manual-billing": {
+      "delete": {
+        "description": "Unmark the party; its lessons are billed by invoice again. Idempotent: an unmarked party answers 204 too.",
+        "operationId": "billing_delete_manual_billing",
+        "parameters": [
+          {
+            "description": "ID of the party: a person or a company.",
+            "in": "path",
+            "name": "party_id",
+            "required": true,
+            "schema": {
+              "description": "ID of the party: a person or a company.",
+              "examples": [
+                "3b8e2c1d-4f5a-4b6c-9d7e-8f9a0b1c2d3e"
+              ],
+              "format": "uuid",
+              "title": "Party Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:write"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "party_not_found": {
+                    "value": {
+                      "code": "party_not_found",
+                      "detail": "Party not found"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Party not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:write"
+            ]
+          }
+        ],
+        "summary": "Delete Manual Billing",
+        "tags": [
+          "billing"
+        ]
+      },
+      "put": {
+        "description": "Mark the party as a payer billed by hand: their lessons never reach a draft. Idempotent.",
+        "operationId": "billing_put_manual_billing",
+        "parameters": [
+          {
+            "description": "ID of the party: a person or a company.",
+            "in": "path",
+            "name": "party_id",
+            "required": true,
+            "schema": {
+              "description": "ID of the party: a person or a company.",
+              "examples": [
+                "3b8e2c1d-4f5a-4b6c-9d7e-8f9a0b1c2d3e"
+              ],
+              "format": "uuid",
+              "title": "Party Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualBillingPutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualBillingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:write"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "party_not_found": {
+                    "value": {
+                      "code": "party_not_found",
+                      "detail": "Party not found"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Party not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:write"
+            ]
+          }
+        ],
+        "summary": "Put Manual Billing",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/parties/{party_id}/sevdesk-contact": {
+      "delete": {
+        "description": "Remove the party's sevDesk contact link. Idempotent: a party without one answers 204 too.",
+        "operationId": "billing_delete_sevdesk_contact",
+        "parameters": [
+          {
+            "description": "ID of the party: a person or a company.",
+            "in": "path",
+            "name": "party_id",
+            "required": true,
+            "schema": {
+              "description": "ID of the party: a person or a company.",
+              "examples": [
+                "3b8e2c1d-4f5a-4b6c-9d7e-8f9a0b1c2d3e"
+              ],
+              "format": "uuid",
+              "title": "Party Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:write"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "party_not_found": {
+                    "value": {
+                      "code": "party_not_found",
+                      "detail": "Party not found"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Party not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:write"
+            ]
+          }
+        ],
+        "summary": "Delete Sevdesk Contact",
+        "tags": [
+          "billing"
+        ]
+      },
+      "put": {
+        "description": "Link the party to its sevDesk contact, the recipient of its invoices. Idempotent.\n\nA party has one contact and a contact one party: another link is removed first.",
+        "operationId": "billing_put_sevdesk_contact",
+        "parameters": [
+          {
+            "description": "ID of the party: a person or a company.",
+            "in": "path",
+            "name": "party_id",
+            "required": true,
+            "schema": {
+              "description": "ID of the party: a person or a company.",
+              "examples": [
+                "3b8e2c1d-4f5a-4b6c-9d7e-8f9a0b1c2d3e"
+              ],
+              "format": "uuid",
+              "title": "Party Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SevdeskContactPutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SevdeskContactResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:write"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "party_not_found": {
+                    "value": {
+                      "code": "party_not_found",
+                      "detail": "Party not found"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Party not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "sevdesk_contact_already_linked": {
+                    "value": {
+                      "code": "sevdesk_contact_already_linked",
+                      "detail": "The party or the sevDesk contact is already linked"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The party or the sevDesk contact is already linked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:write"
+            ]
+          }
+        ],
+        "summary": "Put Sevdesk Contact",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/students/{party_id}/payer": {
+      "get": {
+        "description": "Read who pays for a student now, whether that payer has a sevDesk contact, and whether it is billed by hand.\n\nA lesson that becomes billable stores this payer; lessons that are billable already keep theirs.",
+        "operationId": "billing_get_student_payer",
+        "parameters": [
+          {
+            "description": "ID of the student's party.",
+            "in": "path",
+            "name": "party_id",
+            "required": true,
+            "schema": {
+              "description": "ID of the student's party.",
+              "examples": [
+                "7d9f4f3e-1c2b-4a5d-9e8f-0a1b2c3d4e5f"
+              ],
+              "format": "uuid",
+              "title": "Party Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentPayerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:read"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "party_not_found": {
+                    "value": {
+                      "code": "party_not_found",
+                      "detail": "Party not found"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Party not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:read"
+            ]
+          }
+        ],
+        "summary": "Get Student Payer",
         "tags": [
           "billing"
         ]

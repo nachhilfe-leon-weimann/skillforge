@@ -5,12 +5,17 @@ boilerplate, by the CRM's check; and no route deletes a lesson (money rule 14).
 """
 
 import ast
+import re
 from pathlib import Path
+from typing import TypeIs, cast
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import Table, UniqueConstraint
 
+from app.core.db.models import SevdeskContact
 from app.main import app
+from app.services.billing import payers
 from tests.api.test_crm_architecture import _boilerplate, _endpoints, _imported_modules
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -18,6 +23,9 @@ SERVICES = REPO_ROOT / "app/services/billing"
 API_PACKAGE = REPO_ROOT / "app/api/v1/billing"
 LESSONS = "/api/v1/billing/lessons"
 ALLOWED = ("app.core", "app.integrations", "app.services.crm", "app.services.billing")
+# The one writer of ext.sevdesk_contact (billing spec, SF3-1), and the models that define the table and relate to it.
+SEVDESK_CONTACT_WRITER = REPO_ROOT / "app/services/billing/payers.py"
+MODELS = REPO_ROOT / "app/core/db/models"
 
 
 def _violations(source: str, *, package: str) -> set[str]:
@@ -65,6 +73,12 @@ def test_the_billing_endpoints_carry_no_boilerplate():
         "create_lesson",
         "get_lesson",
         "update_lesson",
+        "get_student_payer",
+        "resolve_lesson_payer",
+        "put_sevdesk_contact",
+        "delete_sevdesk_contact",
+        "put_manual_billing",
+        "delete_manual_billing",
         "list_rates",
         "put_rate",
         "delete_rate",
@@ -88,3 +102,151 @@ async def test_no_route_deletes_a_lesson(path: str):
 
     assert documented == {"get", "post", "patch"}
     assert response.status_code == 405
+
+
+# The table named in SQL text: qualified by its schema, quoted or not, or right after a keyword that writes or reads.
+SEVDESK_CONTACT_IN_TEXT = re.compile(
+    r'\bext"?\s*\.\s*"?sevdesk_contact\b|\b(?:from|into|update|join|table)\s+"?sevdesk_contact\b', re.IGNORECASE
+)
+TABLE_CONSTRUCTORS = {"table", "Table", "TableClause"}
+
+
+def _sevdesk_contact_uses(source: str) -> list[str]:
+    """Return what in a source file could write ``ext.sevdesk_contact``.
+
+    Flagged: the model under any name it is imported as, unless it is a type annotation or the owner of a column
+    used as an operand (``SevdeskContact.party_id == ...``, the CRM's delete guard) - so a construction, ``insert``,
+    ``update``, ``delete``, ``select`` (whose rows could be changed), ``__table__`` and a column's ``.table`` are
+    flagged; the party's relationship ``.sevdesk_contact``; the table built by name (``table("sevdesk_contact")``);
+    and the table named in SQL text (``SEVDESK_CONTACT_IN_TEXT``), docstrings aside.
+
+    A static check cannot see: a name built at run time (string formatting, ``getattr``), the table unqualified in
+    SQL text outside the keywords above (a ``search_path`` that includes ``ext``), the table reached by iterating the
+    metadata, or a write through an instance some other path loaded without naming the model.
+    """
+    tree = ast.parse(source)
+    parents = {id(child): node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    imported = {
+        alias.asname or alias.name: alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    }
+    names = {"SevdeskContact"} | {name for name, original in imported.items() if original == "SevdeskContact"}
+    constructors = TABLE_CONSTRUCTORS | {name for name, original in imported.items() if original in TABLE_CONSTRUCTORS}
+    columns = set(SevdeskContact.__table__.columns.keys())
+
+    def is_model(node: ast.AST) -> TypeIs[ast.Name | ast.Attribute]:
+        return (isinstance(node, ast.Name) and node.id in names) or (
+            isinstance(node, ast.Attribute) and node.attr == "SevdeskContact"
+        )
+
+    def is_operand(column: ast.Attribute) -> bool:
+        """A column read as it is - not the receiver of another attribute such as ``.table``."""
+        parent = parents.get(id(column))
+        return not (isinstance(parent, ast.Attribute) and parent.value is column)
+
+    annotations = [
+        node.annotation for node in ast.walk(tree) if isinstance(node, (ast.arg, ast.AnnAssign)) and node.annotation
+    ] + [
+        node.returns
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.returns
+    ]
+    reads = {
+        id(node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and node.attr in columns and is_model(node.value) and is_operand(node)
+    } | {id(node) for annotation in annotations for node in ast.walk(annotation)}
+    found = [
+        f"SevdeskContact at line {node.lineno}" for node in ast.walk(tree) if is_model(node) and id(node) not in reads
+    ]
+    found += [
+        f"Party.sevdesk_contact at line {node.lineno}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and node.attr == "sevdesk_contact"
+    ]
+    found += [
+        f"the table built by name at line {node.lineno}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and (
+            (isinstance(node.func, ast.Name) and node.func.id in constructors)
+            or (isinstance(node.func, ast.Attribute) and node.func.attr in TABLE_CONSTRUCTORS)
+        )
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and node.args[0].value == "sevdesk_contact"
+    ]
+    # A string that is a statement of its own - a docstring - does nothing.
+    docstrings = {id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Expr)}
+    found += [
+        f"the table in text at line {node.lineno}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and SEVDESK_CONTACT_IN_TEXT.search(node.value)
+        and id(node) not in docstrings
+    ]
+    return found
+
+
+def test_the_contact_link_lookup_covers_every_unique_key_of_its_table():
+    """``link_sevdesk_contact`` retries an insert that did nothing while its look finds nothing in the way; a unique
+    key the look does not cover would make it retry forever, so every key of the table is one it covers."""
+    table = cast(Table, SevdeskContact.__table__)
+    unique_keys = {tuple(table.primary_key.columns.keys())}
+    unique_keys |= {
+        tuple(constraint.columns.keys()) for constraint in table.constraints if isinstance(constraint, UniqueConstraint)
+    }
+    unique_keys |= {tuple(index.columns.keys()) for index in table.indexes if index.unique}
+
+    assert unique_keys == {(key.key,) for key in payers.SEVDESK_CONTACT_KEYS}
+
+
+def test_only_the_payer_service_writes_sevdesk_contacts():
+    """``app/services/billing/payers.py`` is the one writer of ``ext.sevdesk_contact`` (billing spec, SF3-1)."""
+    files = [path for path in sorted((REPO_ROOT / "app").rglob("*.py")) if MODELS not in path.parents]
+
+    assert SEVDESK_CONTACT_WRITER in files
+    assert _sevdesk_contact_uses(SEVDESK_CONTACT_WRITER.read_text()), "the check sees the writer's writes"
+    for path in files:
+        if path != SEVDESK_CONTACT_WRITER:
+            assert _sevdesk_contact_uses(path.read_text()) == [], path.relative_to(REPO_ROOT)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "session.add(SevdeskContact(sevdesk_id='1', party_id=party_id))",
+        "insert(SevdeskContact).values(sevdesk_id='1', party_id=party_id)",
+        "update(SevdeskContact).where(SevdeskContact.party_id == party_id).values(sevdesk_id='2')",
+        "delete(SevdeskContact).where(SevdeskContact.party_id == party_id)",
+        "contact = await session.scalar(select(SevdeskContact))\ncontact.sevdesk_id = '2'",
+        "from app.core.db.models import SevdeskContact as Contact\nsession.add(Contact(sevdesk_id='1'))",
+        "from app.core.db import models\nsession.add(models.SevdeskContact(sevdesk_id='1'))",
+        "delete(SevdeskContact.__table__)",
+        "party.sevdesk_contact = None",
+        "await session.execute(text('DELETE FROM ext.sevdesk_contact'))",
+        "update(SevdeskContact.party_id.table).values(sevdesk_id='2')",
+        'await session.execute(text(\'DELETE FROM "ext"."sevdesk_contact" WHERE party_id = :p\'))',
+        "await session.execute(text('UPDATE sevdesk_contact SET sevdesk_id = :s'))",
+        "from sqlalchemy import table as sa_table\ndelete(sa_table('sevdesk_contact', schema='ext'))",
+        "delete(sqlalchemy.table('sevdesk_contact', schema='ext'))",
+        "metadata.tables['ext.sevdesk_contact'].delete()",
+    ],
+)
+def test_the_sevdesk_contact_check_catches_every_write_form(source: str):
+    assert _sevdesk_contact_uses(source)
+
+
+def test_the_sevdesk_contact_check_lets_a_column_read_pass():
+    read = (
+        "from app.core.db.models import SevdeskContact\n"
+        "exists().where(SevdeskContact.party_id == party_id)\n"
+        "ExternalLink('sevdesk_contact', SevdeskContact.party_id, true())\n"
+        "def from_model(contact: SevdeskContact) -> SevdeskContact:\n"
+        '    """The one writer of ``ext.sevdesk_contact``."""'
+    )
+
+    assert _sevdesk_contact_uses(read) == []

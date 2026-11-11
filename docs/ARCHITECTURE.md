@@ -21,7 +21,7 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
         app/api/v1        endpoints, request/response schemas, scope checks
         app/services/auth identity: accounts, clients and grants, tokens, sessions, Discord links
         app/services/crm  system of record: parties, roles, contact infos, relations, subjects
-        app/services/billing  lessons and their life cycle, students' rates
+        app/services/billing  lessons and their life cycle, students' rates, payers
         app/services/system  health aggregation + worker heartbeats
         app/integrations  the only way out to other systems (guarded HTTP transport)
         app/core          cross-cutting: auth, db, logging, config
@@ -43,8 +43,8 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
     `companies.py` (typed create and update), `roles.py`, `contact_infos.py`, `relations.py`,
     `subjects.py`. `params.py` holds the path and query vocabulary, `schemas.py` the read and write
     models with their `from_model` mappers (see [CRM](#crm)).
-  - `billing/` - `lessons.py` (the lesson routes), `rates.py` (a student's rates), `params.py`, `schemas.py` (see
-    [Billing](#billing)).
+  - `billing/` - `lessons.py` (the lesson routes), `rates.py` (a student's rates), `payers.py` (payers, sevDesk
+    contact links, manual billing), `params.py`, `schemas.py` (see [Billing](#billing)).
 - **`app/services/auth/`** - the auth services, same shape as the CRM's: `clients.py`, `scopes.py` (grants
   per mode, `resolve_token_scopes`), `secrets.py` (client secrets), `tokens.py` (the four grants),
   `sessions.py`, `accounts.py`, `users.py`, `action_tokens.py` (invitations, resets and Discord link codes),
@@ -53,12 +53,13 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
   `audit.py`, `results.py`, `errors.py`. Never imports the API or another domain.
 - **`app/services/crm/`** - the CRM services (function modules, `session` first, no commits, no
   `app.api` imports): `parties.py` (`PARTY_GRAPH`, `load_party`, `saved`, list, delete), `persons.py`,
-  `companies.py`, `roles.py`, `contact_infos.py`, `relations.py`, `subjects.py`, `inputs.py` (enums,
-  input dataclasses and `normalize_contact_value`, shared with the API), `errors.py` (the error
-  catalog). Imports no other domain.
-- **`app/services/billing/`** - the billing services, in the CRM's shape: `lessons.py`, `rates.py`, `students.py`
-  (the student check), `errors.py` (the error catalog). Imports only `app.core`, `app.integrations`, the CRM
-  services and itself.
+  `companies.py`, `roles.py`, `contact_infos.py`, `relations.py`, `subjects.py`, `payers.py` (`resolve_payer`, a
+  read for billing), `inputs.py` (enums, input dataclasses and `normalize_contact_value`, shared with the API),
+  `errors.py` (the error catalog). Imports no other domain.
+- **`app/services/billing/`** - the billing services, in the CRM's shape: `lessons.py`, `rates.py`, `payers.py` (the
+  payer of a lesson, the one writer of `ext.sevdesk_contact` and of `billing.manual_payer`), `students.py` (the
+  student check), `locks.py` (`hold_party`, the party lock every write takes before a row names a party),
+  `errors.py` (the error catalog). Imports only `app.core`, `app.integrations`, the CRM services and itself.
 - **`app/services/system/`** - health aggregation (`health_service.py`) and worker liveness
   (`heartbeat_service.py`), backing the `/health` tree.
 - **`app/core/`** - `auth/` (what validates a request: OAuth2 scheme, JWT, principals, scopes, roles, reach,
@@ -172,10 +173,11 @@ CRM rules only, never against Discord state. The full design is in the [CRM API 
   contact value, text Postgres cannot store is rejected by the request models
   (`require_storable_text`), and the engine runs with `hide_parameters=True`.
 - **Deleting a party** is refused (`party_in_use`) while a row of `EXTERNAL_LINKS` names it: an active
-  Discord link, another `ext` link, or a billing lesson or rate - a deactivated Discord link goes with the
-  party. The `ext` foreign keys into `core.party` cascade, so the guard - taken under a row lock - is what
-  keeps external systems from being orphaned; the billing ones are `RESTRICT`, and the guard answers 409
-  before the database refuses. The CRM reads these tables there and nowhere else.
+  Discord link, another `ext` link, or a billing row: a lesson or a rate, a lesson it pays for, or its mark as billed
+  by hand - a deactivated Discord link goes with the party. The `ext` foreign keys into `core.party` cascade, so the
+  guard - taken under a row lock - is what keeps external systems from being orphaned; the billing ones are
+  `RESTRICT`, and the guard answers 409 before the database refuses. The CRM reads these tables there and nowhere
+  else.
 - **Commit before the response.** The CRM routes use `DBSession`, whose `scope="function"` ends the
   request transaction before the response is sent: a failing commit is a 500, not a 201.
 
@@ -201,6 +203,26 @@ writes `billing:write`.
   for a student's rate and a lesson's own alike, so `rate_not_quarter_hour` answers before the database's CHECK.
   Listing and removing need only the party, so a former student's rates stay readable and removable; setting one
   needs the student role.
+- **Payers.** Who pays is the CRM's answer (`resolve_payer` in `app/services/crm/payers.py`): the one party with
+  `pays_for` to the student - a company included - or the student itself; several are ambiguous. A lesson stores
+  that payer when it becomes billable (`_resolves_payer` in `lessons.py`, `lesson_payer` in `payers.py`), and again
+  when a billable lesson changes its student or its Berlin day; it keeps it through every other edit, so a later
+  change of `pays_for` leaves it as it was until `POST /billing/lessons/{lesson_id}/resolve-payer`. A lesson that is
+  not billable has no payer, and neither has one ticked while its student had several - the tick is never refused.
+  The resolved payer is held (`hold_party`) before the lesson names it; one deleted meanwhile took its `pays_for`
+  along, and the CRM is asked again.
+  `GET /billing/students/{party_id}/payer` answers the payer of today, whether it has a sevDesk contact and whether
+  it is billed by hand.
+- **sevDesk contacts and manual billing.** `PUT`/`DELETE /billing/parties/{party_id}/sevdesk-contact` and
+  `.../manual-billing`, idempotent. `payers.py` is the one writer of `ext.sevdesk_contact` (architecture test): a
+  contact id is stored as given, nothing is looked up in sevDesk, and one `INSERT ... ON CONFLICT DO NOTHING`
+  decides a link, so a contact linked elsewhere is `sevdesk_contact_already_linked` also for racing requests. A
+  contact id is accepted only in its canonical form (a positive integer without leading zeros), so one contact
+  cannot be linked twice under two spellings.
+- **Party locks.** Every billing write holds each party it names - the student, the payer, the party of a link or
+  a mark - with `hold_party` (`locks.py`, `FOR KEY SHARE`) before it writes, so a concurrent party delete either
+  makes it wait and find no party (a domain error) or waits for it and answers `party_in_use`, never a 500. The
+  lock blocks nothing else: neither another billing write nor any other CRM write on the party.
 - **Reading the CRM.** Whether a party is a student is read through the CRM's `load_party` (`require_student` in
   `students.py`): a party without the student role is `unknown_student`; a party in a path that does not exist is the
   CRM's `party_not_found`, one named in a body `unknown_student`.
@@ -225,7 +247,7 @@ One Postgres DB, six schemas by domain - details in
 | `ext`  | Links from external system ids (Discord, sevDesk, Clockodo, Microsoft) to a `core.party` |
 | `auth` | OAuth2 clients, secrets, scope grants, user accounts, roles, sessions, one-time tokens, audit |
 | `system` | Runtime/operational state: background-worker liveness heartbeats |
-| `billing` | Lessons and students' rates ([billing spec](specs/billing.md)) |
+| `billing` | Lessons, students' rates and payers billed by hand ([billing spec](specs/billing.md)) |
 
 - **Async SQLAlchemy 2** over `asyncpg`; models under `app/core/db/models/<schema>/`, one
   `*Base` class per schema with `{"schema": ...}`.

@@ -29,6 +29,7 @@ from app.services.billing.errors import (
     LessonNotFoundError,
     RateNotFoundError,
     RateNotQuarterHourError,
+    SevdeskContactAlreadyLinkedError,
     UnknownStudentError,
 )
 from app.services.crm.errors import PartyNotFoundError
@@ -39,6 +40,7 @@ LESSON = {"student_id": ID, "subject": "Mathe", "starts_at": "2026-11-02T16:00:0
 ALREADY_EXISTS = "The student already has a lesson at this start"
 NOT_QUARTER_HOUR = "A rate must be at least 0 cents per hour and divisible by 4"
 NOT_BILLABLE = "Only a held or cancelled lesson can be billable"
+ALREADY_LINKED = "The party or the sevDesk contact is already linked"
 
 
 @dataclass(frozen=True)
@@ -57,6 +59,14 @@ ENDPOINTS = {
     "list_rates": Endpoint("GET", f"/students/{ID}/rates", "rates.list_rates"),
     "put_rate": Endpoint("PUT", f"/students/{ID}/rates/2026-09-01", "rates.put_rate", json={"cents_per_hour": 3000}),
     "delete_rate": Endpoint("DELETE", f"/students/{ID}/rates/2026-09-01", "rates.delete_rate"),
+    "get_student_payer": Endpoint("GET", f"/students/{ID}/payer", "payers.get_student_payer"),
+    "resolve_lesson_payer": Endpoint("POST", f"/lessons/{ID}/resolve-payer", "payers.resolve_lesson_payer"),
+    "put_sevdesk_contact": Endpoint(
+        "PUT", f"/parties/{ID}/sevdesk-contact", "payers.link_sevdesk_contact", json={"sevdesk_contact_id": "1234567"}
+    ),
+    "delete_sevdesk_contact": Endpoint("DELETE", f"/parties/{ID}/sevdesk-contact", "payers.unlink_sevdesk_contact"),
+    "put_manual_billing": Endpoint("PUT", f"/parties/{ID}/manual-billing", "payers.put_manual_payer", json={}),
+    "delete_manual_billing": Endpoint("DELETE", f"/parties/{ID}/manual-billing", "payers.delete_manual_payer"),
 }
 
 # (endpoint, raised error, status, detail) - one row per error a route documents.
@@ -75,6 +85,8 @@ EXPECTATIONS: list[Expectation] = [
     ("put_rate", UnknownStudentError(INTERNAL), 422, "Unknown student"),
     ("put_rate", RateNotQuarterHourError(INTERNAL), 422, NOT_QUARTER_HOUR),
     ("delete_rate", RateNotFoundError(INTERNAL), 404, "Rate not found"),
+    ("resolve_lesson_payer", LessonNotFoundError(INTERNAL), 404, "Lesson not found"),
+    ("put_sevdesk_contact", SevdeskContactAlreadyLinkedError(INTERNAL), 409, ALREADY_LINKED),
 ]
 
 # The CRM's errors a billing route answers with (billing spec, "Route map": a party in a path that does not exist),
@@ -83,6 +95,11 @@ CRM_EXPECTATIONS: list[Expectation] = [
     ("list_rates", PartyNotFoundError(INTERNAL), 404, "Party not found"),
     ("put_rate", PartyNotFoundError(INTERNAL), 404, "Party not found"),
     ("delete_rate", PartyNotFoundError(INTERNAL), 404, "Party not found"),
+    ("get_student_payer", PartyNotFoundError(INTERNAL), 404, "Party not found"),
+    ("put_sevdesk_contact", PartyNotFoundError(INTERNAL), 404, "Party not found"),
+    ("delete_sevdesk_contact", PartyNotFoundError(INTERNAL), 404, "Party not found"),
+    ("put_manual_billing", PartyNotFoundError(INTERNAL), 404, "Party not found"),
+    ("delete_manual_billing", PartyNotFoundError(INTERNAL), 404, "Party not found"),
 ]
 CRM_CODES: dict[type[DomainError], str] = {PartyNotFoundError: "party_not_found"}
 
@@ -91,6 +108,7 @@ CATALOG: dict[type[DomainError], tuple[str, int, str, bool]] = {
     LessonNotFoundError: ("lesson_not_found", 404, "Lesson not found", False),
     RateNotFoundError: ("rate_not_found", 404, "Rate not found", False),
     LessonAlreadyExistsError: ("lesson_already_exists", 409, ALREADY_EXISTS, False),
+    SevdeskContactAlreadyLinkedError: ("sevdesk_contact_already_linked", 409, ALREADY_LINKED, False),
     UnknownStudentError: ("unknown_student", 422, "Unknown student", False),
     RateNotQuarterHourError: ("rate_not_quarter_hour", 422, NOT_QUARTER_HOUR, False),
     LessonNotBillableError: ("lesson_not_billable", 422, NOT_BILLABLE, False),
