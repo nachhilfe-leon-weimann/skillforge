@@ -1,5 +1,8 @@
 """The transport's read variants of SF4-1: a form POST that is a read, a path named by its template, Retry-After."""
 
+import asyncio
+import json
+
 import httpx
 import pytest
 
@@ -114,3 +117,47 @@ async def test_a_failure_in_transit_carries_no_token_and_no_request(send, error:
 
     assert not carries_a_request(raised.value), [type(current).__name__ for current in chained(raised.value)]
     assert all(RAW_TOKEN not in text for text in carried_texts(raised.value))
+
+
+# --- a cancelled request writes its line and stays cancelled ---
+
+
+@pytest.mark.parametrize(
+    ("send", "method"),
+    [(lambda http: http.read("/things/4711"), "GET"), (lambda http: http.write("POST", "/things", json={}), "POST")],
+    ids=["a read", "a write"],
+)
+async def test_a_cancelled_request_writes_its_line_and_is_cancelled_still(
+    send, method: str, restore_logging, capsys, monkeypatch
+):
+    monkeypatch.setenv(CONTRACT_RUN_ENV, "1")  # live mode, so the write is sent
+    configure_logging(LoggingSettings(level=LogLevel.DEBUG, format=LogFormat.JSON))
+    capsys.readouterr()
+    started = asyncio.Event()
+
+    async def hanging(request: httpx.Request) -> httpx.Response:
+        started.set()
+        await asyncio.sleep(10)
+        return httpx.Response(200, json={})
+
+    http = IntegrationHttp(
+        name="example",
+        base_url="https://api.example.org/v1",
+        allowed_hosts=frozenset({"api.example.org"}),
+        credentials={"Authorization": RAW_TOKEN},
+        mode=IntegrationMode.LIVE,
+        account=IntegrationAccount.TRIAL,
+        transport=httpx.MockTransport(hanging),
+    )
+    async with http:
+        task = asyncio.create_task(send(http))
+        await asyncio.wait_for(started.wait(), timeout=5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    output = capsys.readouterr().out
+    lines = [json.loads(line) for line in output.splitlines() if '"integration_request"' in line]
+    assert [(line["method"], line["outcome"], line["status"]) for line in lines] == [(method, "cancelled", None)]
+    assert lines[0]["path"].startswith("/v1/things") and isinstance(lines[0]["duration_ms"], int)
+    assert "4711" not in output and RAW_TOKEN not in output

@@ -8,6 +8,7 @@ Nothing is retried and no redirect is followed: a failed read may be repeated by
 write that may have reached the remote system is an ``OutcomeUnknownError`` for a later reconcile.
 """
 
+import asyncio
 import json as jsonlib
 import logging
 import re
@@ -253,6 +254,10 @@ class IntegrationHttp:
         try:
             response = await self._client.send(request)
         except IntegrationRefusedError:
+            raise
+        except asyncio.CancelledError:
+            # A caller's deadline cut the request: it still writes its line, and the cancellation goes on unchanged.
+            self._log(request, outcome="cancelled", started=started, path=path)
             raise
         except httpx.RequestError as exc:
             name = type(exc).__name__

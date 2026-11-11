@@ -2,12 +2,19 @@
 and then nothing more - on an injected clock and sleep, so no test waits."""
 
 import asyncio
+import json
 
 import httpx
 import pytest
 
+from app.core.logging import LogFormat, LoggingSettings, LogLevel, configure_logging
 from app.integrations.errors import IdentityCheckError, IntegrationUnavailableError
-from app.integrations.graph.client import MAX_RETRY_AFTER_SECONDS, READ_DEADLINE_SECONDS, GraphClient
+from app.integrations.graph.client import (
+    CALENDAR_VIEW_TEMPLATE,
+    MAX_RETRY_AFTER_SECONDS,
+    READ_DEADLINE_SECONDS,
+    GraphClient,
+)
 from app.integrations.graph.config import GraphSettings
 from app.integrations.graph.credential import TokenCache
 from tests.integrations.chains import carried_texts
@@ -113,7 +120,23 @@ async def test_a_wait_that_would_cross_the_deadline_is_not_taken(settings, fake_
     assert fake_graph.sleeps == [] and views(fake_graph) == 1
 
 
-async def test_a_send_still_running_at_the_deadline_is_cut(settings, fake_graph: FakeGraph, clock: Clock):
+@pytest.fixture
+def restore_logging():
+    yield
+    configure_logging(LoggingSettings())
+
+
+def cancelled_lines(output: str) -> list[dict]:
+    lines = [json.loads(line) for line in output.splitlines() if line.startswith("{")]
+    return [line for line in lines if line.get("event") == "integration_request" and line["outcome"] == "cancelled"]
+
+
+async def test_a_send_still_running_at_the_deadline_is_cut(
+    settings, fake_graph: FakeGraph, clock: Clock, restore_logging, capsys
+):
+    configure_logging(LoggingSettings(level=LogLevel.DEBUG, format=LogFormat.JSON))
+    capsys.readouterr()
+
     def nearly_late(request: httpx.Request) -> httpx.Response:
         clock.now += READ_DEADLINE_SECONDS - 0.05  # 50 ms of real time left for the next send
         return answer("g1-calendars")
@@ -131,6 +154,39 @@ async def test_a_send_still_running_at_the_deadline_is_cut(settings, fake_graph:
 
     assert views(fake_graph) == 1
     assert_names_nothing(raised.value)
+    output = capsys.readouterr().out
+    (line,) = cancelled_lines(output)
+    assert (line["method"], line["path"], line["status"]) == ("GET", CALENDAR_VIEW_TEMPLATE, None)
+    assert isinstance(line["duration_ms"], int)
+    assert MAILBOX not in output and CALENDAR_ID not in output and ACCESS_TOKEN not in output
+
+
+async def test_a_hanging_token_request_is_cut_at_the_deadline(settings, fake_graph: FakeGraph):
+    times = iter([1000.0])  # the deadline starts at 1000 s; every later reading is 50 ms before it
+
+    def late_clock() -> float:
+        return next(times, 1000.0 + READ_DEADLINE_SECONDS - 0.05)
+
+    async def hanging_token(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            fake_graph.requests.append(request)
+            await asyncio.sleep(10)
+        return fake_graph(request)
+
+    async def read_once() -> None:
+        async with GraphClient.connect(
+            settings,
+            transport=httpx.MockTransport(hanging_token),
+            tokens=TokenCache(),
+            sleep=fake_graph.sleep,
+            clock=late_clock,
+        ) as client:
+            await client.calendar_view(*WINDOW)
+
+    with pytest.raises(IntegrationUnavailableError, match=r"POST /\{tenant\}/oauth2/v2.0/token: .*deadline"):
+        await asyncio.wait_for(read_once(), timeout=5)
+
+    assert [request.method for request in fake_graph.requests] == ["POST"], "no identity read after the cut"
 
 
 async def test_the_token_request_counts_against_the_deadline(settings, fake_graph: FakeGraph, clock: Clock):
