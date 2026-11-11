@@ -77,7 +77,7 @@ them.
 | **L - Dates and tax** | Invoice date: the day the draft is created. Delivery date: the lesson's day, or the range from the first to the last lesson; a top-up's is the day of the draft (Q15). A lesson that has not ended is never billed. Payment term: 14 days for everyone. § 19 UStG: `taxRule` 11. | A normal sevDesk invoice refuses a delivery date after its invoice date. |
 | **M - Cancellations** | A late cancellation or a no-show is never billable by itself. It shows as cancelled, and the maintainer makes it billable per lesson with one click; it is then the same position as any lesson. A lesson the maintainer cancelled costs nothing, and its replacement is a normal lesson. | Each case is the maintainer's own decision. |
 | **N - Calendar** | Lessons come from one Microsoft 365 calendar, read through Microsoft Graph without a signed-in user. Titles follow `<Fach> mit <Vorname Nachname>`. Lessons are online (Discord or Teams), cost the same and all count. A phone appointment and the free first meeting (`Kennenlernen mit <Name>`) are never proposed as a lesson but can be added by hand. A title without ` mit ` shows as unassigned; there is no ignore list. An alias table maps calendar names to students. | The lesson calendar holds lessons and first meetings only. Names can carry typos or belong to a student not yet in the CRM. |
-| **O - One charge per lesson** | One table, `billing.lesson_charge`, holds invoice positions and prepaid debits alike. A unique index allows one active charge per lesson. "Billed" is derived from it and never stored. | The database rules out a lesson charged twice, not service discipline. |
+| **O - One charge per lesson** | One table, `billing.lesson_charge`, holds every lesson's invoice position and prepaid debit alike. A unique index allows one active charge per lesson. "Billed" is derived from it and never stored. A top-up's positions bill no lesson and are frozen in `billing.topup_position` (SFP-2a). | The database rules out a lesson charged twice, not service discipline. _Amended at the freeze (2026-11): top-up positions._ |
 | **P - Corrections** | A correction voids a charge and books a new one. An issued invoice never changes: a Storno happens in sevDesk and is recorded in SkillForge with one click, which reopens its lessons. A lesson with charge history is never hard-deleted. The calendar import never changes a ticked or charged lesson; it flags the difference. | Every charge keeps its trail. |
 | **Q - Outbound writes** | Pending row, commit, call, outcome. A write is never retried. An unknown outcome is a state that a reconcile resolves. A sevDesk read error never changes money. | ADR 0010. |
 | **R - Number, no reference** | The invoice number is sevDesk's: its editor assigns it before preview or issue (Q1). SkillForge never sets one: title and PayPal link carry sevDesk's placeholders, which sevDesk fills when it renders (Q1 to Q3). SkillForge writes no reference: `customerInternalNote` stays empty, because sevDesk prints it on the invoice (S14, [M8](#for-the-maintainer)). | A number is never invented, and families see no token of SkillForge's. _Amended at the freeze (2026-11): the reference and the sequence fallback are gone._ |
@@ -247,7 +247,7 @@ principal_id TEXT NOT NULL
 kind invoice_kind NOT NULL DEFAULT 'lessons'             -- SFP-2a
 prepaid_account_id UUID NULL REFERENCES billing.prepaid_account(id)  -- SFP-2a; set exactly for a top-up
 
--- billing.lesson_charge  (SF5-3) - the one position model (decision O)
+-- billing.lesson_charge  (SF5-3) - the one position model of a lesson (decision O)
 lesson_id UUID NOT NULL REFERENCES billing.lesson(id) ON DELETE RESTRICT
 invoice_id UUID NULL REFERENCES billing.invoice(id)      -- NOT NULL until SFP-1b
 prepaid_account_id UUID NULL REFERENCES billing.prepaid_account(id)  -- SFP-1b
@@ -290,9 +290,9 @@ UNIQUE (invoice_id) WHERE voided_at IS NULL
 invoice_id UUID NOT NULL REFERENCES billing.invoice(id) ON DELETE RESTRICT
 student_party_id UUID NOT NULL                           -- the child
 part_name TEXT NOT NULL                                  -- the position's name as sent (PD4)
-quantity INTEGER NOT NULL CHECK (quantity > 0)           -- N hours
-rate_cents_per_hour INTEGER NOT NULL
-amount_cents INTEGER NOT NULL CHECK (amount_cents >= 0)
+minutes INTEGER NOT NULL CHECK (minutes > 0 AND minutes % 15 = 0)  -- N x 60; quarter hours for a remainder (M6)
+rate_cents_per_hour INTEGER NOT NULL CHECK (rate_cents_per_hour >= 0 AND rate_cents_per_hour % 4 = 0)  -- rule G
+amount_cents INTEGER NOT NULL CHECK (amount_cents >= 0)  -- the one formula; sent as quantity minutes / 60
 description TEXT NOT NULL                                -- TOPUP_POSITION_DESCRIPTION as sent
 ```
 
@@ -311,6 +311,7 @@ Every column that references a party has its row in `EXTERNAL_LINKS`, and the de
 | `invoice.payer_party_id` | `invoice` | SF5-3 |
 | `lesson_charge.student_party_id` | `lesson_charge` | SF5-3 |
 | `prepaid_account.payer_party_id` | `prepaid_account` | SFP-1a |
+| `topup_position.student_party_id` | `topup_position` | SFP-2a |
 
 ### A lesson's life
 
@@ -1394,8 +1395,8 @@ write (`invoices.py`)._
   the sevDesk client reads with `limit=1000` instead of `countAll`, which `getPositions` ignores (Q18), and refuses
   a listing as long as the limit; read-back, refresh and reconcile compare the positions' sum with `sumNet`. The
   client's module docstring no longer speaks of validation errors as `500` (Q14). The client reads an error's
-  message from both recorded shapes (`{"error": {"message"}}` and the `401`'s `{"message"}`, S21). The create service takes the
-  `Database`, not the request's `DBSession`, and opens two short sessions; the billing architecture test names
+  message from both recorded shapes (`{"error": {"message"}}` and the `401`'s `{"message"}`, S21). The create
+  service takes the `Database`, not the request's `DBSession`, and opens two short sessions; the billing architecture test names
   this route as the one that may.
 - _Tests that change:_ none - and no scenario or golden file.
 - _Acceptance criteria:_
@@ -1518,8 +1519,11 @@ write (`invoices.py`)._
 - _Technique:_ `invoice.kind` and `invoice.prepaid_account_id`; `billing.topup_position`, which freezes a top-up's
   positions as sent - reconcile and drift compare them as they compare a lessons invoice's charges, and the next
   top-up's proposal reads them (decided at the freeze); `TopupPosition.student_party_id` joins `EXTERNAL_LINKS`;
-  the top-up preview and create on the path of SF5-4 and SF6-1; the top-up texts. The top-up scenarios land in their own PR first.
-- _Tests that change:_ none - and no scenario or golden file.
+  the top-up preview and create on the path of SF5-4 and SF6-1; the top-up texts. The top-up scenarios land in
+  their own PR first.
+- _Tests that change:_ `BILLING_ROWS` in `tests/db/crm/test_crm_party_delete_api.py` gains `topup_position`;
+  `test_the_billing_party_references_are_lesson_and_rate_and_restrict` in `tests/db/models/test_billing_models.py`
+  gains `topup_position.student_party_id`. No scenario or golden file.
 - _Acceptance criteria:_
   - [ ] Positions: one per child and subject, the subject's part, quantity N, the child's rate, no date; the
         proposal is the last top-up's composition.
