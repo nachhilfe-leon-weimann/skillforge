@@ -59,8 +59,9 @@ async def lesson_payer(session: AsyncSession, *, student_id: uuid.UUID, billable
     ``None`` for a lesson that is not billable - it has no payer - and for a student with several payers: the tick is
     never refused, and the preview blocks a billable lesson without a payer instead of picking one.
 
-    The payer is held (``hold_party``) before the lesson names it. A payer deleted meanwhile took its ``pays_for``
-    along, so the CRM is asked again; every round follows a party delete that committed, so the rounds end.
+    The payer is held (``hold_party``) before the lesson names it, so no delete of it commits before this
+    transaction ends. A payer deleted meanwhile took its ``pays_for`` along, so the CRM is asked again; every round
+    follows a party delete that committed, so the rounds end.
     """
     if not billable:
         return None

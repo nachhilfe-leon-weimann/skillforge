@@ -11,11 +11,11 @@ import asyncio
 import uuid
 from collections.abc import AsyncIterator, Callable, Coroutine
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import Database
@@ -183,3 +183,66 @@ async def test_a_delete_of_the_payer_after_the_tick_waits_and_is_party_in_use(db
     finally:
         await ticking.close()
         await deleting.close()
+
+
+# --- The payer lock's mode: FOR KEY SHARE keeps deletes out and nothing else ---
+
+# A wrong lock mode makes the second transaction wait: it fails after this instead of hanging.
+LOCK_TIMEOUT = text("SET LOCAL lock_timeout = '1s'")
+# The lock the CRM's `saved` takes on every party it touches.
+NO_KEY_UPDATE = text("SELECT id FROM core.party WHERE id = :party_id FOR NO KEY UPDATE")
+
+
+@pytest.mark.parametrize("held", [False, True], ids=["tick", "resolve-payer"])
+async def test_the_payer_lock_blocks_neither_another_billing_write_nor_a_crm_write(
+    db: Database, family: Family, held: bool
+):
+    """A tick or a `resolve-payer` holds the payer `FOR KEY SHARE`: a billing write naming the payer and the CRM's
+    `FOR NO KEY UPDATE` on it are granted at once."""
+    lesson_id = await _lesson(db, family, held=held)
+    holding, other, crm = db.session_factory(), db.session_factory(), db.session_factory()
+    try:
+        # The write stores the payer and holds it, not committed ...
+        if held:
+            lesson = await payers.resolve_lesson_payer(holding, lesson_id)
+        else:
+            lesson = await lessons.update_lesson(holding, lesson_id, status=LessonStatus.HELD)
+        assert lesson.payer_party_id == family.payer_id
+        for session in (other, crm):
+            await session.execute(LOCK_TIMEOUT)
+
+        # ... and neither a billing write naming the payer nor a CRM write on it waits.
+        await payers.put_manual_payer(other, family.payer_id)
+        assert await crm.scalar(NO_KEY_UPDATE, {"party_id": family.payer_id}) == family.payer_id
+    finally:
+        await holding.close()
+        await other.close()
+        await crm.close()
+
+
+async def test_a_payer_delete_while_a_lesson_write_holds_the_student_passes_it_and_the_tick_stores_the_student(
+    db: Database, family: Family
+):
+    """The delete of a payer updates the student it paid for (``saved``); a write holding that student does not stop
+    it. With a lock that excluded ``saved``, a tick holding the student and then waiting for the payer would deadlock
+    with that delete."""
+    lesson_id = await _lesson(db, family, held=False)
+    writing, deleting = db.session_factory(), db.session_factory()
+    try:
+        # A lesson write holds the student, not committed ...
+        await lessons.create_lesson(
+            writing, student_id=family.student_id, subject="Mathe", starts_at=START + timedelta(days=7), minutes=60
+        )
+        # ... and the payer's delete runs through, its `saved` of the student included.
+        await deleting.execute(LOCK_TIMEOUT)
+        await parties.delete_party(deleting, family.payer_id)
+        await deleting.commit()
+
+        # The same transaction ticks: the pays_for went with the payer, so the student pays for itself.
+        lesson = await lessons.update_lesson(writing, lesson_id, status=LessonStatus.HELD)
+        await writing.commit()
+    finally:
+        await writing.close()
+        await deleting.close()
+
+    assert lesson.payer_party_id == family.student_id
