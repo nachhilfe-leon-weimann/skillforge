@@ -116,10 +116,10 @@ async def _leftovers(url: str) -> list[str]:
         url,
         """
         SELECT n.nspname || '.' || c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname IN ('auth', 'bot', 'core', 'ext', 'geo', 'system')
+        WHERE n.nspname IN ('auth', 'billing', 'bot', 'core', 'ext', 'geo', 'system')
         UNION ALL
         SELECT n.nspname || '.' || t.typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
-        WHERE t.typtype = 'e' AND n.nspname IN ('auth', 'bot', 'core', 'ext', 'geo', 'public', 'system')
+        WHERE t.typtype = 'e' AND n.nspname IN ('auth', 'billing', 'bot', 'core', 'ext', 'geo', 'public', 'system')
         """,
     )
     return sorted(str(name) for (name,) in rows)
