@@ -232,6 +232,19 @@ writes `billing:write`.
   same month changes no row, a run in a later month adds that month's lessons. It checks the configured database URL
   before it connects (`local_host_class`): only `postgresql+asyncpg` without query parameters, and only `localhost`,
   a loopback address or a single-label host name (a compose service) pass.
+- **Backfill.** `just billing-backfill <file> [--apply]`
+  ([`app/cli/billing_backfill.py`](../app/cli/billing_backfill.py)) is the maintainer's data step: it applies a
+  mapping CSV - `student_party_id`, `payer_party_id`,
+  `sevdesk_contact_id`, `manual_billing`, `rate_cents_per_hour`, `rate_valid_from`; the module docstring holds the
+  format - through `put_relation`, `link_sevdesk_contact`, `put_manual_payer` and `put_rate`. Parties are named by
+  id, never by name. It has no host guard - it is meant for production - so the safety is elsewhere: the file must
+  lie outside every git work tree, symlinks resolved, and is refused before it is read or anything connects
+  (`check_path`); every row is checked against the file and the database before the first write (`plan_mapping`),
+  and every problem is reported by line and reason code; without `--apply` the check runs in a transaction that is
+  rolled back; with it, the whole file is written in one transaction or nothing. It only adds - a row that
+  contradicts the database is a problem, never an update - so a second run changes no row. The output holds counts,
+  line numbers and reason codes, never an id, a cell or the database URL. The payer already stored on a lesson
+  (PD1) is not touched.
 - **Errors.** The catalog is closed (the spec's "Error catalog"); its classes live in `app/services/billing/errors.py`
   and are pinned per route by `tests/api/test_billing_error_contract.py`.
 

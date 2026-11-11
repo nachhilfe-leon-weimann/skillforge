@@ -37,6 +37,9 @@ Everything runs through [`just`](justfile), which wraps `uv`:
 - `just seed-demo` - write synthetic families, students, rates and lessons for local screens; it refuses any
   database host but `localhost`, a loopback address or a single-label name, and a URL with query parameters; it
   needs a local database.
+- `just billing-backfill <file> [--apply]` - the maintainer's data step: apply a confirmed payer mapping CSV from
+  outside the repository to the configured database, production included; a dry run without `--apply`. It has no
+  host guard, so an agent never runs it; agents exercise it only in tests.
 - `just sevdesk-doctor trial|live [--discover]` - check the configured sevDesk ids, read-only;
   `just contract-sevdesk` - the contract tests against the sevDesk trial; `just sevdesk-spike [--step ...]` - the
   spike against the trial (it writes there). All three call sevDesk.
@@ -95,7 +98,7 @@ Everything runs through [`just`](justfile), which wraps `uv`:
   production target. `just dev`, `just dev-local-core`, `just docker-run`, `just bootstrap-client`,
   `just bootstrap-admin`, `just worker-housekeeping`, `just seed-demo` and Alembic run only after the maintainer
   confirms in the session that `DB__URL` is local: `bootstrap-admin` prints tokens, `worker-housekeeping` deletes
-  rows, `seed-demo` writes them.
+  rows, `seed-demo` writes them. `just billing-backfill` an agent never runs: it is meant for production.
 - **sevDesk is a live system, its trial too.** An agent runs the trial recipes (`just sevdesk-doctor trial`,
   `just contract-sevdesk`, `just sevdesk-spike`) only after the maintainer's go in the session, and
   `just sevdesk-doctor live` never. The trial's settings live in the env file the recipes name, outside the

@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3, SF3-1 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
+> Status: Draft - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3, SF3-1, SF3-2 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
 > then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
@@ -1160,13 +1160,15 @@ write (`invoices.py`)._
 - _Technique:_ `just billing-backfill <file>` (`app/cli/billing_backfill.py`) reads a mapping CSV the maintainer
   confirmed - student, payer, sevDesk contact id, own rate with its day, billed by hand - from outside the
   repository and applies it through the services: `pays_for` through the CRM's relation service, the contact link,
-  the rate, the marker. It is a data step: the maintainer runs it, an agent sees counts.
+  the rate, the marker. It is a data step: the maintainer runs it, an agent sees counts. The file's columns:
+  `student_party_id`, `payer_party_id`, `sevdesk_contact_id`, `manual_billing`, `rate_cents_per_hour`,
+  `rate_valid_from` - parties by id, never by name; the module docstring holds the format.
 - _Acceptance criteria:_
-  - [ ] Without `--apply` nothing is written; with it, a second run changes nothing.
-  - [ ] One bad row - an unknown party, a rate against rule G, a second payer - rejects the whole file before the
+  - [x] Without `--apply` nothing is written; with it, a second run changes nothing.
+  - [x] One bad row - an unknown party, a rate against rule G, a second payer - rejects the whole file before the
         first write.
-  - [ ] The output holds counts and row numbers, never a name or a contact id.
-  - [ ] A path inside the repository is refused.
+  - [x] The output holds counts and row numbers, never a name or a contact id.
+  - [x] A path inside the repository is refused.
 
 **SF4-1 - Calendar client.** _After SP-CAL. M5 is approved: `pyjwt[crypto]` joins the runtime dependencies here._
 
