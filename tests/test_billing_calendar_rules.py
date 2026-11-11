@@ -165,6 +165,33 @@ def test_row_5_a_duration_off_the_quarter_hour_is_no_lesson(minutes: float):
     assert proposal == NoLesson(NoLessonReason.DURATION, Title("Mathe", "Erika Mustermann"))
 
 
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [
+        (timedelta(seconds=30), timedelta(seconds=30)),
+        (timedelta(milliseconds=500), timedelta(milliseconds=500)),
+        (timedelta(microseconds=1), timedelta(microseconds=1)),
+        (timedelta(), timedelta(seconds=30)),
+        (timedelta(seconds=30), timedelta()),
+    ],
+    ids=["seconds", "milliseconds", "microsecond", "end-only", "start-only"],
+)
+def test_row_5_a_start_or_end_off_the_minute_is_no_lesson(start: timedelta, end: timedelta):
+    """A lesson at `16:00:30` would stand beside one set at `16:00`; nothing rounds a time, so it waits."""
+    occurrence = Occurrence(title=LESSON, starts_at=START + start, ends_at=START + timedelta(hours=1) + end)
+
+    assert propose(occurrence, ROSTER) == NoLesson(NoLessonReason.DURATION, Title("Mathe", "Erika Mustermann"))
+
+
+def test_the_minute_is_judged_on_the_instant_not_on_the_wall_time():
+    """Berlin's local mean time before 1893 is `+00:53:28`: `16:00` there is `15:06:32` in UTC."""
+    starts_at = datetime(1890, 11, 3, 16, tzinfo=BERLIN)
+    occurrence = Occurrence(title=LESSON, starts_at=starts_at, ends_at=starts_at + timedelta(hours=1))
+
+    assert _reason(propose(occurrence, ROSTER)) is NoLessonReason.DURATION
+    assert propose(_occurrence(), ROSTER) == _lesson(ProposedStatus.PLANNED)
+
+
 def test_a_lesson_of_a_whole_day_is_proposed_and_the_bound_is_the_lesson_routes():
     assert propose(_occurrence(minutes=24 * 60), ROSTER) == _lesson(ProposedStatus.PLANNED, minutes=24 * 60)
     assert timedelta(minutes=MAX_LESSON_MINUTES) == MAX_LESSON_DURATION

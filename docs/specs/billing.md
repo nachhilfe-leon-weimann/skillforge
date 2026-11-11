@@ -332,7 +332,7 @@ What happens to an occurrence, first match wins:
 | Category "Telefon", or a location that is a phone number: stripped, an optional leading `+`, then only digits, spaces and `/ ( ) -`, with 5 to 15 digits | No lesson; `reason = phone`. |
 | Title `Kennenlernen mit <Name>`: a subject that contains `kennenlern` after normalisation, such as `Erstes Kennenlernen` or `Kennenlerngespräch` | No lesson; `reason = first_meeting`. `Kennenlernen` is never read as a subject. |
 | Title without ` mit ` | No lesson; `reason = no_title_pattern`. Shows as unassigned. |
-| Duration not a multiple of 15 minutes, not positive, or longer than 1440 minutes | No lesson; `reason = duration`. Shows as unassigned. |
+| Duration not a multiple of 15 minutes, not positive, or longer than 1440 minutes; or a start or end off the whole minute - with seconds or a fraction of a second, never rounded | No lesson; `reason = duration`. Shows as unassigned. |
 | Name matches no student | No lesson; `reason = unmatched`. Shows as unassigned. |
 | Name matches several students | No lesson; `reason = ambiguous`. Shows as unassigned. Never a guess. |
 | Carries the late-cancellation category `Abgesagt` (Q9), or `isCancelled` | A `cancelled` lesson, not billable. |
@@ -357,8 +357,9 @@ What happens to an occurrence, first match wins:
 - **A lesson nobody touched follows the calendar** - while the title rules still give that student and subject. A
   lesson is untouched while it is `planned`, carries no note and no own rate, and has the start and length of its
   occurrence as last seen; it follows a move, a resize or a cancellation, and it goes when its occurrence vanishes,
-  whatever the title said. Only an occurrence that starts inside the imported range can vanish. An appointment
-  cancelled early is deleted from the calendar and so never shows.
+  whatever the title said. An appointment moved to a start or end off the whole minute gives no lesson, so its
+  lesson does not follow and the occurrence is flagged `changed`. Only an occurrence that starts inside the imported
+  range can vanish. An appointment cancelled early is deleted from the calendar and so never shows.
 - **A ticked or charged lesson is never changed.** If its appointment moved, shrank or vanished, the import sets
   `changed` on the event and the maintainer decides.
 - **The rules are applied at every import** to an occurrence that has a lesson as well; a dismissed or flagged

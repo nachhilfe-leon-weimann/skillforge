@@ -355,6 +355,124 @@ async def test_a_planned_lesson_that_would_move_onto_another_lesson_is_unchanged
     assert (await _event(session, G2_MOVED)).changed is True
 
 
+# --- times off the minute ---
+
+OFF_MINUTE_DAY = dt.date(2026, 12, 2)
+ON_THE_MINUTE = dt.datetime(2026, 12, 2, 15, tzinfo=dt.UTC)  # 16:00 in Berlin
+OFF_MINUTE = {
+    "seconds": (dt.timedelta(seconds=30), dt.timedelta(seconds=30)),
+    "milliseconds": (dt.timedelta(milliseconds=500), dt.timedelta(milliseconds=500)),
+    "end-only": (dt.timedelta(), dt.timedelta(seconds=30)),
+}
+
+
+def _graph_time(moment: dt.datetime) -> dict[str, str]:
+    """Graph's ``dateTimeTimeZone`` with all seven fractional digits, so a fraction of a second reaches the import."""
+    return {"dateTime": f"{moment:%Y-%m-%dT%H:%M:%S}.{moment.microsecond:06d}0", "timeZone": "UTC"}
+
+
+def _shifted(event: dict[str, Any], start: dt.timedelta, end: dt.timedelta) -> dict[str, Any]:
+    """The occurrence of an hour at `ON_THE_MINUTE`, its start and end moved by ``start`` and ``end``."""
+    return {
+        **event,
+        "start": _graph_time(ON_THE_MINUTE + start),
+        "end": _graph_time(ON_THE_MINUTE + dt.timedelta(hours=1) + end),
+    }
+
+
+@pytest.mark.parametrize(("start", "end"), OFF_MINUTE.values(), ids=OFF_MINUTE.keys())
+async def test_an_appointment_off_the_minute_gets_no_lesson_and_waits(
+    session: AsyncSession, fake: FakeGraph, run, start: dt.timedelta, end: dt.timedelta
+):
+    await new_student(session, MAX)
+    answer_view(fake, [_shifted(graph_event("odd", "Mathe mit Max Mustermann", ON_THE_MINUTE), start, end)])
+
+    counts = await run(OFF_MINUTE_DAY, OFF_MINUTE_DAY)
+
+    assert (counts.lessons_created, counts.unassigned) == (0, 1)
+    assert await _lessons(session) == []
+    event = await _event(session, "odd")
+    assert (event.reason, event.title_name, event.changed) == (NoLessonReason.DURATION, "Max Mustermann", False)
+
+
+async def test_an_appointment_on_the_minute_with_a_zero_fraction_gets_its_lesson(
+    session: AsyncSession, fake: FakeGraph, run
+):
+    await new_student(session, MAX)
+    zero = dt.timedelta()
+    answer_view(fake, [_shifted(graph_event("even", "Mathe mit Max Mustermann", ON_THE_MINUTE), zero, zero)])
+
+    counts = await run(OFF_MINUTE_DAY, OFF_MINUTE_DAY)
+
+    assert counts.lessons_created == 1
+    assert [lesson.starts_at for lesson in await _lessons(session)] == [ON_THE_MINUTE]
+
+
+async def test_a_lesson_set_at_the_minute_stays_alone_beside_an_appointment_seconds_later(
+    session: AsyncSession, fake: FakeGraph, run
+):
+    student = await new_student(session, MAX)
+    by_hand = await lessons.create_lesson(
+        session, student_id=student, subject="Mathe", starts_at=ON_THE_MINUTE, minutes=60
+    )
+    by_hand_id = by_hand.id
+    row = await _row(session, by_hand_id)
+    seconds = OFF_MINUTE["seconds"]
+    answer_view(fake, [_shifted(graph_event("odd", "Mathe mit Max Mustermann", ON_THE_MINUTE), *seconds)])
+
+    counts = await run(OFF_MINUTE_DAY, OFF_MINUTE_DAY)
+
+    assert (counts.lessons_created, counts.unassigned) == (0, 1)
+    assert [lesson.id for lesson in await _lessons(session)] == [by_hand_id]
+    assert await _row(session, by_hand_id) == row
+
+
+@pytest.mark.parametrize(("start", "end"), OFF_MINUTE.values(), ids=OFF_MINUTE.keys())
+async def test_a_planned_lesson_does_not_follow_its_appointment_off_the_minute_and_is_flagged(
+    session: AsyncSession, fake: FakeGraph, run, start: dt.timedelta, end: dt.timedelta
+):
+    await new_student(session, MAX)
+    appointment = graph_event("lesson", "Mathe mit Max Mustermann", ON_THE_MINUTE)
+    answer_view(fake, [appointment])
+    await run(OFF_MINUTE_DAY, OFF_MINUTE_DAY)
+    planned = await _lesson_of(session, "lesson")
+    planned_id = planned.id
+    row = await _row(session, planned_id)
+
+    answer_view(fake, [{**_shifted(appointment, start, end), "type": "exception"}])
+    counts = await run(OFF_MINUTE_DAY, OFF_MINUTE_DAY)
+
+    assert counts.lessons_updated == 0
+    assert await _row(session, planned_id) == row
+    event = await _event(session, "lesson")
+    assert (event.changed, event.reason) == (True, NoLessonReason.DURATION)
+
+
+async def test_a_lesson_stored_off_the_minute_before_the_rule_is_left_alone_and_flagged(
+    session: AsyncSession, fake: FakeGraph, run
+):
+    """A lesson and its occurrence at `16:00:30`, as an import before the rule stored them: the next import changes
+    neither the lesson nor its start - it flags the occurrence, whose rules now give no lesson."""
+    await new_student(session, MAX)
+    appointment = graph_event("lesson", "Mathe mit Max Mustermann", ON_THE_MINUTE)
+    answer_view(fake, [appointment])
+    await run(OFF_MINUTE_DAY, OFF_MINUTE_DAY)
+    stored = await _lesson_of(session, "lesson")
+    event = await _event(session, "lesson")
+    off = ON_THE_MINUTE + dt.timedelta(seconds=30)
+    stored.starts_at, event.starts_at, event.ends_at = off, off, off + dt.timedelta(hours=1)
+    await session.flush()
+    stored_id = stored.id
+    row = await _row(session, stored_id)
+
+    answer_view(fake, [_shifted(appointment, *OFF_MINUTE["seconds"])])
+    counts = await run(OFF_MINUTE_DAY, OFF_MINUTE_DAY)
+
+    assert (counts.lessons_updated, counts.changed) == (0, 1)
+    assert await _row(session, stored_id) == row
+    assert (await _event(session, "lesson")).reason == NoLessonReason.DURATION
+
+
 # --- the range ---
 
 
