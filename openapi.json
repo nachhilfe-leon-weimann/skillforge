@@ -1303,7 +1303,7 @@
             "title": "Rate Cents Per Hour"
           },
           "starts_at": {
-            "description": "When the lesson starts, with its UTC offset (`Z` or `+01:00`).",
+            "description": "When the lesson starts, with its UTC offset (`Z` or `+01:00`), on a whole minute.",
             "examples": [
               "2026-11-02T16:00:00+01:00"
             ],
@@ -1534,7 +1534,7 @@
             "title": "Rate Cents Per Hour"
           },
           "starts_at": {
-            "description": "When the lesson starts, with its UTC offset.",
+            "description": "When the lesson starts, with its UTC offset, on a whole minute.",
             "examples": [
               "2026-11-02T16:00:00+01:00"
             ],
