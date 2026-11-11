@@ -19,14 +19,22 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from sqlalchemy import event, make_url, select, text
+from sqlalchemy import event, func, make_url, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, create_async_engine
 
 from app.cli import billing_backfill
 from app.cli.billing_backfill import COLUMNS
 from app.core.db import Database
-from app.core.db.models import ManualPayer, PartyRelation, PartyRelationType, PreferredMeetingTool, Rate, SevdeskContact
+from app.core.db.models import (
+    ManualPayer,
+    PartyRelation,
+    PartyRelationType,
+    PreferredMeetingTool,
+    Rate,
+    SevdeskContact,
+    Student,
+)
 from app.core.db.models.base import Base
 from app.core.db.models.schemata import get_schemata
 from app.services.billing import payers, rates
@@ -203,7 +211,7 @@ async def test_a_dry_run_prints_what_it_would_do_and_writes_and_commits_nothing(
     ]
     assert await _snapshot(session) == before
     assert commits == []
-    assert opened == [(False, None)]
+    assert opened == [(False, "REPEATABLE READ")]
 
 
 async def test_apply_writes_the_file_and_a_second_run_changes_no_row(
@@ -533,6 +541,70 @@ class RaceWorld:
     other: uuid.UUID
     third: uuid.UUID
 
+    def full_row(self) -> dict[str, object]:
+        """S paid for by P, P's contact and mark, and S's rate: a row that writes every kind."""
+        return _row(
+            self.student,
+            self.payer,
+            sevdesk_contact_id=CONTACT,
+            manual_billing="true",
+            rate_cents_per_hour=CENTS,
+            rate_valid_from=DAY,
+        )
+
+
+Between = Callable[[AsyncSession, RaceWorld], Awaitable[None]]
+
+
+@dataclass(frozen=True)
+class RaceRun:
+    code: object
+    """``None`` when the apply went through, the message it exits with otherwise."""
+    after_the_other: dict[str, list[tuple[Any, ...]]]
+    """Every table right after the other transaction committed."""
+    after_the_run: dict[str, list[tuple[Any, ...]]]
+
+
+async def _race(
+    database: Database,
+    monkeypatch,
+    tmp_path: Path,
+    rows: Callable[[RaceWorld], list[dict[str, object]]],
+    between: Between,
+    *,
+    prepare: Between | None = None,
+) -> tuple[RaceWorld, RaceRun]:
+    """Apply the rows, while another transaction commits ``between`` after the check and before the write."""
+    async with database.session() as setup:
+        world = RaceWorld(
+            await _person(setup, "B"), *[await _person(setup, name, student=False) for name in ("A", "Q", "R")]
+        )
+        if prepare is not None:
+            await prepare(setup, world)
+    path = tmp_path / "mapping.csv"
+    lines = [",".join(COLUMNS), *(",".join(str(row.get(column, "")) for column in COLUMNS) for row in rows(world))]
+    path.write_text("\n".join(lines) + "\n")
+    write_plan = billing_backfill.write_plan
+    after_the_other: list[dict[str, list[tuple[Any, ...]]]] = []
+
+    async def write_after_a_concurrent_commit(session: AsyncSession, plan: Any) -> None:
+        async with database.session() as elsewhere:
+            await between(elsewhere, world)
+        async with database.session(write=False) as look:
+            after_the_other.append(await _snapshot(look))
+        await write_plan(session, plan)
+
+    url = database.engine.url.render_as_string(hide_password=False)
+    monkeypatch.setattr(billing_backfill, "get_settings", lambda: SimpleNamespace(db=SimpleNamespace(url=url)))
+    monkeypatch.setattr(billing_backfill, "write_plan", write_after_a_concurrent_commit)
+    try:
+        await billing_backfill.billing_backfill(str(path), apply=True)
+        code = None
+    except SystemExit as exc:
+        code = exc.code
+    async with database.session(write=False) as look:
+        return world, RaceRun(code, after_the_other[0], await _snapshot(look))
+
 
 async def _second_payer_committed(session: AsyncSession, world: RaceWorld) -> None:
     await relations.put_relation(session, world.other, PartyRelationType.PAYS_FOR, world.student)
@@ -574,42 +646,107 @@ async def _payer_deleted(session: AsyncSession, world: RaceWorld) -> None:
         _payer_deleted,
     ],
 )
-async def test_a_write_committed_between_check_and_write_makes_the_apply_write_nothing(
-    own_database: Database, monkeypatch, tmp_path: Path, between: Callable[[AsyncSession, RaceWorld], Awaitable[None]]
+async def test_a_write_that_collides_with_the_apply_makes_it_write_nothing(
+    own_database: Database, monkeypatch, tmp_path: Path, between: Between
 ):
-    """Another transaction commits a write of the API's services after the check, and before the write. Nothing waits
-    for the other (billing writes hold their parties `FOR KEY SHARE`), so the apply meets a row its snapshot does not
-    see - a key its upsert conflicts with, a party row `saved` or a delete changed - and at `SERIALIZABLE` fails as a
-    whole: the database stays exactly as the other transaction left it."""
-    async with own_database.session() as setup:
-        world = RaceWorld(
-            await _person(setup, "B"), *[await _person(setup, name, student=False) for name in ("A", "Q", "R")]
-        )
-    cells: dict[str, object] = {"student_party_id": world.student, "payer_party_id": world.payer}
-    cells |= {"sevdesk_contact_id": CONTACT, "manual_billing": "true"}
-    cells |= {"rate_cents_per_hour": CENTS, "rate_valid_from": DAY}
-    path = tmp_path / "mapping.csv"
-    path.write_text(f"{','.join(COLUMNS)}\n{','.join(str(cells.get(column, '')) for column in COLUMNS)}\n")
-    write_plan = billing_backfill.write_plan
-    after_the_other: list[dict[str, list[tuple[Any, ...]]]] = []
+    """Another transaction commits a write of the API's services after the check and before the write, and it
+    collides with what the apply writes: the party row both sides `saved` (a second payer, a role removal), a key the
+    apply's insert meets (a rate, a contact either way, a mark), or a payer deleted under the apply's foreign key. The
+    snapshot's write conflict fails the apply as a whole: the database stays as the other transaction left it."""
+    _, run = await _race(own_database, monkeypatch, tmp_path, lambda world: [world.full_row()], between)
 
-    async def write_after_a_concurrent_commit(session: AsyncSession, plan: Any) -> None:
-        async with own_database.session() as elsewhere:
-            await between(elsewhere, world)
-        async with own_database.session(write=False) as look:
-            after_the_other.append(await _snapshot(look))
-        await write_plan(session, plan)
+    assert run.code == DATA_CHANGED
+    assert run.after_the_run == run.after_the_other
 
-    url = own_database.engine.url.render_as_string(hide_password=False)
-    monkeypatch.setattr(billing_backfill, "get_settings", lambda: SimpleNamespace(db=SimpleNamespace(url=url)))
-    monkeypatch.setattr(billing_backfill, "write_plan", write_after_a_concurrent_commit)
 
-    with pytest.raises(SystemExit) as failed:
-        await billing_backfill.billing_backfill(str(path), apply=True)
+async def _payer_already_held(session: AsyncSession, world: RaceWorld) -> None:
+    await relations.put_relation(session, world.payer, PartyRelationType.PAYS_FOR, world.student)
 
-    assert failed.value.code == DATA_CHANGED
+
+async def test_a_second_payer_for_a_self_payer_of_the_file_ends_as_if_it_came_after_the_run(
+    own_database: Database, monkeypatch, tmp_path: Path
+):
+    """The file says S pays for themselves and is billed by hand: the apply writes the mark, no relation, so the
+    second payer collides with nothing. Both stay - as if Q's `pays_for` had come right after the run."""
+    world, run = await _race(
+        own_database,
+        monkeypatch,
+        tmp_path,
+        lambda world: [_row(world.student, world.student, manual_billing="true")],
+        _second_payer_committed,
+    )
+
+    assert run.code is None
     async with own_database.session(write=False) as look:
-        assert await _snapshot(look) == after_the_other[0]
+        assert await _race_state(look) == {
+            "pays_for": [(world.other, world.student)],
+            "contacts": [],
+            "manual": [world.student],
+            "rates": [],
+        }
+
+
+async def test_a_second_payer_while_the_file_repeats_the_held_one_ends_as_if_it_came_after_the_run(
+    own_database: Database, monkeypatch, tmp_path: Path
+):
+    """The CRM holds P `pays_for` S, the file repeats it (unchanged) and adds a rate: the apply writes only the rate,
+    so Q's `pays_for` collides with nothing. S ends with two payers - ambiguous, as if Q had come right after."""
+    world, run = await _race(
+        own_database,
+        monkeypatch,
+        tmp_path,
+        lambda world: [_row(world.student, world.payer, rate_cents_per_hour=CENTS, rate_valid_from=DAY)],
+        _second_payer_committed,
+        prepare=_payer_already_held,
+    )
+
+    assert run.code is None
+    async with own_database.session(write=False) as look:
+        assert await _race_state(look) == {
+            "pays_for": sorted([(world.payer, world.student), (world.other, world.student)]),
+            "contacts": [],
+            "manual": [],
+            "rates": [(world.student, DAY, CENTS)],
+        }
+
+
+async def test_a_role_removal_while_the_file_adds_only_a_rate_ends_as_if_it_came_after_the_run(
+    own_database: Database, monkeypatch, tmp_path: Path
+):
+    """The file adds only a rate: the apply does not write S's party row, so the role removal collides with nothing.
+    The rate stays with a former student - as a removal right after the run would have left it."""
+    world, run = await _race(
+        own_database,
+        monkeypatch,
+        tmp_path,
+        lambda world: [_row(world.student, rate_cents_per_hour=CENTS, rate_valid_from=DAY)],
+        _student_role_removed,
+    )
+
+    assert run.code is None
+    async with own_database.session(write=False) as look:
+        assert await _race_state(look) == {
+            "pays_for": [],
+            "contacts": [],
+            "manual": [],
+            "rates": [(world.student, DAY, CENTS)],
+        }
+        assert await look.scalar(select(func.count()).select_from(Student)) == 0
+
+
+async def _race_state(session: AsyncSession) -> dict[str, list[Any]]:
+    return {
+        "pays_for": sorted(
+            await session.execute(
+                select(PartyRelation.from_party_id, PartyRelation.to_party_id).where(
+                    PartyRelation.type == PartyRelationType.PAYS_FOR
+                )
+            )
+        ),
+        "contacts": list(await session.execute(select(SevdeskContact.party_id, SevdeskContact.sevdesk_id))),
+        "manual": list(await session.scalars(select(ManualPayer.party_id))),
+        "rates": list(await session.execute(select(Rate.student_party_id, Rate.valid_from, Rate.cents_per_hour))),
+    }
 
 
 async def test_a_delete_of_a_checked_student_waits_for_the_apply(own_database: Database, monkeypatch, tmp_path: Path):

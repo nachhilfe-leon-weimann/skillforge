@@ -240,12 +240,16 @@ writes `billing:write`.
   `SevdeskContactId`, so it is canonical. It has no host guard - it is meant for production - so the safety is
   elsewhere: the file must lie outside every git work tree, symlinks resolved, and is refused before it is read or
   anything connects (`check_path`); every row is checked against the file and the database before the first write
-  (`plan_mapping`), and every problem is reported by line and reason code; without `--apply` the check runs in a
-  transaction that is rolled back; with it, the whole file is checked and written in one `SERIALIZABLE` transaction or
-  nothing (`Database.session(isolation_level=...)`), so a concurrent write between check and write fails the run. It
-  only adds - a row that contradicts the database is a problem, never an update - so a second run changes no row. The
-  output holds counts, line numbers and reason codes, never an id, a cell, the path or the database URL - a failure
-  prints its error code or class, never its message. The payer already stored on a lesson (PD1) is not touched.
+  (`plan_mapping`), and every problem is reported by line and reason code; without `--apply` the check reads one
+  snapshot (`REPEATABLE READ`) in a transaction that is rolled back; with it, the whole file is checked and written in
+  one `SERIALIZABLE` transaction or nothing (`Database.session(isolation_level=...)`). An API write committed between
+  check and write that collides with what the apply writes - a party row both `saved`, a key its insert meets, a payer
+  deleted under its foreign key - fails the run ("run it again"), caught by the snapshot's write conflicts; one that
+  collides with nothing ends as if it had come right after the run, and nothing is overwritten. `SERIALIZABLE` adds the
+  protection against a second backfill at the same time. It only adds - a row that contradicts the database is a
+  problem, never an update - so a second run changes no row. The output holds counts, line numbers and reason codes,
+  never an id, a cell, the path or the database URL - a failure prints its error code or class, never its message. The
+  payer already stored on a lesson (PD1) is not touched.
 - **Errors.** The catalog is closed (the spec's "Error catalog"); its classes live in `app/services/billing/errors.py`
   and are pinned per route by `tests/api/test_billing_error_contract.py`.
 

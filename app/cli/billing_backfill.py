@@ -420,9 +420,12 @@ async def write_plan(session: AsyncSession, plan: Plan) -> None:
 async def billing_backfill(file: str, *, apply: bool) -> None:
     """Refuse a bad path or file before anything connects, check every row, then write all of it or nothing.
 
-    A dry run reads in a transaction that is rolled back. ``--apply`` checks and writes in one ``SERIALIZABLE``
-    transaction, so a write of someone else between the check and the write fails the run instead of being
-    overwritten. A failure prints its code or its class, never its message: those name ids, cells and the URL.
+    A dry run reads one snapshot (``REPEATABLE READ``) in a transaction that is rolled back. ``--apply`` checks and
+    writes in one ``SERIALIZABLE`` transaction. Another write committed between its check and its write that collides
+    with what it writes - a party row both update, a key its insert meets, a payer deleted under its foreign key -
+    fails the whole run ("run it again"); one that collides with nothing ends as if it had come right after the run,
+    and nothing is overwritten. ``SERIALIZABLE`` adds a second backfill at the same time: one of the two fails. A
+    failure prints its code or its class, never its message: those name ids, cells and the URL.
     """
     try:
         mapping = read_mapping(file)
@@ -434,7 +437,7 @@ async def billing_backfill(file: str, *, apply: bool) -> None:
     except ValueError, SQLAlchemyError:  # a settings or URL error repeats the URL
         raise SystemExit("billing-backfill refused: the database settings cannot be read") from None
     try:
-        async with db.session(write=apply, isolation_level="SERIALIZABLE" if apply else None) as session:
+        async with db.session(write=apply, isolation_level="SERIALIZABLE" if apply else "REPEATABLE READ") as session:
             plan = await plan_mapping(session, mapping)
             if apply and not plan.problems:
                 await write_plan(session, plan)
