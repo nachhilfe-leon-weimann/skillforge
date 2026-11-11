@@ -595,7 +595,7 @@
             "type": "boolean"
           },
           "changed": {
-            "description": "The appointment moved, was resized, cancelled or vanished - and its lesson was not changed - or it could not\nget its lesson. Dismissing acknowledges it.",
+            "description": "The appointment differs from its lesson, which the import did not change: moved, resized, cancelled,\nvanished, or no longer this student's lesson of this subject by the rules - or it could not get its lesson.\nDismissing acknowledges it.",
             "title": "Changed",
             "type": "boolean"
           },
@@ -670,6 +670,11 @@
             ],
             "description": "The text before ` mit ` in the title, if it has one.",
             "title": "Title Subject"
+          },
+          "vanished": {
+            "description": "Gone from the calendar while its lesson stays.",
+            "title": "Vanished",
+            "type": "boolean"
           }
         },
         "required": [
@@ -681,6 +686,7 @@
           "cancelled",
           "reason",
           "changed",
+          "vanished",
           "lesson_id",
           "last_seen_at"
         ],

@@ -7,6 +7,7 @@ imported range can vanish. Every name is synthetic.
 
 import datetime as dt
 import uuid
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -17,8 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db.models import CalendarEvent, Lesson, LessonStatus
 from app.services.billing import calendar, calendar_aliases, lessons
 from app.services.billing.calendar import ImportCounts
-from app.services.billing.calendar_rules import NoLessonReason
+from app.services.billing.calendar_rules import NoLessonReason, Roster, StudentName
 from app.services.billing.errors import CalendarUnavailableError
+from app.services.crm import persons, roles
 from tests.db.billing.calendar_support import (
     ERIKA,
     MAX,
@@ -39,6 +41,8 @@ pytestmark = pytest.mark.db
 
 BERLIN = ZoneInfo("Europe/Berlin")
 G2_DAYS = (dt.date(2026, 11, 23), dt.date(2026, 12, 13))
+# An hour after G2's occurrence of 2026-12-01.
+START_LATER = dt.datetime(2026, 12, 1, 16, tzinfo=dt.UTC)
 G2_MOVED = next(
     event["id"] for event in fixture_events("g2-series-first-read") if "2026-12-01" in event["start"]["dateTime"]
 )
@@ -494,19 +498,20 @@ async def test_an_occurrence_whose_student_has_a_lesson_at_that_start_gets_none_
     assert await session.scalar(select(func.count()).where(Lesson.calendar_event_id == event.id)) == 0
 
 
-async def test_an_occurrence_with_a_lesson_keeps_its_student_when_the_match_changes(
+async def test_an_occurrence_with_a_lesson_keeps_its_student_and_is_flagged_when_the_match_changes(
     session: AsyncSession, fake: FakeGraph, run
 ):
     await new_student(session, MAX)
     other = await new_student(session, ("Moritz", "Beispiel"))
     answer_view(fake, fixture_events("g2-series-first-read"))
     await run(*G2_DAYS)
-    before = await snapshot(session)
+    rows = [row for row in await snapshot(session) if row[0] == "lesson"]
 
     await calendar_aliases.create_alias(session, name="Max Mustermann", student_id=other)
-    await run(*G2_DAYS)
+    counts = await run(*G2_DAYS)
 
-    assert await snapshot(session) == before
+    assert [row for row in await snapshot(session) if row[0] == "lesson"] == rows
+    assert (counts.lessons_updated, counts.changed) == (0, 3)
 
 
 async def test_the_roster_holds_every_student_beyond_the_first_page(
@@ -691,8 +696,11 @@ async def test_an_occurrence_with_a_lesson_is_never_deleted_by_the_retention_rul
 async def test_a_failed_read_is_calendar_unavailable_and_changes_no_row(
     session: AsyncSession, fake: FakeGraph, run, failure: str
 ):
+    """The read comes before any write: a waiting occurrence that the failed import's ``now`` makes 90 days old
+    would be deleted by a retention run before the read."""
     await new_student(session, MAX)
-    answer_view(fake, fixture_events("g2-series-first-read"))
+    waiting = graph_event("waiting", "Mathe mit Student Z", dt.datetime(2026, 12, 2, 15, tzinfo=dt.UTC))
+    answer_view(fake, [*fixture_events("g2-series-first-read"), waiting])
     await run(*G2_DAYS)
     before = await snapshot(session)
     match failure:
@@ -712,3 +720,266 @@ async def test_a_failed_read_is_calendar_unavailable_and_changes_no_row(
 
     assert await snapshot(session) == before
     assert "Mustermann" not in str(raised.value) and raised.value.__cause__ is None
+
+
+# --- an occurrence with a lesson is judged by the rules again ---
+
+
+def _berlin_midnight_utc(day: dt.date) -> str:
+    return dt.datetime.combine(day, dt.time(), tzinfo=BERLIN).astimezone(dt.UTC).strftime("%Y-%m-%dT%H:%M:%S.0000000")
+
+
+def _turned(event: dict, variant: str) -> dict:
+    """The appointment of ``event`` as it might be edited: no longer this student's lesson of this subject."""
+    match variant:
+        case "all-day":
+            start = {"dateTime": _berlin_midnight_utc(dt.date(2026, 12, 1)), "timeZone": "UTC"}
+            end = {"dateTime": _berlin_midnight_utc(dt.date(2026, 12, 2)), "timeZone": "UTC"}
+            return {**event, "isAllDay": True, "start": start, "end": end}
+        case "phone-category":
+            return {**event, "categories": ["Telefon"]}
+        case "phone-location":
+            return {**event, "location": {"displayName": "+49 30 1234567"}}
+        case "first-meeting":
+            return {**event, "subject": "Kennenlernen mit Max Mustermann"}
+        case "no-title-pattern":
+            return {**event, "subject": "Max Mustermann"}
+        case "other-student":
+            return {**event, "subject": "Mathematik mit Paula Beispiel"}
+        case "other-subject":
+            return {**event, "subject": "Physik mit Max Mustermann"}
+    raise AssertionError(variant)
+
+
+TURNS = [
+    "all-day",
+    "phone-category",
+    "phone-location",
+    "first-meeting",
+    "no-title-pattern",
+    "other-student",
+    "other-subject",
+]
+
+
+@pytest.mark.parametrize("variant", TURNS)
+async def test_a_planned_lesson_whose_appointment_is_no_longer_its_lesson_stays_and_is_flagged(
+    session: AsyncSession, fake: FakeGraph, run, variant: str
+):
+    """The rules still decide: an appointment they no longer give this student and subject is never followed - not
+    to an all-day entry, not to another student - and the lesson stays exactly as it is, for the maintainer."""
+    await new_student(session, MAX)
+    await new_student(session, PAULA)
+    first_read = fixture_events("g2-series-first-read")
+    answer_view(fake, first_read)
+    await run(*G2_DAYS)
+    planned_id = (await _lesson_of(session, G2_MOVED)).id
+    row = await _row(session, planned_id)
+
+    answer_view(fake, [_turned(event, variant) if event["id"] == G2_MOVED else event for event in first_read])
+    counts = await run(*G2_DAYS)
+
+    assert await _row(session, planned_id) == row
+    assert (counts.lessons_created, counts.lessons_updated, counts.lessons_removed, counts.changed) == (0, 0, 0, 1)
+    event = await _event(session, G2_MOVED)
+    assert (event.changed, event.title_name, event.reason) == (True, None, None)
+
+
+async def test_an_acknowledged_difference_from_the_rules_stays_acknowledged_until_the_appointment_changes(
+    session: AsyncSession, fake: FakeGraph, run
+):
+    await new_student(session, MAX)
+    first_read = fixture_events("g2-series-first-read")
+    other = [_turned(event, "other-subject") if event["id"] == G2_MOVED else event for event in first_read]
+    answer_view(fake, first_read)
+    await run(*G2_DAYS)
+    planned_id = (await _lesson_of(session, G2_MOVED)).id
+    row = await _row(session, planned_id)
+    answer_view(fake, other)
+    await run(*G2_DAYS)
+
+    await calendar.dismiss_event(session, (await _event(session, G2_MOVED)).id)
+    await run(*G2_DAYS)
+    assert (await _event(session, G2_MOVED)).changed is False
+
+    answer_view(fake, [moved(event, START_LATER) if event["id"] == G2_MOVED else event for event in other])
+    counts = await run(*G2_DAYS)
+    assert (await _event(session, G2_MOVED)).changed is True
+    assert counts.lessons_updated == 0
+    assert await _row(session, planned_id) == row
+
+
+async def test_an_assigned_lesson_is_not_flagged_by_the_rules_until_its_appointment_changes(
+    session: AsyncSession, fake: FakeGraph, run
+):
+    """The assignment acknowledges what the rules cannot see; a later change is the maintainer's again."""
+    student = await new_student(session, MAX)
+    start = dt.datetime(2026, 12, 2, 15, tzinfo=dt.UTC)
+    waiting = graph_event("waiting", "Mathe mit Student Z", start)
+    answer_view(fake, [waiting])
+    await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))
+    lesson = await calendar.assign_event(
+        session, (await _event(session, "waiting")).id, student_id=student, subject="Mathe", minutes=60
+    )
+    lesson_id = lesson.id
+    row = await _row(session, lesson_id)
+
+    counts = await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))
+    assert (counts.changed, (await _event(session, "waiting")).changed) == (0, False)
+
+    answer_view(fake, [moved(waiting, start + dt.timedelta(hours=1))])
+    counts = await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))
+    assert (counts.lessons_updated, (await _event(session, "waiting")).changed) == (0, True)
+    assert await _row(session, lesson_id) == row
+
+
+# --- an occurrence that could not get its lesson waits for the maintainer ---
+
+
+async def test_a_flagged_collision_is_not_proposed_again_when_its_appointment_moves(
+    session: AsyncSession, fake: FakeGraph, run
+):
+    student = await new_student(session, MAX)
+    await lessons.create_lesson(
+        session, student_id=student, subject="Physik", starts_at=dt.datetime(2026, 12, 1, 15, tzinfo=dt.UTC), minutes=45
+    )
+    first_read = fixture_events("g2-series-first-read")
+    answer_view(fake, first_read)
+    await run(*G2_DAYS)
+
+    answer_view(fake, [moved(event, START_LATER) if event["id"] == G2_MOVED else event for event in first_read])
+    counts = await run(*G2_DAYS)
+
+    assert (counts.lessons_created, counts.changed) == (0, 1)
+    event = await _event(session, G2_MOVED)
+    assert (event.changed, event.starts_at) == (True, START_LATER)
+    assert await session.scalar(select(func.count()).where(Lesson.calendar_event_id == event.id)) == 0
+    on_that_day = [lesson for lesson in await _lessons(session) if _berlin(lesson).date() == dt.date(2026, 12, 1)]
+    assert [(lesson.subject, lesson.calendar_event_id) for lesson in on_that_day] == [("Physik", None)]
+
+
+# --- a former student ---
+
+
+async def test_an_alias_of_a_former_student_leaves_its_occurrence_unmatched_and_the_import_goes_on(
+    session: AsyncSession, fake: FakeGraph, run
+):
+    await new_student(session, MAX)
+    former = await new_student(session, ("Moritz", "Beispiel"))
+    await calendar_aliases.create_alias(session, name="Mo", student_id=former)
+    await roles.remove_student_role(session, former)
+    start = dt.datetime(2026, 12, 2, 15, tzinfo=dt.UTC)
+    answer_view(fake, [*fixture_events("g2-series-first-read"), graph_event("mo", "Mathe mit Mo", start)])
+
+    counts = await run(*G2_DAYS)
+
+    assert (counts.lessons_created, counts.unassigned) == (3, 1)
+    event = await _event(session, "mo")
+    assert (event.reason, event.title_name) == (NoLessonReason.UNMATCHED, "Mo")
+
+
+async def test_a_student_who_lost_the_role_after_the_roster_was_read_is_unmatched(
+    session: AsyncSession, fake: FakeGraph, run, monkeypatch: pytest.MonkeyPatch
+):
+    """The lesson services refuse a party that is no student (``unknown_student``): the occurrence waits as
+    ``unmatched``, as the rules answer from then on - the import does not fail on it."""
+    no_student = await persons.create_person(session, firstname="Max", lastname="Mustermann")
+
+    async def stale_roster(_session: AsyncSession) -> Roster:
+        return Roster(students=(StudentName(no_student.id, "Max", "Mustermann"),), aliases={})
+
+    monkeypatch.setattr(calendar, "_roster", stale_roster)
+    answer_view(fake, fixture_events("g2-series-first-read"))
+
+    counts = await run(*G2_DAYS)
+
+    assert (counts.occurrences, counts.lessons_created, counts.unassigned) == (3, 0, 3)
+    event = await _event(session, G2_MOVED)
+    assert (event.reason, event.title_name) == (NoLessonReason.UNMATCHED, "Max Mustermann")
+
+
+# --- what makes a lesson touched ---
+
+
+CORRECTIONS: dict[str, dict[str, Any]] = {
+    "minutes": {"minutes": 45},
+    "start": {"starts_at": dt.datetime(2026, 12, 1, 15, 30, tzinfo=dt.UTC)},
+    "note": {"note": "Synthetic note"},
+    "own-rate": {"rate_cents_per_hour": 4000},
+}
+
+
+@pytest.mark.parametrize("change", ["moved", "vanished"])
+@pytest.mark.parametrize("correction", list(CORRECTIONS))
+async def test_a_planned_lesson_corrected_by_hand_is_touched_and_never_follows_or_goes(
+    session: AsyncSession, fake: FakeGraph, run, correction: str, change: str
+):
+    """Untouched means as the import made it: `planned`, no note, no own rate, the start and length of its
+    occurrence as last seen. A hand correction is never reverted and never dropped with the lesson."""
+    await new_student(session, MAX)
+    first_read = fixture_events("g2-series-first-read")
+    answer_view(fake, first_read)
+    await run(*G2_DAYS)
+    planned_id = (await _lesson_of(session, G2_MOVED)).id
+    await lessons.update_lesson(session, planned_id, **CORRECTIONS[correction])
+    row = await _row(session, planned_id)
+
+    if change == "moved":
+        answer_view(fake, fixture_events("g2-series-second-read"))
+    else:
+        answer_view(fake, [event for event in first_read if event["id"] != G2_MOVED])
+    counts = await run(*G2_DAYS)
+
+    assert await _row(session, planned_id) == row
+    assert (counts.lessons_updated, counts.lessons_removed, counts.changed) == (0, 0, 1)
+
+
+async def test_a_vanishing_after_a_dismissed_move_is_flagged_without_an_import_in_between(
+    session: AsyncSession, fake: FakeGraph, run
+):
+    """A dismiss acknowledges what was seen; the vanishing seen later is a new difference."""
+    await new_student(session, MAX)
+    first_read = fixture_events("g2-series-first-read")
+    answer_view(fake, first_read)
+    await run(*G2_DAYS)
+    await _tick(session, await _lesson_of(session, G2_MOVED))
+    answer_view(fake, fixture_events("g2-series-second-read"))
+    await run(*G2_DAYS)
+    await calendar.dismiss_event(session, (await _event(session, G2_MOVED)).id)
+
+    answer_view(fake, [event for event in first_read if event["id"] != G2_MOVED])
+    await run(*G2_DAYS)
+
+    event = await _event(session, G2_MOVED)
+    assert (event.changed, event.vanished) == (True, True)
+
+
+# --- the end of the range, and a title that cannot be stored ---
+
+
+async def test_an_occurrence_at_the_berlin_midnight_after_the_range_belongs_to_the_next_day(
+    session: AsyncSession, fake: FakeGraph, run
+):
+    """The range ends at the Berlin midnight after its last day, exclusive: that midnight's lesson never vanishes
+    from the day before."""
+    await new_student(session, MAX)
+    midnight = dt.datetime(2026, 12, 2, tzinfo=BERLIN).astimezone(dt.UTC)
+    answer_view(fake, [graph_event("midnight", "Mathe mit Max Mustermann", midnight)])
+    assert (await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))).lessons_created == 1
+    before = await snapshot(session)
+
+    answer_view(fake, [])
+    assert await run(dt.date(2026, 12, 1), dt.date(2026, 12, 1)) == ImportCounts()
+    assert await snapshot(session) == before
+
+
+async def test_a_title_with_a_nul_character_is_read_as_no_title(session: AsyncSession, fake: FakeGraph, run):
+    await new_student(session, MAX)
+    start = dt.datetime(2026, 12, 2, 15, tzinfo=dt.UTC)
+    answer_view(fake, [graph_event("nul", "Mathe mit Max\x00Mustermann", start)])
+
+    counts = await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))
+
+    assert (counts.lessons_created, counts.unassigned) == (0, 1)
+    event = await _event(session, "nul")
+    assert (event.reason, event.title_subject, event.title_name) == (NoLessonReason.NO_TITLE_PATTERN, None, None)

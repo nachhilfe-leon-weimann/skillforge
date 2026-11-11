@@ -359,11 +359,13 @@ title_subject TEXT NULL                   -- the text before " mit "
 title_name TEXT NULL                      -- the text after " mit ": a name, kept only while waiting (PD13)
 cancelled BOOLEAN NOT NULL
 reason TEXT NULL                          -- ck_calendar_event_reason: a NoLessonReason; NULL once it has a lesson
-dismissed BOOLEAN NOT NULL DEFAULT false
+dismissed BOOLEAN NOT NULL DEFAULT false  -- acknowledged by the maintainer (a dismiss, or the assignment)
 changed BOOLEAN NOT NULL DEFAULT false    -- differs from a lesson the import must not change, or got no lesson
+vanished BOOLEAN NOT NULL DEFAULT false   -- gone from the calendar while its lesson stays; flagged once
 last_seen_at TIMESTAMPTZ NOT NULL
 created_at/updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-CHECK (title_name IS NULL OR (NOT dismissed AND reason IN ('duration', 'unmatched', 'ambiguous')))
+CHECK (title_name IS NULL
+       OR (NOT dismissed AND reason IS NOT NULL AND reason IN ('duration', 'unmatched', 'ambiguous')))
                                           -- ck_calendar_event_title_name
 INDEX (starts_at)                         -- ix_calendar_event_starts_at
 ```

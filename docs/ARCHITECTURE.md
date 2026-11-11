@@ -264,20 +264,25 @@ writes `billing:write`.
   name with nothing left once normalised is a `422`; the student is held `FOR KEY SHARE` first
   (`require_named_student`).
 - **Calendar import.** `POST /billing/calendar/import` (`import_calendar` in `calendar.py`) reads a range of at most
-  92 Berlin days through the Graph client and answers with counts only. The read comes first, outside any lock;
-  every integration error of it is logged by its class and status and becomes `calendar_unavailable` (`502`), with
-  no row written - the endpoint names no integration error (architecture test). Then a transaction-level advisory
-  lock serializes the import with assign and dismiss, so overlapping imports wait for each other. Each occurrence is
-  upserted by Graph's `id` into `billing.calendar_event`, a snapshot of start, end and cancellation; a new one gets
-  `propose`'s result - a lesson linked by `lesson.calendar_event_id`, or its reason. When the snapshot differs, a
-  `planned` lesson follows (or goes when its occurrence vanishes from the range); any other lesson is never changed
-  and its occurrence is flagged `changed`. A lesson that cannot follow - another lesson at the new start, a
-  duration no lesson can have - is flagged too. A matched occurrence keeps its student. The roster is read through
-  the CRM's `list_parties`. `GET /billing/calendar/events` lists the occurrences that wait or are flagged;
-  `.../{event_id}/assign` creates the lesson (optionally storing an alias) and `.../{event_id}/dismiss` takes an
-  occurrence off the list. PD13: `title_name` is kept only for the reasons that wait for an assignment
-  (`ck_calendar_event_title_name`) and is cleared on assign and dismiss; occurrences without a lesson are deleted
-  90 Berlin days after their start, with the next import. No log line holds a title or a name.
+  92 Berlin days (`MAX_IMPORT_DAYS`, a bound of the import, not of the spec) through the Graph client and answers with
+  counts only. The read comes first, outside any lock and before any statement: every integration error of it is
+  logged by its class and status and becomes `calendar_unavailable` (`502`), with no row written - the endpoint names
+  no integration error (architecture test). Then a transaction-level advisory lock serializes the import with assign
+  and dismiss, so overlapping imports wait for each other. Each occurrence is upserted by Graph's `id` into
+  `billing.calendar_event`, a snapshot of start, end, cancellation and subject; one without a lesson gets
+  `propose`'s result - a lesson linked by `lesson.calendar_event_id`, or its reason. When in doubt the import flags
+  `changed` and changes nothing: an occurrence with a lesson is judged by `propose` again at every import, and only
+  while it still gives this student and this subject does an untouched lesson - `planned`, no note, no own rate, at
+  the start and length of its occurrence as last seen - follow a change (or go with its vanished occurrence). Any
+  other difference is flagged, a vanishing once (`vanished`); a dismiss or an assignment acknowledges the occurrence
+  as last seen until it changes again. An occurrence that could not get its lesson - its student has one at that
+  start - stays flagged and is not proposed again; a student who lost the role is `unmatched`. A title with a NUL
+  character is read as no title. The roster is read through the CRM's `list_parties`.
+  `GET /billing/calendar/events` lists the occurrences that wait or are flagged; `.../{event_id}/assign` creates the
+  lesson (optionally storing an alias) and `.../{event_id}/dismiss` takes an occurrence off the list. PD13:
+  `title_name` is kept only for the reasons that wait for an assignment (`ck_calendar_event_title_name`) and is
+  cleared on assign and dismiss; occurrences without a lesson are deleted 90 Berlin days after their start, with the
+  next import. No log line holds a title or a name.
 - **Demo data.** `just seed-demo` ([`app/cli/seed_demo.py`](../app/cli/seed_demo.py)) writes a synthetic family
   with two siblings at different rates, a student who pays for themselves, and lessons in every status, through the
   CRM and billing services. The lessons fall in the current Berlin month and the one before: a second run in the

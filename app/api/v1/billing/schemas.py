@@ -24,7 +24,8 @@ MAX_LESSON_MINUTES = 24 * 60
 # A Postgres INTEGER; a larger value could not be bound. Rule G for a rate (divisible by 4) is the service's, so a
 # lesson's own rate answers `rate_not_quarter_hour` like a student's rate does.
 MAX_CENTS_PER_HOUR = 2**31 - 1
-# One import reads at most this many days: a longer range is a typo, and a read is bounded (billing spec, SF4-3).
+# One import reads at most this many days - a bound of this slice, not of the spec: a quarter covers any
+# catch-up, a longer range is most likely a typo, and it keeps one Graph read within its page and time limits.
 MAX_IMPORT_DAYS = 92
 
 
@@ -409,8 +410,11 @@ class CalendarEventResponse(ApiModel):
     reason: NoLessonReason | None
     """Why no lesson was proposed; `null` when it has one, or when its student has a lesson at that start already."""
     changed: bool
-    """The appointment moved, was resized, cancelled or vanished - and its lesson was not changed - or it could not
-    get its lesson. Dismissing acknowledges it."""
+    """The appointment differs from its lesson, which the import did not change: moved, resized, cancelled,
+    vanished, or no longer this student's lesson of this subject by the rules - or it could not get its lesson.
+    Dismissing acknowledges it."""
+    vanished: bool
+    """Gone from the calendar while its lesson stays."""
     lesson_id: uuid.UUID | None
     """ID of the occurrence's lesson, if it has one."""
     last_seen_at: datetime
@@ -428,6 +432,7 @@ class CalendarEventResponse(ApiModel):
             cancelled=event.cancelled,
             reason=NoLessonReason(event.reason) if event.reason is not None else None,
             changed=event.changed,
+            vanished=event.vanished,
             lesson_id=listed.lesson_id,
             last_seen_at=event.last_seen_at,
         )

@@ -219,7 +219,8 @@ title_name TEXT NULL                                     -- text after " mit ": 
 cancelled BOOLEAN NOT NULL
 reason TEXT NULL                                         -- why no lesson was proposed (Calendar import)
 dismissed BOOLEAN NOT NULL DEFAULT false
-changed BOOLEAN NOT NULL DEFAULT false                   -- differs from a lesson the import must not change
+changed BOOLEAN NOT NULL DEFAULT false                   -- differs from its ticked or charged lesson
+vanished BOOLEAN NOT NULL DEFAULT false                  -- gone from the calendar while its lesson stays
 last_seen_at TIMESTAMPTZ NOT NULL
 
 -- billing.invoice  (SF5-3)
@@ -1289,6 +1290,11 @@ write (`invoices.py`)._
   ([sevDesk in `dry_run` and without a token](#sevdesk-in-dry_run-and-without-a-token)); `just seed-demo` sets
   the mode and fills the fake. The sevDesk mapping of [Errors from an integration](#errors-from-an-integration);
   `UpstreamError` itself came with SF4-3.
+- _Tests that change:_ `_required_scope` in `tests/api/test_billing_auth.py`, which maps every route but a `GET` to
+  `billing:write`, learns the preview - a `POST` under `billing:read`. The registries of the billing route tests gain
+  the preview: the endpoint list of `test_the_billing_endpoints_carry_no_boilerplate` in
+  `tests/api/test_billing_architecture.py`; `ENDPOINTS`, `EXPECTATIONS` and `CATALOG` in
+  `tests/api/test_billing_error_contract.py` with its errors.
 - _Acceptance criteria:_
   - [ ] The preview changes no row. The same state gives the same fingerprint; a changed rate, duration, payer or
         payment method gives another.

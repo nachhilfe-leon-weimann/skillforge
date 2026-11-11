@@ -223,6 +223,7 @@ async def test_the_list_holds_what_waits_and_what_changed_by_start(
         "cancelled": False,
         "reason": "unmatched",
         "changed": False,
+        "vanished": False,
         "lesson_id": None,
         "last_seen_at": first["last_seen_at"],
     }

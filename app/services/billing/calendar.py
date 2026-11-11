@@ -2,18 +2,25 @@
 
 ``import_calendar`` reads a range of Berlin days and turns each occurrence into a lesson by the pure rules of
 ``calendar_rules.py``, or keeps it with its reason. ``billing.calendar_event`` holds every occurrence as last seen,
-and the import compares the calendar with that: a ``planned`` lesson follows a moved, resized or cancelled
-appointment and goes with a vanished one; a lesson that is no longer ``planned`` - ticked, cancelled, not held - is
-never changed: its occurrence is flagged ``changed`` instead. Only an occurrence that starts inside the range can
-vanish. An occurrence that has a lesson keeps its student and subject: a later alias or a renamed student does not
-move it. ``dismiss`` takes an occurrence off the list (and acknowledges a difference); ``assign`` gives a waiting one
-its lesson through ``lessons.py``.
+and the import compares the calendar with that. When in doubt it flags ``changed`` and changes nothing: it never
+invents, moves, duplicates or drops a lesson a person may have looked at.
 
-The calendar is read before anything is written, so a failed read changes no row; every integration error becomes
-``CalendarUnavailableError``. The writers of this table hold one transaction-level advisory lock, so overlapping
-imports and assignments run one after the other. A title holds a name (PD13): ``title_name`` is kept only while an
-occurrence waits for an assignment, the counts and log lines name nobody, and unassigned and dismissed occurrences
-are deleted 90 Berlin days after their start, with the next import.
+- An occurrence with a lesson is judged by the rules again at every import. Only while they still give this student
+  and this subject, and the lesson is untouched - ``planned``, no note, no own rate, at the start and length of its
+  occurrence as last seen - does it follow a moved, resized or cancelled appointment, and go with a vanished one.
+- Anything else is flagged: a touched lesson whose appointment changed or vanished, an appointment the rules no longer
+  give this lesson, a lesson that cannot follow. ``dismiss`` acknowledges the occurrence as last seen, and so does an
+  assignment; a new difference is flagged again.
+- An occurrence without a lesson is proposed at every import until it gets one, unless it was dismissed or flagged
+  because it could not get its lesson: then it waits for the maintainer. ``assign`` gives it its lesson through
+  ``lessons.py``. Only an occurrence that starts inside the range can vanish.
+
+The calendar is read first - outside any lock and before any statement, so a failed read changes no row and the
+Graph client's time limit covers the read alone; every integration error becomes ``CalendarUnavailableError``. The
+writers of this table hold one transaction-level advisory lock, so overlapping imports and assignments run one after
+the other. A title holds a name (PD13): ``title_name`` is kept only while an occurrence waits for an assignment, the
+counts and log lines name nobody, and occurrences without a lesson are deleted 90 Berlin days after their start,
+with the next import.
 """
 
 import asyncio
@@ -38,11 +45,11 @@ from app.services.crm.parties import list_parties
 
 from . import calendar_aliases, lessons
 from .calendar_rules import (
-    LESSON_STEP,
     LessonProposal,
     NoLesson,
     NoLessonReason,
     Occurrence,
+    Proposal,
     ProposedStatus,
     Roster,
     StudentName,
@@ -55,6 +62,7 @@ from .errors import (
     CalendarEventNotFoundError,
     CalendarUnavailableError,
     LessonAlreadyExistsError,
+    UnknownStudentError,
 )
 from .lessons import BILLING_TIME_ZONE, berlin_midnight
 
@@ -147,13 +155,16 @@ async def import_calendar(
         if event is None and not start <= graph_event.start < end:
             continue
         if event is None:
-            event = CalendarEvent(id=uuid.uuid4(), external_id=graph_event.id, dismissed=False, changed=False)
+            event = CalendarEvent(
+                id=uuid.uuid4(), external_id=graph_event.id, dismissed=False, changed=False, vanished=False
+            )
             session.add(event)
         await _take(session, event, linked.get(event.id), _occurrence(graph_event), roster, counts, now=now)
         counts.occurrences += 1
 
+    # Of the stored occurrences only those that start in the range can be missing from the read (`stored`'s query).
     for event in stored.values():
-        if event.external_id not in returned and start <= event.starts_at < end:
+        if event.external_id not in returned:
             await _vanished(session, event, linked.get(event.id), counts)
     await session.flush()
 
@@ -213,7 +224,8 @@ async def assign_event(
     )
     if event.cancelled:
         lesson = await lessons.update_lesson(session, lesson.id, status=LessonStatus.CANCELLED)
-    event.title_name, event.reason, event.changed, event.dismissed = None, None, False, False
+    # The assignment acknowledges the occurrence as it is: the rules may never name this student (``_check``).
+    event.title_name, event.reason, event.changed, event.dismissed = None, None, False, True
     await session.flush()
     return lesson
 
@@ -246,46 +258,69 @@ async def _take(
     *,
     now: datetime,
 ) -> None:
-    """Store a returned occurrence as seen, then bring its lesson up to date - or propose one."""
-    cancelled = is_cancelled(occurrence)
-    seen_before = (event.starts_at, event.ends_at, event.cancelled)
+    """Store a returned occurrence as seen, then judge it: against its lesson, or - waiting - by the rules."""
+    untouched = lesson is not None and _untouched(lesson, event)
+    seen_before = _seen(event)
     title = parse_title(occurrence.title)
-    event.starts_at, event.ends_at, event.cancelled = occurrence.starts_at, occurrence.ends_at, cancelled
+    event.starts_at, event.ends_at, event.cancelled = occurrence.starts_at, occurrence.ends_at, is_cancelled(occurrence)
     event.title_subject = title.subject if title is not None else None
-    event.last_seen_at = now
+    event.vanished, event.last_seen_at = False, now
 
     if lesson is not None:
-        # Seen again, so a vanishing the maintainer acknowledged is over.
-        event.reason, event.title_name, event.dismissed = None, None, False
-        if seen_before != (event.starts_at, event.ends_at, event.cancelled):
-            await _follow(session, event, lesson, occurrence, cancelled, counts)
-    elif event.dismissed:
+        await _check(
+            session,
+            event,
+            lesson,
+            propose(occurrence, roster),
+            counts,
+            differs=seen_before != _seen(event),
+            untouched=untouched,
+        )
+    elif event.dismissed or event.changed:
+        # Waits for the maintainer: dismissed, or flagged because it could not get its lesson - proposing it again
+        # could add a second lesson once it moves away from the one that blocked it.
         event.title_name = None
     else:
         await _propose(session, event, occurrence, roster, counts)
 
 
-async def _follow(
+async def _check(
     session: AsyncSession,
     event: CalendarEvent,
     lesson: Lesson,
-    occurrence: Occurrence,
-    cancelled: bool,
+    proposal: Proposal,
     counts: ImportCounts,
+    *,
+    differs: bool,
+    untouched: bool,
 ) -> None:
-    """The appointment changed: a ``planned`` lesson follows it, any other is flagged. So is a ``planned`` one that
-    cannot follow - a duration off the quarter hour, or another lesson of the student at the new start."""
-    minutes = _minutes(occurrence)
-    if lesson.status is not LessonStatus.PLANNED or minutes is None:
-        event.changed = True
+    """Judge an occurrence that has a lesson. Only when the rules still give this student and this subject may an
+    untouched lesson follow a changed appointment; anything else is flagged and the lesson stays exactly as it is.
+
+    ``dismissed`` is the maintainer's acknowledgment of the occurrence as last seen - by a dismiss or by the assignment
+    itself - so it holds until the appointment changes again.
+    """
+    event.reason, event.title_name = None, None
+    if differs:
+        event.dismissed = False
+    same = isinstance(proposal, LessonProposal) and (proposal.student_id, proposal.subject) == (
+        lesson.student_party_id,
+        lesson.subject,
+    )
+    if not same or (differs and not untouched):
+        if not event.dismissed:
+            event.changed = True
+        return
+    if not differs:
         return
 
-    # A planned lesson becomes cancelled with its appointment; one cancelled no more stays planned.
-    status = LessonStatus.CANCELLED if cancelled else None
-    if (lesson.starts_at, lesson.minutes, status) == (occurrence.starts_at, minutes, None):
+    status = LessonStatus.CANCELLED if proposal.status is ProposedStatus.CANCELLED else None
+    if (lesson.starts_at, lesson.minutes, status) == (event.starts_at, proposal.minutes, None):
         return
     try:
-        await lessons.update_lesson(session, lesson.id, starts_at=occurrence.starts_at, minutes=minutes, status=status)
+        await lessons.update_lesson(
+            session, lesson.id, starts_at=event.starts_at, minutes=proposal.minutes, status=status
+        )
     except LessonAlreadyExistsError:
         event.changed = True
         return
@@ -297,44 +332,46 @@ async def _propose(
 ) -> None:
     """Run the rules for an occurrence without a lesson; a lesson they propose is created through the lesson services.
 
-    The name is kept only for the reasons that wait (``NoLesson.title``). A student who has a lesson at that start
-    already - added by hand - gets no second one: the occurrence is flagged ``changed`` for the maintainer.
+    The name is kept only for the reasons that wait (``NoLesson.title``). Of the lesson services' errors two are the
+    occurrence's, not the import's: a student who has a lesson at that start already - added by hand - gets no
+    second one, and the occurrence is flagged ``changed`` until the maintainer assigns or dismisses it; a student who
+    lost the role after the roster was read is ``unmatched``, as the rules answer from then on. Any other error is a
+    bug and fails the whole import.
     """
     match propose(occurrence, roster):
         case NoLesson(reason=reason, title=title):
-            event.reason, event.changed = reason, False
+            event.reason = reason
             event.title_name = title.name if title is not None else None
         case LessonProposal() as proposal:
             event.reason, event.title_name = None, None
-            created = await _create(session, event, proposal, occurrence.starts_at)
-            event.changed = not created
-            if created:
-                counts.lessons_created += 1
-
-
-async def _create(session: AsyncSession, event: CalendarEvent, proposal: LessonProposal, starts_at: datetime) -> bool:
-    try:
-        lesson = await lessons.create_lesson(
-            session,
-            student_id=proposal.student_id,
-            subject=proposal.subject,
-            starts_at=starts_at,
-            minutes=proposal.minutes,
-            calendar_event_id=event.id,
-        )
-    except LessonAlreadyExistsError:
-        return False
-    if proposal.status is ProposedStatus.CANCELLED:
-        await lessons.update_lesson(session, lesson.id, status=LessonStatus.CANCELLED)
-    return True
+            try:
+                lesson = await lessons.create_lesson(
+                    session,
+                    student_id=proposal.student_id,
+                    subject=proposal.subject,
+                    starts_at=occurrence.starts_at,
+                    minutes=proposal.minutes,
+                    calendar_event_id=event.id,
+                )
+            except LessonAlreadyExistsError:
+                event.changed = True
+                return
+            except UnknownStudentError:
+                title = parse_title(occurrence.title)
+                event.reason = NoLessonReason.UNMATCHED
+                event.title_name = title.name if title is not None else None
+                return
+            if proposal.status is ProposedStatus.CANCELLED:
+                await lessons.update_lesson(session, lesson.id, status=LessonStatus.CANCELLED)
+            counts.lessons_created += 1
 
 
 async def _vanished(session: AsyncSession, event: CalendarEvent, lesson: Lesson | None, counts: ImportCounts) -> None:
-    """The occurrence is gone from the range: so is a ``planned`` lesson with it, and an occurrence without one; any
-    other lesson stays and its occurrence is flagged - unless the maintainer acknowledged that already."""
-    if lesson is not None and lesson.status is not LessonStatus.PLANNED:
-        if not event.dismissed:
-            event.changed = True
+    """The occurrence is gone from the range: so is an untouched lesson with it, and an occurrence without one. A
+    touched lesson stays and its occurrence is flagged - once: an acknowledged vanishing is not flagged again."""
+    if lesson is not None and not _untouched(lesson, event):
+        if not event.vanished:
+            event.vanished, event.dismissed, event.changed = True, False, True
         return
 
     if lesson is not None:
@@ -343,6 +380,23 @@ async def _vanished(session: AsyncSession, event: CalendarEvent, lesson: Lesson 
         counts.lessons_removed += 1
     await session.delete(event)
     counts.deleted += 1
+
+
+def _untouched(lesson: Lesson, event: CalendarEvent) -> bool:
+    """Whether the lesson is still as the import made it: ``planned``, without a note or an own rate, at the start and
+    with the length of its occurrence as last seen. Any other lesson is touched: it never follows and never goes."""
+    return (
+        lesson.status is LessonStatus.PLANNED
+        and lesson.note is None
+        and lesson.rate_cents_per_hour is None
+        and lesson.starts_at == event.starts_at
+        and timedelta(minutes=lesson.minutes) == event.ends_at - event.starts_at
+    )
+
+
+def _seen(event: CalendarEvent) -> tuple[object, ...]:
+    """What a difference of an occurrence is measured on - never the name, which is not kept (PD13)."""
+    return (event.starts_at, event.ends_at, event.cancelled, event.title_subject, event.vanished)
 
 
 async def _expire(session: AsyncSession, now: datetime) -> int:
@@ -389,7 +443,8 @@ async def _get_event(session: AsyncSession, event_id: uuid.UUID) -> CalendarEven
 
 def _occurrence(event: GraphEvent) -> Occurrence:
     return Occurrence(
-        title=event.subject,
+        # Postgres text holds no NUL character, and the CRM refuses one in its inputs: such a title is not read.
+        title=event.subject if "\x00" not in event.subject else "",
         starts_at=event.start,
         ends_at=event.end,
         all_day=event.is_all_day,
@@ -398,15 +453,6 @@ def _occurrence(event: GraphEvent) -> Occurrence:
         location=event.location,
         online_meeting=event.is_online_meeting,
     )
-
-
-def _minutes(occurrence: Occurrence) -> int | None:
-    """The duration in minutes, if a lesson can have it: more than nothing, at most a day and on the quarter hour
-    (rule G) - the bounds ``propose`` applies to a new lesson."""
-    duration = occurrence.ends_at - occurrence.starts_at
-    if duration <= timedelta() or duration > timedelta(days=1) or duration % LESSON_STEP:
-        return None
-    return duration // timedelta(minutes=1)
 
 
 def _starts_within(start: datetime, end: datetime) -> ColumnElement[bool]:

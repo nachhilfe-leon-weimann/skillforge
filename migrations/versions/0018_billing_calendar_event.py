@@ -33,6 +33,7 @@ def upgrade() -> None:
         sa.Column("reason", sa.Text(), nullable=True),
         sa.Column("dismissed", sa.Boolean(), server_default=sa.false(), nullable=False),
         sa.Column("changed", sa.Boolean(), server_default=sa.false(), nullable=False),
+        sa.Column("vanished", sa.Boolean(), server_default=sa.false(), nullable=False),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
