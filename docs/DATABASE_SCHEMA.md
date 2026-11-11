@@ -11,7 +11,7 @@ under `app/core/db/models/` - keep it in sync when models change.
 - `ext` - links from external system identifiers to a `core.party`
 - `auth` - OAuth2 application clients, secrets, scope grants per mode, user accounts (stored roles, sessions, one-time tokens), and the auth audit trail
 - `system` - internal runtime state (background-worker liveness heartbeats)
-- `billing` - lessons, students' rates and payers billed by hand ([billing spec](specs/billing.md))
+- `billing` - lessons, students' rates, payers billed by hand and calendar aliases ([billing spec](specs/billing.md))
 
 ## Shared Columns
 
@@ -304,9 +304,9 @@ created_at/updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 
 ## Billing Schema
 
-Lessons, the rates they are billed at and who pays for them ([billing spec](specs/billing.md)). Every reference to
-a party is `ON DELETE RESTRICT`. Rule G holds in the database: cents per hour are divisible by 4 and minutes by 15, so every
-amount is a whole cent.
+Lessons, the rates they are billed at, who pays for them and the names the lesson calendar uses for students
+([billing spec](specs/billing.md)). Every reference to a party is `ON DELETE RESTRICT`. Rule G holds in the
+database: cents per hour are divisible by 4 and minutes by 15, so every amount is a whole cent.
 
 ```sql
 billing.lesson_status = ('planned', 'held', 'cancelled', 'not_held')
@@ -339,6 +339,13 @@ INDEX (payer_party_id)                -- ix_lesson_payer_party_id
 party_id UUID PRIMARY KEY REFERENCES core.party(id) ON DELETE RESTRICT
 note TEXT NULL
 created_at/updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+
+-- billing.calendar_alias  (a name as written in the lesson calendar, mapped to a student)
+id UUID PRIMARY KEY DEFAULT uuid4
+name_normalized TEXT NOT NULL UNIQUE      -- as the import compares it (normalize_name in calendar_rules.py)
+student_party_id UUID NOT NULL REFERENCES core.party(id) ON DELETE RESTRICT
+created_at/updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+INDEX (student_party_id)                  -- ix_calendar_alias_student_party_id
 ```
 
 `lesson.payer_party_id` is the CRM's payer at the moment the lesson became billable, so a later change of `pays_for`

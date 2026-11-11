@@ -24,6 +24,8 @@ from app.core.db.dependencies import get_db_session
 from app.core.errors import DomainError
 from app.main import app
 from app.services.billing.errors import (
+    CalendarAliasAlreadyExistsError,
+    CalendarAliasNotFoundError,
     LessonAlreadyExistsError,
     LessonNotBillableError,
     LessonNotFoundError,
@@ -41,6 +43,7 @@ ALREADY_EXISTS = "The student already has a lesson at this start"
 NOT_QUARTER_HOUR = "A rate must be at least 0 cents per hour and divisible by 4"
 NOT_BILLABLE = "Only a held or cancelled lesson can be billable"
 ALREADY_LINKED = "The party or the sevDesk contact is already linked"
+ALIAS_EXISTS = "An alias for this calendar name already exists"
 
 
 @dataclass(frozen=True)
@@ -67,6 +70,10 @@ ENDPOINTS = {
     "delete_sevdesk_contact": Endpoint("DELETE", f"/parties/{ID}/sevdesk-contact", "payers.unlink_sevdesk_contact"),
     "put_manual_billing": Endpoint("PUT", f"/parties/{ID}/manual-billing", "payers.put_manual_payer", json={}),
     "delete_manual_billing": Endpoint("DELETE", f"/parties/{ID}/manual-billing", "payers.delete_manual_payer"),
+    "create_calendar_alias": Endpoint(
+        "POST", "/calendar/aliases", "calendar_aliases.create_alias", json={"name": "Student B", "student_id": ID}
+    ),
+    "delete_calendar_alias": Endpoint("DELETE", f"/calendar/aliases/{ID}", "calendar_aliases.delete_alias"),
 }
 
 # (endpoint, raised error, status, detail) - one row per error a route documents.
@@ -87,6 +94,9 @@ EXPECTATIONS: list[Expectation] = [
     ("delete_rate", RateNotFoundError(INTERNAL), 404, "Rate not found"),
     ("resolve_lesson_payer", LessonNotFoundError(INTERNAL), 404, "Lesson not found"),
     ("put_sevdesk_contact", SevdeskContactAlreadyLinkedError(INTERNAL), 409, ALREADY_LINKED),
+    ("create_calendar_alias", UnknownStudentError(INTERNAL), 422, "Unknown student"),
+    ("create_calendar_alias", CalendarAliasAlreadyExistsError(INTERNAL), 409, ALIAS_EXISTS),
+    ("delete_calendar_alias", CalendarAliasNotFoundError(INTERNAL), 404, "Calendar alias not found"),
 ]
 
 # The CRM's errors a billing route answers with (billing spec, "Route map": a party in a path that does not exist),
@@ -107,8 +117,10 @@ CRM_CODES: dict[type[DomainError], str] = {PartyNotFoundError: "party_not_found"
 CATALOG: dict[type[DomainError], tuple[str, int, str, bool]] = {
     LessonNotFoundError: ("lesson_not_found", 404, "Lesson not found", False),
     RateNotFoundError: ("rate_not_found", 404, "Rate not found", False),
+    CalendarAliasNotFoundError: ("calendar_alias_not_found", 404, "Calendar alias not found", False),
     LessonAlreadyExistsError: ("lesson_already_exists", 409, ALREADY_EXISTS, False),
     SevdeskContactAlreadyLinkedError: ("sevdesk_contact_already_linked", 409, ALREADY_LINKED, False),
+    CalendarAliasAlreadyExistsError: ("calendar_alias_already_exists", 409, ALIAS_EXISTS, False),
     UnknownStudentError: ("unknown_student", 422, "Unknown student", False),
     RateNotQuarterHourError: ("rate_not_quarter_hour", 422, NOT_QUARTER_HOUR, False),
     LessonNotBillableError: ("lesson_not_billable", 422, NOT_BILLABLE, False),

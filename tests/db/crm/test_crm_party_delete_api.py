@@ -9,6 +9,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.models import (
+    CalendarAlias,
     ClockodoCustomer,
     ClockodoProject,
     Company,
@@ -98,6 +99,7 @@ BILLING_ROWS = {
         student_party_id=party_id, subject="Mathe", starts_at=datetime(2026, 11, 2, 15, tzinfo=UTC), minutes=60
     ),
     "rate": lambda party_id: Rate(student_party_id=party_id, cents_per_hour=3200, valid_from=date(2026, 11, 1)),
+    "calendar_alias": lambda party_id: CalendarAlias(student_party_id=party_id, name_normalized="student b"),
 }
 
 

@@ -660,3 +660,62 @@ def test_the_payer_revision_is_reversible_and_restricts_both_party_references(mi
 
     _alembic(migration_db_url, "upgrade", _REVISION_0016)
     assert _billing_constraints(migration_db_url) == sorted(_BILLING_CONSTRAINTS_AT_0016)
+
+
+# --- 0017_billing_calendar_alias (billing spec, SF4-2) ---
+
+_REVISION_0017 = "0017_billing_calendar_alias"
+_ALIAS_STUDENT_ID = "66666666-6666-6666-6666-666666666666"
+_BILLING_CONSTRAINTS_AT_0017 = [
+    *_BILLING_CONSTRAINTS_AT_0016,
+    ("calendar_alias", "calendar_alias_name_normalized_key", "UNIQUE (name_normalized)"),
+    (
+        "calendar_alias",
+        "calendar_alias_student_party_id_fkey",
+        "FOREIGN KEY (student_party_id) REFERENCES core.party(id) ON DELETE RESTRICT",
+    ),
+]
+# Two names of one student; a third row repeats a name, a fourth names no party, and the delete of the student is
+# refused by the foreign key's RESTRICT.
+_ALIAS_SEED = f"""
+INSERT INTO core.party (id, type) VALUES ('{_ALIAS_STUDENT_ID}', 'PERSON');
+INSERT INTO billing.calendar_alias (id, name_normalized, student_party_id) VALUES
+    (gen_random_uuid(), 'student b', '{_ALIAS_STUDENT_ID}'),
+    (gen_random_uuid(), 'student b senior', '{_ALIAS_STUDENT_ID}');
+"""
+_ALIAS_REFUSALS = [
+    (
+        f"INSERT INTO billing.calendar_alias (id, name_normalized, student_party_id) "
+        f"VALUES (gen_random_uuid(), 'student b', '{_ALIAS_STUDENT_ID}')",
+        "calendar_alias_name_normalized_key",
+    ),
+    (
+        f"INSERT INTO billing.calendar_alias (id, name_normalized, student_party_id) "
+        f"VALUES (gen_random_uuid(), 'student c', '{uuid.uuid4()}')",
+        "calendar_alias_student_party_id_fkey",
+    ),
+    (f"DELETE FROM core.party WHERE id = '{_ALIAS_STUDENT_ID}'", "calendar_alias_student_party_id_fkey"),
+]
+
+
+def test_the_calendar_alias_revision_is_reversible_and_restricts_its_student(migration_db_url: str) -> None:
+    # `alembic check` compares no foreign key's ON DELETE: pin every definition, and what the schema accepts and
+    # refuses; the downgrade by one leaves the 0016 schema.
+    _alembic(migration_db_url, "upgrade", _REVISION_0017)
+    assert _billing_constraints(migration_db_url) == sorted(_BILLING_CONSTRAINTS_AT_0017)
+    relations = {name for (name,) in asyncio.run(_rows(migration_db_url, _BILLING_RELATIONS))}
+    assert {"calendar_alias", "calendar_alias_pkey", "ix_calendar_alias_student_party_id"} <= relations
+
+    asyncio.run(_run_on_server(migration_db_url, _ALIAS_SEED))
+    assert asyncio.run(_rows(migration_db_url, "SELECT count(*) FROM billing.calendar_alias")) == [(2,)]
+    for statement, constraint in _ALIAS_REFUSALS:
+        assert asyncio.run(_refusing_constraint(migration_db_url, statement)) == constraint
+
+    _alembic(migration_db_url, "downgrade", _REVISION_0016)
+    assert _billing_constraints(migration_db_url) == sorted(_BILLING_CONSTRAINTS_AT_0016)
+    relations = {name for (name,) in asyncio.run(_rows(migration_db_url, _BILLING_RELATIONS))}
+    assert {"lesson", "rate", "manual_payer"} <= relations
+    assert relations.isdisjoint({"calendar_alias", "calendar_alias_pkey", "ix_calendar_alias_student_party_id"})
+
+    _alembic(migration_db_url, "upgrade", _REVISION_0017)
+    assert _billing_constraints(migration_db_url) == sorted(_BILLING_CONSTRAINTS_AT_0017)

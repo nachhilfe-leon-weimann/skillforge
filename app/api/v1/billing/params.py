@@ -25,6 +25,11 @@ PartyId = Annotated[
     Path(description="ID of the party: a person or a company.", examples=["3b8e2c1d-4f5a-4b6c-9d7e-8f9a0b1c2d3e"]),
 ]
 
+AliasId = Annotated[
+    uuid.UUID,
+    Path(description="ID of the calendar alias.", examples=["2a6c8e0f-5b7d-4c9e-8f1a-3b5d7f9e1c2a"]),
+]
+
 ValidFrom = Annotated[
     date,
     Path(description="The day the rate takes effect; it holds until the next rate's day.", examples=["2026-09-01"]),

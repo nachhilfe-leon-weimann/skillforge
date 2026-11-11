@@ -69,6 +69,9 @@ def test_the_billing_endpoints_carry_no_boilerplate():
     endpoints = [endpoint.name for module in modules for endpoint in _endpoints(ast.parse(module.read_text()))]
 
     assert endpoints == [
+        "list_calendar_aliases",
+        "create_calendar_alias",
+        "delete_calendar_alias",
         "list_lessons",
         "create_lesson",
         "get_lesson",

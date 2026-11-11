@@ -12,7 +12,8 @@ from pydantic import AfterValidator, AwareDatetime, Field, StringConstraints
 from pydantic.experimental.missing_sentinel import MISSING
 
 from app.api.v1.common import ApiModel
-from app.core.db.models import Lesson, LessonStatus, ManualPayer, Rate, SevdeskContact
+from app.core.db.models import CalendarAlias, Lesson, LessonStatus, ManualPayer, Rate, SevdeskContact
+from app.services.billing.calendar_rules import normalize_name
 from app.services.billing.payers import StudentPayer
 from app.services.crm.inputs import require_storable_text
 
@@ -36,6 +37,13 @@ def _in_utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
+def _names_something(value: str) -> str:
+    """A calendar name must keep something once normalised; the error repeats no part of it."""
+    if not normalize_name(value):
+        raise ValueError("Value must hold more than hyphens, underscores and spaces")
+    return value
+
+
 # Plain assignments inline the constraints at the field; a PEP 695 alias would become its own schema.
 SubjectLabel = Annotated[
     str,
@@ -51,6 +59,13 @@ Note = Annotated[
 StartsAt = Annotated[AwareDatetime, AfterValidator(_in_utc), Field(examples=["2026-11-02T16:00:00+01:00"])]
 Minutes = Annotated[int, Field(gt=0, le=MAX_LESSON_MINUTES, multiple_of=15, examples=[60])]
 CentsPerHour = Annotated[int, Field(ge=0, le=MAX_CENTS_PER_HOUR, examples=[3000])]
+CalendarName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
+    AfterValidator(require_storable_text),
+    AfterValidator(_names_something),
+    Field(examples=["Erika Mustermann"]),
+]
 # A sevDesk id is a positive integer sent as a string; it is stored as given and checked against nothing. Only its
 # canonical form passes - no leading zero - so one contact cannot be linked to two parties as "4711" and "04711".
 SevdeskContactId = Annotated[
@@ -285,3 +300,36 @@ class ManualBillingResponse(ApiModel):
     @classmethod
     def from_model(cls, payer: ManualPayer) -> Self:
         return cls(party_id=payer.party_id, note=payer.note, created_at=payer.created_at, updated_at=payer.updated_at)
+
+
+class CalendarAliasCreateRequest(ApiModel):
+    """Body of `POST /calendar/aliases`: a name as written in the lesson calendar, and the student it means."""
+
+    name: CalendarName
+    """The name after ` mit ` in a calendar title. It is stored normalised - case, umlauts, hyphens and spaces do not
+    count - and matches every spelling that normalises alike."""
+    student_id: uuid.UUID
+    """ID of a party holding the student role."""
+
+
+class CalendarAliasResponse(ApiModel):
+    """A calendar name mapped to a student: the import assigns an occurrence with this name to the student."""
+
+    id: uuid.UUID
+    """ID of the alias."""
+    name_normalized: str
+    """The name as the import compares it: case-folded, `ä ö ü ß` as `ae oe ue ss`, hyphens and underscores as
+    spaces, single spaces."""
+    student_id: uuid.UUID
+    """ID of the student's party."""
+    created_at: datetime
+    """When the alias was stored."""
+
+    @classmethod
+    def from_model(cls, alias: CalendarAlias) -> Self:
+        return cls(
+            id=alias.id,
+            name_normalized=alias.name_normalized,
+            student_id=alias.student_party_id,
+            created_at=alias.created_at,
+        )
