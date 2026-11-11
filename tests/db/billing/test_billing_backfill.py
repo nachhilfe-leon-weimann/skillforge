@@ -7,6 +7,7 @@ run on the session as it is - so a write of a dry run stays visible to the snaps
 race tests use the real `Database` on a database of their own, with two real transactions.
 """
 
+import asyncio
 import re
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
@@ -18,7 +19,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from sqlalchemy import event, insert, make_url, select, text
+from sqlalchemy import event, make_url, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, create_async_engine
 
@@ -30,7 +31,8 @@ from app.core.db.models.base import Base
 from app.core.db.models.schemata import get_schemata
 from app.services.billing import payers, rates
 from app.services.billing.errors import SevdeskContactAlreadyLinkedError
-from app.services.crm import companies, persons, relations
+from app.services.crm import companies, parties, persons, relations, roles
+from app.services.crm.errors import PartyInUseError
 from app.services.crm.inputs import StudentRoleData
 from tests.db.billing.test_seed_demo import _snapshot
 
@@ -43,6 +45,7 @@ OTHER_CONTACT = "4242424202"
 THIRD_CONTACT = "4242424203"
 CENTS = 3132
 DAY = date(2031, 7, 19)
+DATA_CHANGED = "billing-backfill failed, nothing written: the data changed during the run; run it again"
 DRY_RUN = "dry run: nothing written; pass --apply to write"
 REFUSED = re.compile(r"^billing-backfill refused: \d+ problems; nothing written$")
 # Every line the command may print: counts, line numbers and reason codes.
@@ -521,27 +524,80 @@ async def own_database(db_url: str) -> AsyncGenerator[Database]:
         await admin.dispose()
 
 
-async def test_a_rate_written_between_check_and_write_makes_the_apply_write_nothing(
-    own_database: Database, monkeypatch, tmp_path: Path
+@dataclass(frozen=True)
+class RaceWorld:
+    """Committed in a database of its own: student S; P, the file's payer; Q and R, two other persons."""
+
+    student: uuid.UUID
+    payer: uuid.UUID
+    other: uuid.UUID
+    third: uuid.UUID
+
+
+async def _second_payer_committed(session: AsyncSession, world: RaceWorld) -> None:
+    await relations.put_relation(session, world.other, PartyRelationType.PAYS_FOR, world.student)
+
+
+async def _rate_committed(session: AsyncSession, world: RaceWorld) -> None:
+    await rates.put_rate(session, world.student, DAY, cents_per_hour=2800)
+
+
+async def _files_contact_linked_to_another_party(session: AsyncSession, world: RaceWorld) -> None:
+    await payers.link_sevdesk_contact(session, world.third, CONTACT)
+
+
+async def _another_contact_linked_to_the_payer(session: AsyncSession, world: RaceWorld) -> None:
+    await payers.link_sevdesk_contact(session, world.payer, OTHER_CONTACT)
+
+
+async def _manual_mark_committed(session: AsyncSession, world: RaceWorld) -> None:
+    await payers.put_manual_payer(session, world.payer, note="Marked through the API")
+
+
+async def _student_role_removed(session: AsyncSession, world: RaceWorld) -> None:
+    await roles.remove_student_role(session, world.student)
+
+
+async def _payer_deleted(session: AsyncSession, world: RaceWorld) -> None:
+    await parties.delete_party(session, world.payer)
+
+
+@pytest.mark.parametrize(
+    "between",
+    [
+        _second_payer_committed,
+        _rate_committed,
+        _files_contact_linked_to_another_party,
+        _another_contact_linked_to_the_payer,
+        _manual_mark_committed,
+        _student_role_removed,
+        _payer_deleted,
+    ],
+)
+async def test_a_write_committed_between_check_and_write_makes_the_apply_write_nothing(
+    own_database: Database, monkeypatch, tmp_path: Path, between: Callable[[AsyncSession, RaceWorld], Awaitable[None]]
 ):
-    """Another transaction commits a rate for the file's day after the check, and before the write: at
-    `SERIALIZABLE` the upsert meets a row its snapshot does not see and the whole apply fails - the other rate is not
-    overwritten, and the file's other facts are not written either. The other writer inserts the row directly: the
-    rate service would first wait for the student the check holds (`require_student`) and so never race."""
+    """Another transaction commits a write of the API's services after the check, and before the write. Nothing waits
+    for the other (billing writes hold their parties `FOR KEY SHARE`), so the apply meets a row its snapshot does not
+    see - a key its upsert conflicts with, a party row `saved` or a delete changed - and at `SERIALIZABLE` fails as a
+    whole: the database stays exactly as the other transaction left it."""
     async with own_database.session() as setup:
-        parent = await _person(setup, "A", student=False)
-        student = await _person(setup, "B")
-    cells: dict[str, object] = {"student_party_id": student, "payer_party_id": parent, "sevdesk_contact_id": CONTACT}
+        world = RaceWorld(
+            await _person(setup, "B"), *[await _person(setup, name, student=False) for name in ("A", "Q", "R")]
+        )
+    cells: dict[str, object] = {"student_party_id": world.student, "payer_party_id": world.payer}
+    cells |= {"sevdesk_contact_id": CONTACT, "manual_billing": "true"}
     cells |= {"rate_cents_per_hour": CENTS, "rate_valid_from": DAY}
     path = tmp_path / "mapping.csv"
     path.write_text(f"{','.join(COLUMNS)}\n{','.join(str(cells.get(column, '')) for column in COLUMNS)}\n")
     write_plan = billing_backfill.write_plan
+    after_the_other: list[dict[str, list[tuple[Any, ...]]]] = []
 
     async def write_after_a_concurrent_commit(session: AsyncSession, plan: Any) -> None:
         async with own_database.session() as elsewhere:
-            await elsewhere.execute(
-                insert(Rate).values(id=uuid.uuid4(), student_party_id=student, valid_from=DAY, cents_per_hour=2800)
-            )
+            await between(elsewhere, world)
+        async with own_database.session(write=False) as look:
+            after_the_other.append(await _snapshot(look))
         await write_plan(session, plan)
 
     url = own_database.engine.url.render_as_string(hide_password=False)
@@ -551,11 +607,39 @@ async def test_a_rate_written_between_check_and_write_makes_the_apply_write_noth
     with pytest.raises(SystemExit) as failed:
         await billing_backfill.billing_backfill(str(path), apply=True)
 
-    assert (
-        failed.value.code == "billing-backfill failed, nothing written: the data changed during the run; run it again"
-    )
-    async with own_database.session(write=False) as check:
-        stored_rates = list(await check.execute(select(Rate.student_party_id, Rate.cents_per_hour)))
-        relations_written = list(await check.scalars(select(PartyRelation.from_party_id)))
-        contacts = list(await check.scalars(select(SevdeskContact.sevdesk_id)))
-    assert (stored_rates, relations_written, contacts) == ([(student, 2800)], [], [])
+    assert failed.value.code == DATA_CHANGED
+    async with own_database.session(write=False) as look:
+        assert await _snapshot(look) == after_the_other[0]
+
+
+async def test_a_delete_of_a_checked_student_waits_for_the_apply(own_database: Database, monkeypatch, tmp_path: Path):
+    """The check holds every student it read (`require_student`, `FOR KEY SHARE`), and `delete_party` takes
+    `FOR UPDATE`: a delete in between waits until the apply committed, then finds the rate and refuses."""
+    async with own_database.session() as setup:
+        student = await _person(setup, "B")
+    path = tmp_path / "mapping.csv"
+    cells: dict[str, object] = {"student_party_id": student, "rate_cents_per_hour": CENTS, "rate_valid_from": DAY}
+    path.write_text(f"{','.join(COLUMNS)}\n{','.join(str(cells.get(column, '')) for column in COLUMNS)}\n")
+    write_plan = billing_backfill.write_plan
+    deletes: list[asyncio.Task[None]] = []
+
+    async def delete_student() -> None:
+        async with own_database.session() as elsewhere:
+            await parties.delete_party(elsewhere, student)
+
+    async def write_while_a_delete_waits(session: AsyncSession, plan: Any) -> None:
+        deletes.append(asyncio.create_task(delete_student()))
+        await asyncio.sleep(0.5)
+        assert not deletes[0].done(), "the delete waits for the check's lock"
+        await write_plan(session, plan)
+
+    url = own_database.engine.url.render_as_string(hide_password=False)
+    monkeypatch.setattr(billing_backfill, "get_settings", lambda: SimpleNamespace(db=SimpleNamespace(url=url)))
+    monkeypatch.setattr(billing_backfill, "write_plan", write_while_a_delete_waits)
+
+    await billing_backfill.billing_backfill(str(path), apply=True)
+
+    with pytest.raises(PartyInUseError):
+        await deletes[0]
+    async with own_database.session(write=False) as look:
+        assert list(await look.execute(select(Rate.student_party_id, Rate.cents_per_hour))) == [(student, CENTS)]
