@@ -14,7 +14,7 @@ from pydantic.experimental.missing_sentinel import MISSING
 from app.api.v1.common import ApiModel
 from app.core.db.models import CalendarAlias, Lesson, LessonStatus, ManualPayer, Rate, SevdeskContact
 from app.services.billing.calendar import ImportCounts, ListedEvent
-from app.services.billing.calendar_rules import NoLessonReason, normalize_name
+from app.services.billing.calendar_rules import NoLessonReason, is_on_the_minute, normalize_name
 from app.services.billing.payers import StudentPayer
 from app.services.crm.inputs import require_storable_text
 
@@ -43,7 +43,7 @@ def _in_utc(value: datetime) -> datetime:
 
 def _whole_minute(value: datetime) -> datetime:
     """A start on the minute: one with seconds would escape `uq_lesson_student_start` - `16:00:30` beside `16:00`."""
-    if value.second or value.microsecond:
+    if not is_on_the_minute(value):
         raise ValueError("Value must be a whole minute, without seconds or a fraction of a second")
     return value
 
