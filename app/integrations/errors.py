@@ -8,12 +8,21 @@ header, a token or a body; a remote error text is kept in ``remote_message``, ne
 
 
 class IntegrationError(Exception):
-    """Base class of every integration failure; ``status`` is the HTTP status, if a response came back."""
+    """Base class of every integration failure; ``status`` is the HTTP status, if a response came back, and
+    ``retry_after`` that response's ``Retry-After`` header as sent - the caller decides whether to repeat a read."""
 
-    def __init__(self, message: str, *, status: int | None = None, remote_message: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int | None = None,
+        remote_message: str | None = None,
+        retry_after: str | None = None,
+    ) -> None:
         super().__init__(message if status is None else f"{message} (HTTP {status})")
         self.status = status
         self.remote_message = remote_message
+        self.retry_after = retry_after
 
 
 class IntegrationRefusedError(IntegrationError):

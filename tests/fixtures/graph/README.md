@@ -28,10 +28,12 @@ How to read them:
 - G4's phone number has eight digits only to stay under the fixture scan's rule; it sets no length rule.
 - G7's request body is the form the token endpoint takes, recorded as a mapping; its token and assertion are
   synthetic strings a log test can search for.
+- `owner` on G1's calendars was not in the run: it was added for the identity check of SF4-1 in Graph's documented
+  `emailAddress` shape, with a synthetic name and address.
 
 | File | Fixture | Shows |
 |---|---|---|
-| `g1-calendars.json` | G1 | The mailbox's calendars with `id` and `name`, to find the lesson calendar by name (the recorder's `find_calendar_id` ran this read). |
+| `g1-calendars.json` | G1 | The mailbox's calendars with `id`, `name` and `owner`: the identity read, which finds the lesson calendar by name and compares its owner with the mailbox. The recorder's `find_calendar_id` read `id,name` only; `owner` follows Graph's documented `emailAddress` shape (`name`, `address`). |
 | `g1-calendar-view-page-1.json`, `g1-calendar-view-page-2.json` | G1 | A `calendarView` read with `$select` (the recorder's `EVENT_FIELDS`) in two pages: the first carries `@odata.nextLink`, the second none. |
 | `g2-series-first-read.json`, `g2-series-second-read.json` | G2 | The same range read twice; in between the occurrence of 2026-12-01 moved to 2026-12-03 and became an `exception`. `id`, `iCalUId` and `seriesMasterId` stay; `originalStart` keeps the planned time (Q16). |
 | `g3-late-cancellation.json` | G3 | A single lesson and an occurrence with the category `Abgesagt`; the occurrence became an `exception` by it. |

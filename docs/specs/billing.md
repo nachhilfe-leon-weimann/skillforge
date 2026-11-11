@@ -1176,16 +1176,20 @@ write (`invoices.py`)._
   login host and the Graph host; a token for the app with this location's certificate, read from the PEM settings
   ([M5](#for-the-maintainer)); `calendarView` of the configured calendar with the fields of G1, paged by
   `@odata.nextLink`, times in UTC. The token request is a POST that changes nothing; the client declares it a read.
-  The identity check: before any other read the client reads the configured mailbox and resolves the configured
-  calendar in it; if the mailbox answers with another address, or the calendar is missing, it refuses to work
-  (`IdentityCheckError`).
+  The identity check: before any calendar read the client reads the mailbox's calendars
+  (`GET /users/{mailbox}/calendars?$select=id,name,owner`) - the app holds Exchange RBAC for one mailbox and no
+  directory permission, so it cannot read the mailbox itself - and finds the one named `GRAPH__CALENDAR_NAME`; if
+  that calendar is missing, has no owner or its `owner.address` is not `GRAPH__MAILBOX`, or the read fails, it
+  refuses to work (`IdentityCheckError`).
+- _Tests that change:_ `CORE_TO_INTEGRATIONS` in `tests/integrations/test_integrations_architecture.py` gains
+  `app.integrations.graph.config`, so that `Settings` can nest `GraphSettings`.
 - _Acceptance criteria:_
-  - [ ] Every test runs on fixtures G1 to G7 through a mocked transport.
-  - [ ] Paging reads to the end; a `429` is repeated as `Retry-After` says, a `403` is not.
-  - [ ] Only the fields of G1 are requested.
-  - [ ] No calendar read leaves before the identity check passed; a mailbox with another address and a missing
-        calendar each fail closed.
-  - [ ] Certificate, key and token appear in no log line or exception.
+  - [x] Every test runs on fixtures G1 to G7 through a mocked transport; the `429` answer is built in its test.
+  - [x] Paging reads to the end; a `429` is repeated as `Retry-After` says, a `403` is not.
+  - [x] Only the fields of G1 are requested.
+  - [x] No calendar read leaves before the identity check passed; a calendar owned by another address and a
+        missing calendar each fail closed.
+  - [x] Certificate, key and token appear in no log line or exception.
 
 **SF4-2 - Title rules, matching, aliases.**
 

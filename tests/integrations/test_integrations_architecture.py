@@ -27,7 +27,9 @@ NETWORK_MODULES = (
 )
 NETWORK_CALLS = frozenset({"open_connection", "create_connection", "sock_connect", "__import__"})
 INTEGRATIONS_ALLOWED = ("app.core", "app.integrations")
-CORE_TO_INTEGRATIONS: dict[str, tuple[str, ...]] = {"app/core/config.py": ("app.integrations.sevdesk.config",)}
+CORE_TO_INTEGRATIONS: dict[str, tuple[str, ...]] = {
+    "app/core/config.py": ("app.integrations.sevdesk.config", "app.integrations.graph.config")
+}
 """The one direction the layering is crossed: a module of ``app/core`` that reads an integration's settings."""
 
 
