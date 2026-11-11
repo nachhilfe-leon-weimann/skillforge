@@ -1,9 +1,11 @@
 """`just seed-demo`: synthetic families, students, payers, rates and lessons for local screens (billing spec, SF2-3).
 
-It writes only to a local database: the host of the configured URL must be `localhost`, a loopback address or a
-single-label host name such as a compose service. Anything else is refused before a connection opens. It writes
-through the CRM and billing services, and running it again changes no row. It prints the class of the host and
-counts - never the URL, a password or another setting.
+It writes only to a local database: the configured URL must use the app's driver (`postgresql+asyncpg`), carry no
+query parameters, and name `localhost`, a loopback address or a single-label host name such as a compose service.
+Anything else is refused before a connection opens. It writes through the CRM and billing services. Its lessons fall
+in the current Berlin month and the one before: run again in the same month it changes no row, in a later month it
+adds that month's lessons. It prints the class of the host and counts - never the URL, a password or another
+setting.
 """
 
 import argparse
@@ -29,6 +31,8 @@ from app.services.billing.errors import LessonAlreadyExistsError
 from app.services.crm import persons, relations
 from app.services.crm.inputs import NewContactInfo, StudentRoleData, normalize_contact_value
 
+# The driver the app connects with; it takes the host from the URL alone.
+APP_DRIVER = "postgresql+asyncpg"
 # One DNS label: what a compose service or a container is called. A dot makes a name that DNS resolves elsewhere.
 _SINGLE_LABEL = re.compile(r"[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?", re.IGNORECASE | re.ASCII)
 # A label the C resolver reads as an IPv4 address: decimal or octal digits (`2130706433`), or hex (`0x7f000001`).
@@ -52,12 +56,16 @@ def local_host_class(url: str) -> HostClass:
 
     A loopback address (IPv4 or IPv6), ``localhost`` and a single-label name pass. Refused: a name with a dot, an
     address that is not loopback, a label the resolver would read as an address (``2130706433``), no host, several
-    hosts, a URL that cannot be parsed - and any query parameter, since one (``host``) can name another host.
+    hosts, a URL that cannot be parsed, any driver but the app's (another one may read the host from its environment,
+    as libpq does with ``PGHOSTADDR`` and ``PGSERVICE``) - and any query parameter, since one (``host``) can name
+    another host.
     """
     try:
         parsed = make_url(url)
     except ArgumentError, ValueError:
         raise NotLocalError("the database URL cannot be parsed") from None
+    if parsed.drivername != APP_DRIVER:
+        raise NotLocalError(f"the database URL does not use the driver {APP_DRIVER}")
     if parsed.query:
         raise NotLocalError("the database URL carries query parameters")
     host = parsed.host

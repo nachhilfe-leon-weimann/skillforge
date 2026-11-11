@@ -129,8 +129,9 @@ bootstrap-admin *args:
 
 # --- Demo data ---
 
-# Write synthetic families, students, payers, rates and lessons for local screens; run again, it changes nothing.
-# It refuses any database host but localhost, a loopback address or a single-label name (a compose service).
+# Write synthetic families, students, payers, rates and lessons for local screens; run again in the same month, it
+# changes nothing (a later month adds that month's lessons). It refuses any database host but localhost, a loopback
+# address or a single-label name (a compose service), any driver but postgresql+asyncpg and any query parameter.
 seed-demo:
     uv run python -m app.cli.seed_demo
 

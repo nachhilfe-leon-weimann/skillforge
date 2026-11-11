@@ -35,7 +35,8 @@ Everything runs through [`just`](justfile), which wraps `uv`:
 - `just bootstrap-admin --party-id <uuid> --email <address>` - ensure an enabled admin account for a person party
   and print its invitation (or, once it has a password, a reset token): the break-glass command.
 - `just seed-demo` - write synthetic families, students, rates and lessons for local screens; it refuses any
-  database host but `localhost`, a loopback address or a single-label name, and needs a local database.
+  database host but `localhost`, a loopback address or a single-label name, and a URL with query parameters; it
+  needs a local database.
 - `just sevdesk-doctor trial|live [--discover]` - check the configured sevDesk ids, read-only;
   `just contract-sevdesk` - the contract tests against the sevDesk trial; `just sevdesk-spike [--step ...]` - the
   spike against the trial (it writes there). All three call sevDesk.

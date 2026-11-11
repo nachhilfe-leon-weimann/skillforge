@@ -9,7 +9,7 @@ from httpx import AsyncClient
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db.models import Rate
+from app.core.db.models import Lesson, Rate
 from app.services.crm import persons, roles
 
 pytestmark = pytest.mark.db
@@ -58,16 +58,23 @@ async def test_put_sets_a_rate_from_its_day_on(client: AsyncClient, student: uui
 
 
 async def test_setting_a_rate_twice_for_the_same_day_changes_nothing(
-    client: AsyncClient, session: AsyncSession, student: uuid.UUID
+    client: AsyncClient, session: AsyncSession, student: uuid.UUID, new_student
 ):
+    """A sibling's rate on the same day, set first, is neither the answer nor touched."""
+    sibling = await new_student()
+    await _put(client, sibling, cents_per_hour=2800)
+    sibling_version = await _row_version(session, sibling)
+
     first = await _put(client, student, note="a note")
     version = await _row_version(session, student)
     second = await _put(client, student, note="a note")
 
     assert second.status_code == 200
     assert second.json() == first.json()
+    assert (second.json()["student_id"], second.json()["cents_per_hour"]) == (str(student), 3200)
     assert await _row_version(session, student) == version
-    assert await _count(session) == 1
+    assert await _row_version(session, sibling) == sibling_version
+    assert await _count(session) == 2
 
 
 async def test_put_on_a_day_already_set_replaces_amount_and_note(
@@ -102,6 +109,40 @@ async def test_a_rate_that_breaks_rule_g_is_rate_not_quarter_hour(
     assert await _count(session) == 0
 
 
+@pytest.mark.parametrize("cents_per_hour", [0, 4, 2996, 3204])
+async def test_a_quarter_hour_rate_is_accepted_and_stored(
+    client: AsyncClient, session: AsyncSession, student: uuid.UUID, cents_per_hour: int
+):
+    """Rule G from the accepting side: divisible by 4 is enough, whatever the hundreds say."""
+    response = await _put(client, student, cents_per_hour=cents_per_hour)
+
+    assert response.status_code == 200
+    assert response.json()["cents_per_hour"] == cents_per_hour
+    assert await session.scalar(select(Rate.cents_per_hour).where(Rate.student_party_id == student)) == cents_per_hour
+
+
+@pytest.mark.parametrize("cents_per_hour", [4, 2996, 3204])
+async def test_a_quarter_hour_rate_is_accepted_as_a_lessons_own_rate(
+    client: AsyncClient, session: AsyncSession, student: uuid.UUID, cents_per_hour: int
+):
+    """The same rule G (`require_quarter_hour_rate`) serves a lesson's own rate (PD3), on add and on change."""
+    lesson = {"student_id": str(student), "subject": "Mathe", "minutes": 60}
+    added = await client.post(
+        "/lessons", json={**lesson, "starts_at": "2026-11-02T16:00:00+01:00", "rate_cents_per_hour": cents_per_hour}
+    )
+    other = (await client.post("/lessons", json={**lesson, "starts_at": "2026-11-03T16:00:00+01:00"})).json()
+    patched = await client.patch(f"/lessons/{other['id']}", json={"rate_cents_per_hour": cents_per_hour})
+
+    assert (added.status_code, added.json()["rate_cents_per_hour"]) == (201, cents_per_hour)
+    assert (patched.status_code, patched.json()["rate_cents_per_hour"]) == (200, cents_per_hour)
+    stored = await session.scalars(
+        select(Lesson.rate_cents_per_hour)
+        .where(Lesson.student_party_id == student)
+        .execution_options(populate_existing=True)
+    )
+    assert list(stored) == [cents_per_hour, cents_per_hour]
+
+
 async def test_a_rate_of_zero_is_a_quarter_hour_rate_and_a_negative_one_is_no_rate(
     client: AsyncClient, student: uuid.UUID
 ):
@@ -130,7 +171,12 @@ async def test_the_list_holds_the_students_rates_newest_day_first(client: AsyncC
     assert (page["total"], page["limit"], page["offset"]) == (3, 2, 0)
 
 
-async def test_delete_removes_the_rate_of_that_day_only(client: AsyncClient, session: AsyncSession, student: uuid.UUID):
+async def test_delete_removes_the_rate_of_that_day_only(
+    client: AsyncClient, session: AsyncSession, student: uuid.UUID, new_student
+):
+    """Of that student only: a sibling's rate on the same day keeps the sibling's price."""
+    sibling = await new_student()
+    await _put(client, sibling, cents_per_hour=2800)
     await _put(client, student, "2026-01-01")
     await _put(client, student)
 
@@ -141,7 +187,10 @@ async def test_delete_removes_the_rate_of_that_day_only(client: AsyncClient, ses
     assert again.status_code == 404
     assert _error(again) == "rate_not_found"
     assert [rate["valid_from"] for rate in (await client.get(_rates(student))).json()["items"]] == ["2026-01-01"]
-    assert await _count(session) == 1
+    assert [
+        (rate["valid_from"], rate["cents_per_hour"]) for rate in (await client.get(_rates(sibling))).json()["items"]
+    ] == [(DAY, 2800)]
+    assert await _count(session) == 2
 
 
 @pytest.mark.parametrize(

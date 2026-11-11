@@ -206,8 +206,10 @@ writes `billing:write`.
   CRM's `party_not_found`, one named in a body `unknown_student`.
 - **Demo data.** `just seed-demo` ([`app/cli/seed_demo.py`](../app/cli/seed_demo.py)) writes a synthetic family
   with two siblings at different rates, a student who pays for themselves, and lessons in every status, through the
-  CRM and billing services; a second run changes no row. It checks the configured database URL before it connects
-  (`local_host_class`): only `localhost`, a loopback address or a single-label host name (a compose service) pass.
+  CRM and billing services. The lessons fall in the current Berlin month and the one before: a second run in the
+  same month changes no row, a run in a later month adds that month's lessons. It checks the configured database URL
+  before it connects (`local_host_class`): only `postgresql+asyncpg` without query parameters, and only `localhost`,
+  a loopback address or a single-label host name (a compose service) pass.
 - **Errors.** The catalog is closed (the spec's "Error catalog"); its classes live in `app/services/billing/errors.py`
   and are pinned per route by `tests/api/test_billing_error_contract.py`.
 

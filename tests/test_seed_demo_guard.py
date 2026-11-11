@@ -77,6 +77,16 @@ def test_a_url_that_cannot_be_parsed_is_refused(url: str):
         local_host_class(url)
 
 
+@pytest.mark.parametrize(
+    "scheme",
+    ["postgresql", "postgres", "postgresql+psycopg", "postgresql+psycopg2", "mysql+aiomysql", "sqlite+aiosqlite"],
+)
+def test_another_driver_than_the_apps_is_refused(scheme: str):
+    """A libpq driver reads `PGHOSTADDR` and `PGSERVICE` from the environment, past a `localhost` in the URL."""
+    with pytest.raises(NotLocalError, match=r"^the database URL does not use the driver postgresql\+asyncpg$"):
+        local_host_class(f"{scheme}://demo:{PASSWORD}@localhost:5432/skillforge")
+
+
 @pytest.mark.parametrize("query", ["?host=db.example.org", "?ssl=disable"])
 def test_a_url_with_query_parameters_is_refused(query: str):
     """The driver takes `host` from the query over the one before the path."""
