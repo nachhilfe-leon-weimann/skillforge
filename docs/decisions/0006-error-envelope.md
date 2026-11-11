@@ -1,6 +1,6 @@
 # ADR 0006 - One error envelope for every non-2xx response
 
-Status: Accepted, 2026-09
+Status: Accepted, 2026-09; amended by [0010](0010-outbound-integrations.md) (point 10)
 
 ## Context
 

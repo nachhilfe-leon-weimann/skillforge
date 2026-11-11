@@ -1,9 +1,7 @@
 # ADR 0010 - SkillForge calls third-party systems itself, through one guarded transport
 
-Status: Proposed, 2026-11. It becomes `Accepted` when [`billing.md`](../specs/billing.md) is frozen (its slice
-SP-SD): the Exchange restriction to one mailbox ran on the tenant (SP-CAL), the check of the remote account's
-identity is not verified on the real system yet (SP-SD), and the body of an accepted record never changes. Once
-accepted it amends [0006](0006-error-envelope.md) (point 10); 0006's status line changes then, not before.
+Status: Accepted, 2026-11, with the freeze of [`billing.md`](../specs/billing.md) (SP-SD). Amends
+[0006](0006-error-envelope.md) (point 10).
 
 ## Context
 
@@ -38,8 +36,9 @@ call leaves through one guarded transport.**
    write is committed before the call, the outcome is stored in a second transaction. An outcome is _succeeded_,
    _failed_ or _unknown_. _Failed_ needs proof that nothing was created: the system refused the request, or
    SkillForge never sent it. Everything unproven - no answer, an answer that cannot be read, an error that does
-   not say what happened - is _unknown_. Unknown is a state of its own: a reconcile - a read that looks for the
-   object by a reference SkillForge wrote into it - resolves it to one of the other two.
+   not say what happened - is _unknown_. Unknown is a state of its own: a reconcile - a read that finds the
+   object again by what SkillForge sent - resolves it to one of the other two, or leaves it unknown while the
+   answer is ambiguous.
 3. **A write is never retried** - not by the client, not by the transport, not by a worker. A read may be repeated,
    and a failed read never changes stored money or state.
 4. **No job queue, no outbox, no background sync** - in line with ADR 0009. A call happens in the request, or the
