@@ -52,7 +52,7 @@ def test_the_variables_are_read_under_their_prefix(clean_env, credential: Creden
     assert (graph.mailbox, graph.calendar_name) == (MAILBOX, CALENDAR_NAME)
     assert graph.private_key_pem is not None and graph.private_key_pem.get_secret_value() == credential.key_setting
     for text in (repr(graph), str(graph)):
-        for hidden in (credential.key_setting, credential.certificate_setting, MAILBOX, CALENDAR_NAME):
+        for hidden in (credential.key_setting, credential.certificate_setting, TENANT_ID, MAILBOX, CALENDAR_NAME):
             assert hidden not in text
 
 

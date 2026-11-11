@@ -27,6 +27,7 @@ from tests.integrations.graph.fake_graph import (
     FakeGraph,
     answer,
     calendar_view,
+    exception_texts,
     fixture,
     with_next_link,
 )
@@ -153,6 +154,27 @@ async def test_a_time_outside_utc_is_an_unexpected_response(settings, fake_graph
     with pytest.raises(UnexpectedResponseError, match=r"\['start'\]") as raised:
         await read_window(settings, fake_graph, tokens)
     assert "2026-12-07" not in str(raised.value) and body["value"][0]["subject"] not in str(raised.value)
+
+
+async def test_an_event_that_does_not_parse_repeats_no_title_anywhere_in_the_error(
+    settings, fake_graph: FakeGraph, tokens
+):
+    item = {
+        key: value
+        for key, value in fixture("g4-special-entries")["response"]["body"]["value"][0].items()
+        if key not in {"type", "subject"}
+    }
+    # Last, where a shortened input repr would still show it.
+    item["subject"] = "Mathematik mit Synthetica Nichtvorhanden"
+    fake_graph.on("GET", VIEW_PATH, httpx.Response(200, json={"value": [item]}))
+
+    with pytest.raises(UnexpectedResponseError, match=r"\['type'\]") as raised:
+        await read_window(settings, fake_graph, tokens)
+
+    texts = exception_texts(raised.value)
+    assert len(texts) > 3, "the pydantic error is still chained as context"
+    for text in texts:
+        assert "Synthetica" not in text and "Nichtvorhanden" not in text
 
 
 # --- a 429 is repeated as Retry-After says, a 403 never ---

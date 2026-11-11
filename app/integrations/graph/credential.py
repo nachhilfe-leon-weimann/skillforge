@@ -1,9 +1,10 @@
 """The app's token: a client-credentials grant with a certificate, signed here and sent through the guarded transport.
 
 Microsoft's own library (``msal``) would bring its own HTTP client, past the guarded transport (M5 of
-``docs/specs/billing.md``), so the client assertion is a JWT signed with ``pyjwt[crypto]``: RS256 with this
-location's key, the certificate's SHA-1 thumbprint as ``x5t``. Certificate, key, assertion and token appear in no
-log line, error message or ``repr``.
+``docs/specs/billing.md``), so the client assertion is a JWT signed with ``pyjwt[crypto]`` as Microsoft documents
+it and as MSAL signs it: PS256 with this location's key, the certificate's SHA-256 thumbprint as ``x5t#S256`` (the
+SHA-1 ``x5t`` with RS256 is the deprecated path). ``cryptography`` comes with that extra. Certificate, key,
+assertion and token appear in no log line, error message or ``repr``.
 """
 
 import base64
@@ -27,6 +28,7 @@ from app.integrations.transport import InnerTransport, IntegrationHttp, Reply
 LOGIN_HOST = "login.microsoftonline.com"
 SCOPE = "https://graph.microsoft.com/.default"
 ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+ASSERTION_ALGORITHM = "PS256"
 ASSERTION_LIFETIME_SECONDS = 300
 REFRESH_MARGIN_SECONDS = 300
 """A cached token is used until this long before it expires."""
@@ -42,7 +44,7 @@ class AppCredential:
     tenant_id: str = field(repr=False)
     client_id: str
     thumbprint: str
-    """The certificate's SHA-1 thumbprint, base64url: the ``x5t`` header Microsoft documents."""
+    """The SHA-256 thumbprint of the certificate's DER, base64url without padding: the ``x5t#S256`` header."""
     key: RSAPrivateKey = field(repr=False)
 
     @property
@@ -67,7 +69,7 @@ def load_credential(
         raise IntegrationRefusedError("GRAPH__PRIVATE_KEY_PEM must hold an RSA key")
     if certificate.public_key() != key.public_key():
         raise IntegrationRefusedError("GRAPH__PRIVATE_KEY_PEM does not belong to GRAPH__CERTIFICATE_PEM")
-    thumbprint = base64.urlsafe_b64encode(certificate.fingerprint(hashes.SHA1())).decode().rstrip("=")
+    thumbprint = base64.urlsafe_b64encode(certificate.fingerprint(hashes.SHA256())).decode().rstrip("=")
     return AppCredential(tenant_id=tenant_id, client_id=client_id, thumbprint=thumbprint, key=key)
 
 
@@ -83,11 +85,14 @@ def client_assertion(credential: AppCredential, *, now: float) -> str:
         "nbf": issued,
         "exp": issued + ASSERTION_LIFETIME_SECONDS,
     }
-    return jwt.encode(claims, credential.key, algorithm="RS256", headers={"x5t": credential.thumbprint})
+    return jwt.encode(
+        claims, credential.key, algorithm=ASSERTION_ALGORITHM, headers={"x5t#S256": credential.thumbprint}
+    )
 
 
 class _TokenResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore", frozen=True)
+    # The answer holds the token: no validation error repeats it, whether or not a caller chains the error.
+    model_config = ConfigDict(extra="ignore", frozen=True, hide_input_in_errors=True)
 
     token_type: Literal["Bearer"]
     expires_in: PositiveInt

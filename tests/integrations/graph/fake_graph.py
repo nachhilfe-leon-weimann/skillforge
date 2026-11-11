@@ -6,7 +6,9 @@ the last one stays. The fixtures are synthetic (``tests/fixtures/graph/README.md
 
 import base64
 import datetime as dt
+import hashlib
 import json
+import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache
@@ -103,6 +105,20 @@ class FakeGraph:
         return httpx.MockTransport(self)
 
 
+def exception_texts(error: BaseException) -> list[str]:
+    """Everything an exception can show: its formatted traceback and ``str``/``repr`` of every exception chained to
+    it - as cause or as context, even a context the traceback suppresses (``from None``)."""
+    texts, pending, seen = ["".join(traceback.format_exception(error))], [error], set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        texts.extend((str(current), repr(current)))
+        pending.extend(link for link in (current.__cause__, current.__context__) if link is not None)
+    return texts
+
+
 def form(request: httpx.Request) -> dict[str, str]:
     return dict(httpx.QueryParams(request.content.decode()))
 
@@ -156,4 +172,6 @@ class Credential:
 
     @property
     def thumbprint(self) -> str:
-        return base64.urlsafe_b64encode(self.certificate.fingerprint(hashes.SHA1())).decode().rstrip("=")
+        """``x5t#S256``: the SHA-256 of the certificate's DER, base64url without padding."""
+        der = self.certificate.public_bytes(serialization.Encoding.DER)
+        return base64.urlsafe_b64encode(hashlib.sha256(der).digest()).decode().rstrip("=")

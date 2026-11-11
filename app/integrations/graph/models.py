@@ -13,7 +13,10 @@ from pydantic.alias_generators import to_camel
 
 
 class GraphModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, validate_by_name=True, extra="ignore", frozen=True)
+    # A title holds a name: no validation error repeats an input, whether or not a caller chains the error.
+    model_config = ConfigDict(
+        alias_generator=to_camel, validate_by_name=True, extra="ignore", frozen=True, hide_input_in_errors=True
+    )
 
 
 def _utc(value: object) -> object:

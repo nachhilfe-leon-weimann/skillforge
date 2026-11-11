@@ -6,6 +6,7 @@ import traceback
 import httpx
 import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from pydantic import SecretStr
 
 from app.core.logging import LogFormat, LoggingSettings, LogLevel, configure_logging
@@ -19,7 +20,7 @@ from app.integrations.errors import (
 from app.integrations.graph import credential as graph_credential
 from app.integrations.graph.client import CALENDAR_VIEW_TEMPLATE, CALENDARS_TEMPLATE, GraphClient
 from app.integrations.graph.config import GraphSettings
-from app.integrations.graph.credential import TOKEN_PATH_TEMPLATE, TokenCache
+from app.integrations.graph.credential import TOKEN_PATH_TEMPLATE, TokenCache, load_credential
 from app.integrations.guards import CONTRACT_RUN_ENV
 from tests.integrations.graph.fake_graph import (
     ACCESS_TOKEN,
@@ -35,6 +36,7 @@ from tests.integrations.graph.fake_graph import (
     Credential,
     FakeGraph,
     answer,
+    exception_texts,
     fixture,
     form,
 )
@@ -64,10 +66,10 @@ async def test_the_token_request_is_the_documented_form_with_a_signed_assertion(
         key: value for key, value in TOKEN_REQUEST["body"].items() if key != "client_assertion"
     }
     assertion = sent["client_assertion"]
-    assert jwt.get_unverified_header(assertion) == {"alg": "RS256", "typ": "JWT", "x5t": credential.thumbprint}
-    claims = jwt.decode(
-        assertion, credential.key.public_key(), algorithms=["RS256"], audience=TOKEN_URL, issuer=CLIENT_ID
-    )
+    assert jwt.get_unverified_header(assertion) == {"alg": "PS256", "typ": "JWT", "x5t#S256": credential.thumbprint}
+    public_key = credential.certificate.public_key()
+    assert isinstance(public_key, RSAPublicKey)
+    claims = jwt.decode(assertion, public_key, algorithms=["PS256"], audience=TOKEN_URL, issuer=CLIENT_ID)
     assert claims["sub"] == CLIENT_ID and claims["jti"]
     assert claims["nbf"] <= claims["iat"] < claims["exp"] <= claims["nbf"] + 600
 
@@ -119,6 +121,25 @@ async def test_live_mode_is_refused_under_pytest_even_in_the_contract_run(
     assert fake_graph.requests == []
 
 
+async def test_the_graph_reads_count_as_a_live_account_too(settings, fake_graph: FakeGraph, monkeypatch):
+    """With the token already cached no login client is built: the read client itself must refuse ``live``."""
+    monkeypatch.setenv(CONTRACT_RUN_ENV, "1")
+    tokens = TokenCache()
+    assert settings.certificate_pem is not None and settings.private_key_pem is not None
+    credential = load_credential(
+        tenant_id=str(settings.tenant_id),
+        client_id=str(settings.client_id),
+        certificate_pem=settings.certificate_pem,
+        private_key_pem=settings.private_key_pem,
+    )
+    tokens.put(credential, SecretStr(ACCESS_TOKEN), 3599)
+
+    with pytest.raises(IntegrationRefusedError, match="trial account only"):
+        await connect_and_read(settings.model_copy(update={"mode": IntegrationMode.LIVE}), fake_graph, tokens)
+
+    assert fake_graph.requests == []
+
+
 async def test_a_refused_assertion_is_rejected_and_nothing_else_is_sent(settings, fake_graph: FakeGraph, tokens):
     fake_graph.on("POST", TOKEN_REQUEST["path"], answer("g7-token-error"))
 
@@ -149,6 +170,21 @@ async def test_an_answer_that_is_no_usable_token_is_unexpected(body, settings, f
 
     assert "synthetic" not in str(raised.value)
     assert len(fake_graph.requests) == 1
+
+
+async def test_a_token_answer_that_does_not_parse_repeats_no_token_anywhere_in_the_error(
+    settings, fake_graph: FakeGraph, tokens
+):
+    token = "synthetic-token-that-must-not-leak-0123456789"
+    fake_graph.on("POST", TOKEN_REQUEST["path"], httpx.Response(200, json={"expires_in": 3599, "access_token": token}))
+
+    with pytest.raises(UnexpectedResponseError) as raised:
+        await connect_and_read(settings, fake_graph, tokens)
+
+    texts = exception_texts(raised.value)
+    assert len(texts) > 3, "the pydantic error is still chained as context"
+    for text in texts:
+        assert token not in text and token[-12:] not in text
 
 
 def other_credential() -> Credential:

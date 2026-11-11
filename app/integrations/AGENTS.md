@@ -25,6 +25,8 @@ too. The layer is described in [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.
   patched.
 - **Live calls need the maintainer's go.** `just sevdesk-doctor`, `just contract-sevdesk` (`@pytest.mark.contract`,
   skipped in every other run) and `just sevdesk-spike` (`scripts/sevdesk_spike.py`) reach sevDesk; an agent runs
-  the trial recipes only after the maintainer's go in the session, and `just sevdesk-doctor live` never. Nothing
-  reaches Microsoft Graph but the maintainer's own runs of `scripts/graph/`: `GraphClient` treats the tenant as a
-  `live` account, which no test run - the contract run included - may reach.
+  the trial recipes only after the maintainer's go in the session, and `just sevdesk-doctor live` never. No test,
+  CI job or agent session reaches Microsoft Graph - only the maintainer's runs of `scripts/graph/` and the deployed
+  SkillForge do: `GraphClient` treats the tenant as a `live` account, which no test run, the contract run included,
+  may reach. `read_form` (a POST sent as a read) is the Graph token request's alone
+  (`tests/integrations/test_integrations_read_form.py`).

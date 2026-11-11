@@ -50,7 +50,7 @@ class GraphSettings(CoreSettings):
     mode: Annotated[IntegrationMode, EmptyIsDefault] = IntegrationMode.DRY_RUN
     """As for sevDesk. The client has no write - its token request is declared a read - so both values behave
     alike today."""
-    tenant_id: Annotated[UUID | None, EmptyIsDefault] = None
+    tenant_id: Annotated[UUID | None, EmptyIsDefault] = Field(default=None, repr=False)
     """The Entra tenant of the app ``skillforge``."""
     client_id: Annotated[UUID | None, EmptyIsDefault] = None
     """The application (client) id of the app ``skillforge``."""

@@ -64,6 +64,8 @@ ANSWERS = {
     "a calendar owned by another address": calendars(
         lambda _, c: c["owner"].update(address="someone-else@example.org")
     ),
+    "an owner address that contains the mailbox": calendars(lambda _, c: c["owner"].update(address=f"other-{MAILBOX}")),
+    "an owner address inside the mailbox's": calendars(lambda _, c: c["owner"].update(address=MAILBOX[1:])),
     "a missing calendar": calendars(lambda body, c: body["value"].remove(c)),
     "a renamed calendar": calendars(lambda _, c: c.update(name=f"{CALENDAR_NAME} alt")),
     "two calendars of that name": calendars(

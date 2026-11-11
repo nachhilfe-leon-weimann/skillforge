@@ -1184,7 +1184,9 @@ write (`invoices.py`)._
 - _Tests that change:_ `CORE_TO_INTEGRATIONS` in `tests/integrations/test_integrations_architecture.py` gains
   `app.integrations.graph.config`, so that `Settings` can nest `GraphSettings`.
 - _Acceptance criteria:_
-  - [x] Every test runs on fixtures G1 to G7 through a mocked transport; the `429` answer is built in its test.
+  - [x] Every test runs through a mocked transport: on fixtures G1 to G7, and on an answer built in the test where
+        no fixture holds the case - a `429`, a `5xx`, a body that is no JSON or does not parse, an unusable token,
+        a transport error.
   - [x] Paging reads to the end; a `429` is repeated as `Retry-After` says, a `403` is not.
   - [x] Only the fields of G1 are requested.
   - [x] No calendar read leaves before the identity check passed; a calendar owned by another address and a
