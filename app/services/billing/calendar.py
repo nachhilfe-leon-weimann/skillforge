@@ -7,7 +7,8 @@ invents, moves, duplicates or drops a lesson a person may have looked at.
 
 - An occurrence with a lesson is judged by the rules again at every import. Only while they still give this student
   and this subject, and the lesson is untouched - ``planned``, no note, no own rate, at the start and length of its
-  occurrence as last seen - does it follow a moved, resized or cancelled appointment, and go with a vanished one.
+  occurrence as last seen - does it follow a moved, resized or cancelled appointment. An untouched lesson goes
+  with a vanished appointment, whatever its title said.
 - Flagged: the title names another student or subject - by the rules' answer, or by its name where the rules stop
   before it (a subject only in a lesson title) - at every import, until the lesson, the title or an alias settles
   it; the rules give no lesson; a touched lesson's appointment changed or vanished; a lesson that cannot follow.
