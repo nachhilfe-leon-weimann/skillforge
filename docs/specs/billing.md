@@ -316,8 +316,9 @@ Every column that references a party has its row in `EXTERNAL_LINKS`, and the de
   cancelled first. A lesson with an active prepaid charge can: the charge follows ([Credit accounts](#credit-accounts)).
 - There is no delete route. "Remove" in a screen is `not_held`. Only the calendar import deletes, and only a
   `planned` lesson that was never ticked or charged and whose appointment vanished.
-- A start set by hand is a whole minute: `POST` and `PATCH /lessons` refuse a `starts_at` with seconds or a fraction
-  of a second (`422`), so no lesson set at `16:00:30` stands beside one at `16:00` (`uq_lesson_student_start`).
+- A start set by hand is a whole minute: `POST /lessons` and `PATCH /lessons/{lesson_id}` refuse a `starts_at` with
+  seconds or a fraction of a second (`422`), so no lesson set by hand at `16:00:30` stands beside one at `16:00`
+  (`uq_lesson_student_start`).
 
 ## Calendar import
 
