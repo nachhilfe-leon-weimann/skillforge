@@ -23,7 +23,7 @@ from app.integrations.graph import client as graph_client
 from app.integrations.graph.client import READ_DEADLINE_SECONDS
 from app.integrations.graph.config import GraphSettings
 from app.main import app
-from app.services.billing import calendar
+from app.services.billing import calendar, lessons
 from app.services.billing.errors import CalendarEventNotAssignableError
 from app.services.crm import companies
 from tests.db.billing.calendar_support import (
@@ -502,6 +502,23 @@ async def test_assign_refuses_a_start_off_the_minute_before_it_stores_the_alias(
         )
 
     assert await session.scalar(select(func.count()).select_from(CalendarAlias)) == 0
+
+
+async def test_assign_of_an_occurrence_off_the_minute_that_has_a_lesson_is_calendar_event_already_assigned(
+    api: AsyncClient, fake: FakeGraph, session: AsyncSession, student: uuid.UUID
+):
+    """A lesson at `16:00:30`, as the import stored it before the minute rule: that it has one is the answer."""
+    off = dt.timedelta(seconds=30)
+    event_id = await _waiting_at(api, fake, session, off, off)
+    await lessons.create_lesson(
+        session, student_id=student, subject="Mathe", starts_at=START + off, minutes=60, calendar_event_id=event_id
+    )
+
+    response = await api.post(
+        f"{EVENTS}/{event_id}/assign", json={"student_id": str(student), "subject": "Mathe", "minutes": 60}
+    )
+
+    assert (response.status_code, response.json()["code"]) == (409, "calendar_event_already_assigned")
 
 
 async def test_assign_of_an_occurrence_that_only_ends_off_the_minute_starts_its_lesson_at_the_minute(

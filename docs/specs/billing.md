@@ -351,9 +351,10 @@ What happens to an occurrence, first match wins:
   former student's alias leaves the name `unmatched`. A name that normalises to nothing matches nobody.
 - **Unassigned occurrences** are listed until the maintainer assigns them (a student and a subject, optionally
   stored as an alias) or dismisses them. The assigned lesson starts at the occurrence's start, so one whose start is
-  off the whole minute cannot be assigned (`calendar_event_not_assignable`); its lesson is added by hand at the whole
-  minute. A dismissed occurrence is not proposed again. Nor is an occurrence that could not get its lesson - its
-  student has a lesson at that start already: it is flagged `changed` and waits for the maintainer.
+  off the whole minute cannot be assigned (`calendar_event_not_assignable`): its lesson is added by hand
+  (`POST /lessons`) at the whole minute, and the occurrence dismissed. A dismissed occurrence is not proposed again.
+  Nor is an occurrence that could not get its lesson - its student has a lesson at that start already: it is flagged
+  `changed` and waits for the maintainer.
 - **Idempotent.** An occurrence is upserted by `external_id`; importing the same range twice changes nothing.
 - **A lesson nobody touched follows the calendar** - while the title rules still give that student and subject. A
   lesson is untouched while it is `planned`, carries no note and no own rate, and has the start and length of its
