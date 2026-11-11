@@ -222,7 +222,7 @@ writes `billing:write`.
 - **Party locks.** Every billing write holds each party it names - the student, the payer, the party of a link or
   a mark - with `hold_party` (`locks.py`, `FOR KEY SHARE`) before it writes, so a concurrent party delete either
   makes it wait and find no party (a domain error) or waits for it and answers `party_in_use`, never a 500. The
-  lock blocks nothing else: neither another billing write nor a CRM write on the party.
+  lock blocks nothing else: neither another billing write nor any other CRM write on the party.
 - **Reading the CRM.** Whether a party is a student is read through the CRM's `load_party` (`require_student` in
   `students.py`): a party without the student role is `unknown_student`; a party in a path that does not exist is the
   CRM's `party_not_found`, one named in a body `unknown_student`.

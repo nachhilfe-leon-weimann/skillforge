@@ -372,6 +372,21 @@ async def test_a_contact_linked_to_another_party_is_already_linked(client: Async
     assert await _contacts(session) == [(CONTACT, party)]
 
 
+async def test_a_contact_linked_elsewhere_for_a_party_with_another_contact_is_already_linked(
+    client: AsyncClient, session: AsyncSession
+):
+    party, other = await _parent(session), await _parent(session, "Other")
+    await client.put(f"/parties/{other}/sevdesk-contact", json={"sevdesk_contact_id": CONTACT})
+    await client.put(f"/parties/{party}/sevdesk-contact", json={"sevdesk_contact_id": OTHER_CONTACT})
+
+    # Both keys are taken, each by another link.
+    response = await client.put(f"/parties/{party}/sevdesk-contact", json={"sevdesk_contact_id": CONTACT})
+
+    assert response.status_code == 409
+    assert _error(response) == "sevdesk_contact_already_linked"
+    assert await _contacts(session) == sorted([(CONTACT, other), (OTHER_CONTACT, party)])
+
+
 async def test_a_second_contact_for_one_party_is_already_linked(client: AsyncClient, session: AsyncSession):
     party = await _parent(session)
     url = f"/parties/{party}/sevdesk-contact"

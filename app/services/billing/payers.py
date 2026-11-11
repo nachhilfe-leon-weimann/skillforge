@@ -86,6 +86,11 @@ async def resolve_lesson_payer(session: AsyncSession, lesson_id: uuid.UUID) -> L
     return lesson
 
 
+# Every unique key of `ext.sevdesk_contact`, each one a link's insert can meet; the look after an insert that did
+# nothing covers them all (pinned against the table by a test).
+SEVDESK_CONTACT_KEYS = (SevdeskContact.sevdesk_id, SevdeskContact.party_id)
+
+
 async def link_sevdesk_contact(session: AsyncSession, party_id: uuid.UUID, sevdesk_id: str) -> SevdeskContact:
     """Link the party to its sevDesk contact. Idempotent: the same link again changes nothing.
 
@@ -95,17 +100,16 @@ async def link_sevdesk_contact(session: AsyncSession, party_id: uuid.UUID, sevde
     An insert that did nothing met a committed link (``ON CONFLICT`` waits for one that is not committed yet). When
     the look that follows finds neither this link nor another one in the way, that link's delete committed in
     between - the party lock does not keep an unlink out - and the insert runs again. Every round follows such a
-    committed delete, so the rounds end.
+    committed delete, so the rounds end - as long as the look covers every unique key of the table
+    (``SEVDESK_CONTACT_KEYS``): a conflict on one it missed would look like nothing in the way, round after round.
     """
     await _require_party(session, party_id)
+    wanted = {"sevdesk_id": sevdesk_id, "party_id": party_id}
 
     while True:
         linked = (
             await session.scalars(
-                insert(SevdeskContact)
-                .values(sevdesk_id=sevdesk_id, party_id=party_id)
-                .on_conflict_do_nothing()
-                .returning(SevdeskContact),
+                insert(SevdeskContact).values(**wanted).on_conflict_do_nothing().returning(SevdeskContact),
                 execution_options={"populate_existing": True},
             )
         ).one_or_none()
@@ -115,9 +119,7 @@ async def link_sevdesk_contact(session: AsyncSession, party_id: uuid.UUID, sevde
         # Something conflicted: exactly this link - nothing to do -, another one in the way, or nothing any more.
         in_the_way = (
             await session.scalars(
-                select(SevdeskContact).where(
-                    or_(SevdeskContact.sevdesk_id == sevdesk_id, SevdeskContact.party_id == party_id)
-                ),
+                select(SevdeskContact).where(or_(*(key == wanted[key.key] for key in SEVDESK_CONTACT_KEYS))),
                 execution_options={"populate_existing": True},
             )
         ).all()

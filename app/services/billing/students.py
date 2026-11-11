@@ -17,7 +17,7 @@ async def require_student(session: AsyncSession, party_id: uuid.UUID) -> None:
     without the student role raises ``UnknownStudentError``.
 
     The party is locked first (``hold_party``, ``FOR KEY SHARE``) and stays locked until the caller's transaction
-    ends, so a concurrent ``delete_party`` answers a domain error, never a 500, and no CRM write waits for it.
+    ends, so a concurrent ``delete_party`` answers a domain error, never a 500, and no other CRM write waits for it.
     """
     await hold_party(session, party_id)
     party = await load_party(session, party_id)

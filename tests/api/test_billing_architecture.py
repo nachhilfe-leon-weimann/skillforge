@@ -7,13 +7,15 @@ boilerplate, by the CRM's check; and no route deletes a lesson (money rule 14).
 import ast
 import re
 from pathlib import Path
-from typing import TypeIs
+from typing import TypeIs, cast
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import Table, UniqueConstraint
 
 from app.core.db.models import SevdeskContact
 from app.main import app
+from app.services.billing import payers
 from tests.api.test_crm_architecture import _boilerplate, _endpoints, _imported_modules
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -187,6 +189,19 @@ def _sevdesk_contact_uses(source: str) -> list[str]:
         and id(node) not in docstrings
     ]
     return found
+
+
+def test_the_contact_link_lookup_covers_every_unique_key_of_its_table():
+    """``link_sevdesk_contact`` retries an insert that did nothing while its look finds nothing in the way; a unique
+    key the look does not cover would make it retry forever, so every key of the table is one it covers."""
+    table = cast(Table, SevdeskContact.__table__)
+    unique_keys = {tuple(table.primary_key.columns.keys())}
+    unique_keys |= {
+        tuple(constraint.columns.keys()) for constraint in table.constraints if isinstance(constraint, UniqueConstraint)
+    }
+    unique_keys |= {tuple(index.columns.keys()) for index in table.indexes if index.unique}
+
+    assert unique_keys == {(key.key,) for key in payers.SEVDESK_CONTACT_KEYS}
 
 
 def test_only_the_payer_service_writes_sevdesk_contacts():
