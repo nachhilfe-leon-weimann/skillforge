@@ -2122,6 +2122,8 @@
               "auth:users:exchange": "Obtain a person's token for the Discord user they linked, and redeem Discord link codes; the client's secret speaks for every linked person up to its delegated ceiling. Client-only: never part of a person's token.",
               "auth:users:login": "Log people in on their behalf (password / refresh_token grants, redeem, revoke). Client-only: never part of a person's token.",
               "auth:users:manage": "Create, disable and reset user accounts; assign stored roles.",
+              "billing:read": "Read lessons, rates, invoices and credit accounts.",
+              "billing:write": "Record lessons and rates, and create invoice drafts and credit entries.",
               "crm:read": "Read parties, relations and subjects.",
               "crm:read:own": "Read parties within the caller's reach.",
               "crm:write": "Create, change and delete parties, relations and subjects."
@@ -2135,6 +2137,8 @@
               "auth:clients:manage": "Manage application clients.",
               "auth:discord-links:read": "Read Discord links - which Discord account belongs to which person party - including unlinked ones.",
               "auth:users:manage": "Create, disable and reset user accounts; assign stored roles.",
+              "billing:read": "Read lessons, rates, invoices and credit accounts.",
+              "billing:write": "Record lessons and rates, and create invoice drafts and credit entries.",
               "crm:read": "Read parties, relations and subjects.",
               "crm:read:own": "Read parties within the caller's reach.",
               "crm:write": "Create, change and delete parties, relations and subjects."
@@ -6271,7 +6275,7 @@
     },
     "/api/v1/crm/parties/{party_id}": {
       "delete": {
-        "description": "Delete a party together with its roles, contact infos and relations.\n\nRefused while an active Discord link or an external system (sevDesk, Clockodo, Microsoft) holds the party:\nremove those links first, in the system that owns them. A deactivated Discord link goes with the party.",
+        "description": "Delete a party together with its roles, contact infos and relations.\n\nRefused while an active Discord link, an external system (sevDesk, Clockodo, Microsoft) or billing (a lesson or\na rate) holds the party: remove those links first, in the system that owns them; a lesson keeps its party. A\ndeactivated Discord link goes with the party.",
         "operationId": "crm_delete_party",
         "parameters": [
           {
@@ -6361,7 +6365,7 @@
                   "party_in_use": {
                     "value": {
                       "code": "party_in_use",
-                      "detail": "Party is linked to external systems"
+                      "detail": "Party is still in use"
                     }
                   }
                 },
@@ -6370,7 +6374,7 @@
                 }
               }
             },
-            "description": "Party is linked to external systems"
+            "description": "Party is still in use"
           },
           "422": {
             "content": {

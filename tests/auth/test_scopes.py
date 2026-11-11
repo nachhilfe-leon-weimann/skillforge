@@ -48,6 +48,12 @@ def test_no_vouched_scope_is_client_only_or_an_account_or_auth_scope():
     assert not any(scope.startswith(("account:", "auth:")) for scope in VOUCHED_SCOPES)
 
 
+def test_no_billing_scope_is_vouched():
+    """A token the bot vouched for never moves money (billing spec, PD8)."""
+    assert VOUCHED_SCOPES.isdisjoint({Scope.BILLING_READ, Scope.BILLING_WRITE})
+    assert not any(scope.startswith("billing:") for scope in VOUCHED_SCOPES)
+
+
 def test_own_variant_maps_crm_read_to_crm_read_own_only():
     assert OWN_VARIANT == {Scope.CRM_READ: Scope.CRM_READ_OWN}
 

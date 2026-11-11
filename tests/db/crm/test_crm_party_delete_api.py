@@ -1,6 +1,7 @@
-"""`DELETE /parties/{party_id}` - guarded by external links - against the real database."""
+"""`DELETE /parties/{party_id}` - guarded by external links and billing rows - against the real database."""
 
 import uuid
+from datetime import UTC, date, datetime
 
 import pytest
 from httpx import AsyncClient
@@ -13,6 +14,7 @@ from app.core.db.models import (
     Company,
     ContactInfo,
     DiscordAccount,
+    Lesson,
     MicrosoftAccount,
     MicrosoftContact,
     Party,
@@ -20,6 +22,7 @@ from app.core.db.models import (
     PartyRelationType,
     Person,
     PreferredMeetingTool,
+    Rate,
     SevdeskContact,
     Student,
     StudentSubject,
@@ -63,7 +66,7 @@ async def test_delete_is_409_party_in_use_while_a_link_exists_and_names_its_kind
     response = await client.delete(f"/parties/{party_id}")
 
     assert response.status_code == 409
-    assert response.json() == {"detail": f"Party is linked to external systems: {kind}", "code": "party_in_use"}
+    assert response.json() == {"detail": f"Party is still in use: {kind}", "code": "party_in_use"}
     assert await _count(session, Party, Party.id == party_id) == 1
     assert await _count(session, type(link), type(link).party_id == party_id) == 1
     assert (await client.get(f"/parties/{party_id}")).json() == person
@@ -80,10 +83,52 @@ async def test_delete_names_every_link_kind_in_a_fixed_order_without_their_ident
     response = await client.delete(f"/parties/{party_id}")
 
     assert response.json() == {
-        "detail": "Party is linked to external systems: discord_account, sevdesk_contact, microsoft_contact",
+        "detail": "Party is still in use: discord_account, sevdesk_contact, microsoft_contact",
         "code": "party_in_use",
     }
     assert "4711" not in response.text and "sev-1" not in response.text
+
+
+# Billing references the party with RESTRICT (billing spec, PD9): the guard must answer before the database refuses.
+BILLING_ROWS = {
+    "lesson": lambda party_id: Lesson(
+        student_party_id=party_id, subject="Mathe", starts_at=datetime(2026, 11, 2, 15, tzinfo=UTC), minutes=60
+    ),
+    "rate": lambda party_id: Rate(student_party_id=party_id, cents_per_hour=3200, valid_from=date(2026, 11, 1)),
+}
+
+
+@pytest.mark.parametrize("kind", BILLING_ROWS)
+async def test_delete_is_409_party_in_use_while_a_billing_row_exists_and_names_its_kind(
+    client: AsyncClient, session: AsyncSession, kind: str
+):
+    person = await _person(client)
+    party_id = uuid.UUID(person["id"])
+    row = BILLING_ROWS[kind](party_id)
+    session.add(row)
+    await session.flush()
+
+    response = await client.delete(f"/parties/{party_id}")
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": f"Party is still in use: {kind}", "code": "party_in_use"}
+    assert await _count(session, Party, Party.id == party_id) == 1
+    assert await _count(session, type(row), type(row).student_party_id == party_id) == 1
+    assert (await client.get(f"/parties/{party_id}")).json() == person
+
+
+async def test_delete_names_billing_kinds_after_the_external_links(client: AsyncClient, session: AsyncSession):
+    party_id = uuid.UUID((await _person(client))["id"])
+    session.add_all([
+        BILLING_ROWS["rate"](party_id),
+        LINKS["sevdesk_contact"](party_id),
+        BILLING_ROWS["lesson"](party_id),
+    ])
+    await session.flush()
+
+    response = await client.delete(f"/parties/{party_id}")
+
+    assert response.json() == {"detail": "Party is still in use: sevdesk_contact, lesson, rate", "code": "party_in_use"}
 
 
 async def test_a_deactivated_discord_link_goes_with_its_party(client: AsyncClient, session: AsyncSession):

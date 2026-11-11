@@ -58,9 +58,10 @@ class RelatedPartyNotFoundError(NotFoundError):
 
 
 class PartyInUseError(ConflictError):
-    """The party is linked to an external system or has an active Discord link and must not be orphaned there."""
+    """A row of ``EXTERNAL_LINKS`` still names the party: an external system or an active Discord link must not be
+    orphaned, and a billing row keeps its party (billing spec, PD9)."""
 
-    message = "Party is linked to external systems"
+    message = "Party is still in use"
     # Raised with a client-ready message only: it names the kinds of links, never their identifiers.
     expose_message = True
 
