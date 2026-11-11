@@ -59,11 +59,16 @@ def test_the_body_is_a_draft_under_section_19():
         "invoiceType": "RE",
         "currency": "EUR",
         "taxRule": {"id": 11, "objectName": "TaxRule"},
+        "taxRate": 0,
+        "discount": 0,
         "taxText": "Synthetic tax text",
         "header": "Invoice 2026-10",
         "footText": "Synthetic foot text",
         "customerInternalNote": "skillforge:run-0001",
     }
+    invoice = body["invoice"]
+    assert isinstance(invoice, dict)
+    assert [type(invoice[key]) for key in ("taxRate", "discount")] == [int, int], "0, never False"
     assert body["invoicePosSave"] == [
         {
             "objectName": "InvoicePos",

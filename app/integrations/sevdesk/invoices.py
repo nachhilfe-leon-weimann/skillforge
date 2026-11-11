@@ -1,11 +1,14 @@
 """The draft invoice SkillForge hands to sevDesk, and the ``saveInvoice`` body built from it.
 
 Texts and amounts come from the caller; this module knows only sevDesk's wire format. On bookkeeping
-System 2.0 ``saveInvoice`` creates drafts only, the VAT regulation is a ``taxRule`` (no ``taxType``), and
-the body always carries ``invoicePosDelete``, ``discountSave``, ``discountDelete`` and ``takeDefaultAddress``,
-in that order. No amount passes through a float: prices are integer cents, quantities integer minutes, and both
-go out as exact decimal strings. The quarter-hour rule (money rule 3) holds by construction: minutes come in steps
-of 15 and a price per hour is divisible by 4, so every position is whole cents and nothing is ever rounded.
+System 2.0 ``saveInvoice`` creates drafts only and the VAT regulation is a ``taxRule``. Of the invoice fields
+sevDesk's description marks required, the body leaves out ``taxType`` (System 1.0, replaced by ``taxRule``) and
+``addressCountry`` (the address comes from the contact, ``takeDefaultAddress``); ``taxRate`` and ``discount`` go
+out as the integer 0 - unused beside the positions' rates and discount objects, but sevDesk refuses a ``NULL``.
+The body always carries ``invoicePosDelete``, ``discountSave``, ``discountDelete`` and ``takeDefaultAddress``, in
+that order. No amount passes through a float: prices are integer cents, quantities integer minutes, and both go
+out as exact decimal strings. The quarter-hour rule (money rule 3) holds by construction: minutes come in steps of
+15 and a price per hour is divisible by 4, so every position is whole cents and nothing is ever rounded.
 """
 
 from dataclasses import dataclass
@@ -17,6 +20,10 @@ INVOICE_TYPE = "RE"
 CURRENCY = "EUR"
 SMALL_BUSINESS_TAX_RULE = 11
 """System 2.0 tax rule for a small business under § 19 UStG: no VAT on any position."""
+SMALL_BUSINESS_TAX_RATE = 0
+"""The tax rate under § 19 UStG, on the invoice and on every position."""
+NO_DISCOUNT = 0
+"""The invoice's discount in percent: SkillForge gives none."""
 MINUTES_PER_HOUR = 60
 MINUTE_STEP = 15
 """A position's minutes come in quarter hours."""
@@ -104,6 +111,8 @@ def invoice_payload(draft: InvoiceDraft, *, contact_person_id: int) -> dict[str,
         "invoiceType": INVOICE_TYPE,
         "currency": CURRENCY,
         "taxRule": _ref("TaxRule", SMALL_BUSINESS_TAX_RULE),
+        "taxRate": SMALL_BUSINESS_TAX_RATE,
+        "discount": NO_DISCOUNT,
         "taxText": draft.tax_text,
         "header": draft.header,
         "headText": draft.head_text,
@@ -129,7 +138,7 @@ def _position(position: PositionDraft) -> dict[str, object]:
         "text": position.text,
         "quantity": f"{hours(position.minutes):f}",
         "price": euros(position.price_cents),
-        "taxRate": "0",
+        "taxRate": str(SMALL_BUSINESS_TAX_RATE),
         "unity": _ref("Unity", position.unity_id),
         "part": None if position.part_id is None else _ref("Part", position.part_id),
     }
