@@ -1,6 +1,5 @@
 """The spike script, against a synthetic sevDesk only: it refuses anything but live on the trial and records it all."""
 
-import base64
 import json
 import re
 from collections import Counter
@@ -77,12 +76,7 @@ def trial(fake_sevdesk: FakeSevdesk) -> FakeSevdesk:
         ("GET", "/Invoice/501/getPositions"): page([]),
         ("GET", "/Invoice"): page([{**INVOICE, "customerInternalNote": TAG}]),
         ("POST", "/Invoice/501/render"): httpx.Response(200, json={"pdf": None, "docId": "x"}),
-        ("GET", "/Invoice/501/getPdf"): objects({
-            "filename": "RE-1001.pdf",
-            "mimeType": "application/pdf",
-            "base64encoded": True,
-            "content": base64.b64encode(PDF).decode(),
-        }),
+        ("GET", "/Invoice/501/getPdf"): httpx.Response(200, content=PDF, headers={"content-type": "application/pdf"}),
         ("DELETE", "/Invoice/501"): httpx.Response(200, json={"objects": [None]}),
         ("GET", "/SevSequence/Factory/getByType"): objects({
             "id": "7",
@@ -184,6 +178,16 @@ async def test_a_single_step_runs_alone(live_settings, trial, tmp_path):
         "GET /Invoice/501/getPositions",
         "GET /Invoice",
     ]
+
+
+async def test_a_pdf_answer_that_is_no_pdf_stops_the_step_and_saves_nothing(live_settings, trial, tmp_path):
+    trial.on("GET", "/Invoice/501/getPdf", objects({"content": "not a document"}))
+
+    code, lines = await _spike(live_settings, trial, tmp_path, "--step", "pdf", "--invoice-id", "501")
+
+    assert code == 1
+    assert lines[-1].startswith("stopped: sevdesk GET /Invoice/{id}/getPdf: the answer is no PDF")
+    assert not (tmp_path / "pdf").exists()
 
 
 NOT_THIS_RUNS_DRAFT = {

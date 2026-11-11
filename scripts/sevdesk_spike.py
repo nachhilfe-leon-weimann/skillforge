@@ -17,7 +17,6 @@ the trial's UI - send, edit, cancel, issue, delete a draft - is read afterwards 
 
 import argparse
 import asyncio
-import base64
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
@@ -87,6 +86,8 @@ TOPUP_TEXT = "Vorauszahlung für kommende Unterrichtsstunden"
 """S11: ``TOPUP_POSITION_DESCRIPTION`` of billing.md (M4)."""
 LESSON_TEXT = "Montag, 3. November 2025 / 14:00 – 15:30"
 """A lesson's description in the form of ``POSITION_DESCRIPTION`` (billing.md); synthetic."""
+PDF_MAGIC = b"%PDF-"
+"""How a PDF starts: ``getPdf`` with ``download`` answers with the document itself, not with JSON."""
 PAYMENT_METHODS = ("PayPal", "Überweisung")
 LISTING_LIMIT = 1000
 SAVE = "POST /Invoice/Factory/saveInvoice"
@@ -387,9 +388,9 @@ async def pdf(spike: Spike) -> None:
         where,
     )
     params = {"download": True, "preventSendBy": True}
-    document = _objects(await spike.client.http.read(f"/Invoice/{invoice_id}/getPdf", params=params))[0]
-    content = str(document["content"])
-    data = base64.b64decode(content) if document.get("base64encoded") else content.encode()
+    data = (await spike.client.http.read(f"/Invoice/{invoice_id}/getPdf", params=params)).content
+    if not data.startswith(PDF_MAGIC):
+        raise UnexpectedResponseError(f"sevdesk GET /Invoice/{{id}}/getPdf: the answer is no PDF ({len(data)} bytes)")
     path = spike.pdf_dir / f"{spike.run_id}-invoice-{invoice_id}.pdf"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
