@@ -78,6 +78,21 @@ async def test_reading_a_missing_lesson_is_lesson_not_found(client: AsyncClient)
     assert _error(response) == "lesson_not_found"
 
 
+@pytest.mark.parametrize("minutes", [15, 24 * 60])
+async def test_a_quarter_hour_and_a_whole_day_are_accepted_minutes(
+    client: AsyncClient, session: AsyncSession, student: uuid.UUID, minutes: int
+):
+    """Both bounds: 15-minute lessons are in the calendar (spec, "Verified behavior"), a day is the longest."""
+    added = await _add(client, student, minutes=minutes)
+    other = await _add(client, student, starts_at="2026-11-03T16:00:00+01:00")
+
+    patched = await _patch(client, other, minutes=minutes)
+
+    assert (added["minutes"], (await _row(session, added)).minutes) == (minutes, minutes)
+    assert patched.status_code == 200
+    assert (patched.json()["minutes"], (await _row(session, other)).minutes) == (minutes, minutes)
+
+
 @pytest.mark.parametrize("minutes", [0, 20, 50, 61, 24 * 60 + 15])
 async def test_minutes_off_the_quarter_hour_are_a_422(client: AsyncClient, student: uuid.UUID, minutes: int):
     response = await client.post(

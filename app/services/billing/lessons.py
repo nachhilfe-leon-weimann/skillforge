@@ -11,7 +11,7 @@ from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db.models import Lesson, LessonStatus
+from app.core.db.models import Lesson, LessonStatus, Party
 from app.core.unset import UNSET, Unset
 from app.services.crm.errors import PartyNotFoundError
 from app.services.crm.parties import load_party
@@ -189,7 +189,14 @@ async def _get_lesson_for_update(session: AsyncSession, lesson_id: uuid.UUID) ->
 
 
 async def _require_student(session: AsyncSession, party_id: uuid.UUID) -> None:
-    """Raise ``UnknownStudentError`` unless the party holds the student role, read through the CRM's loading path."""
+    """Raise ``UnknownStudentError`` unless the party holds the student role, read through the CRM's loading path.
+
+    The party is locked first, ``FOR KEY SHARE`` as the CRM's ``_load_person`` does: a ``delete_party`` holding it
+    (``FOR UPDATE``) makes this wait and then find no party, instead of the ``RESTRICT`` foreign key failing the
+    write as a 500; one that comes later waits for this transaction and answers ``party_in_use``. CRM writes are not
+    blocked (``saved`` takes ``FOR NO KEY UPDATE``).
+    """
+    await session.execute(select(Party.id).where(Party.id == party_id).with_for_update(key_share=True))
     try:
         party = await load_party(session, party_id)
     except PartyNotFoundError:
