@@ -398,7 +398,19 @@ async def test_delete_unlinks_and_a_party_without_a_link_answers_204_too(client:
     assert (await client.put(url, json={"sevdesk_contact_id": OTHER_CONTACT})).status_code == 200
 
 
-@pytest.mark.parametrize("contact_id", ["", " ", "12a4", "-1", "1" * 65, 4711])
+@pytest.mark.parametrize("contact_id", ["1", "4711", "1234567890123456789"])
+async def test_a_contact_id_in_its_canonical_form_is_linked(
+    client: AsyncClient, session: AsyncSession, contact_id: str
+):
+    party = await _parent(session)
+
+    response = await client.put(f"/parties/{party}/sevdesk-contact", json={"sevdesk_contact_id": contact_id})
+
+    assert response.status_code == 200
+    assert await _contacts(session) == [(contact_id, party)]
+
+
+@pytest.mark.parametrize("contact_id", ["", " ", "12a4", "-1", "0", "04711", "00", "1" * 65, 4711])
 async def test_a_contact_id_that_is_not_a_sevdesk_id_is_a_422(
     client: AsyncClient, session: AsyncSession, contact_id: object
 ):

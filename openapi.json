@@ -2156,13 +2156,13 @@
         "description": "Body of `PUT /parties/{party_id}/sevdesk-contact`: the contact the party's invoices go to.",
         "properties": {
           "sevdesk_contact_id": {
-            "description": "ID of the contact in sevDesk, digits only. It is stored as given; nothing is looked up in sevDesk.",
+            "description": "ID of the contact in sevDesk: a positive integer without leading zeros. It is stored as given; nothing is\nlooked up in sevDesk.",
             "examples": [
               "1234567"
             ],
             "maxLength": 64,
             "minLength": 1,
-            "pattern": "^[0-9]+$",
+            "pattern": "^[1-9][0-9]*$",
             "title": "Sevdesk Contact Id",
             "type": "string"
           }

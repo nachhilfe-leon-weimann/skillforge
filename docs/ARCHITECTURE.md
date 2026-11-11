@@ -58,8 +58,8 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
   `errors.py` (the error catalog). Imports no other domain.
 - **`app/services/billing/`** - the billing services, in the CRM's shape: `lessons.py`, `rates.py`, `payers.py` (the
   payer of a lesson, the one writer of `ext.sevdesk_contact` and of `billing.manual_payer`), `students.py` (the
-  student check), `errors.py` (the error catalog). Imports only `app.core`, `app.integrations`, the CRM
-  services and itself.
+  student check), `locks.py` (`hold_party`, the party lock every write takes before a row names a party),
+  `errors.py` (the error catalog). Imports only `app.core`, `app.integrations`, the CRM services and itself.
 - **`app/services/system/`** - health aggregation (`health_service.py`) and worker liveness
   (`heartbeat_service.py`), backing the `/health` tree.
 - **`app/core/`** - `auth/` (what validates a request: OAuth2 scheme, JWT, principals, scopes, roles, reach,
@@ -209,13 +209,19 @@ writes `billing:write`.
   when a billable lesson changes its student or its Berlin day; it keeps it through every other edit, so a later
   change of `pays_for` leaves it as it was until `POST /billing/lessons/{lesson_id}/resolve-payer`. A lesson that is
   not billable has no payer, and neither has one ticked while its student had several - the tick is never refused.
+  The resolved payer is held (`hold_party`) before the lesson names it; one deleted meanwhile took its `pays_for`
+  along, and the CRM is asked again.
   `GET /billing/students/{party_id}/payer` answers the payer of today, whether it has a sevDesk contact and whether
   it is billed by hand.
 - **sevDesk contacts and manual billing.** `PUT`/`DELETE /billing/parties/{party_id}/sevdesk-contact` and
   `.../manual-billing`, idempotent. `payers.py` is the one writer of `ext.sevdesk_contact` (architecture test): a
   contact id is stored as given, nothing is looked up in sevDesk, and one `INSERT ... ON CONFLICT DO NOTHING`
-  decides a link, so a contact linked elsewhere is `sevdesk_contact_already_linked` also for racing requests. Every
-  write holds its party with `FOR KEY SHARE` first, so a concurrent party delete waits and then sees the row.
+  decides a link, so a contact linked elsewhere is `sevdesk_contact_already_linked` also for racing requests. A
+  contact id is accepted only in its canonical form (a positive integer without leading zeros), so one contact
+  cannot be linked twice under two spellings.
+- **Party locks.** Every billing write holds each party it names - the student, the payer, the party of a link or
+  a mark - with `hold_party` (`locks.py`, `FOR KEY SHARE`) before it writes, so a concurrent party delete either
+  makes it wait and find no party (a domain error) or waits for it and answers `party_in_use`, never a 500.
 - **Reading the CRM.** Whether a party is a student is read through the CRM's `load_party` (`require_student` in
   `students.py`): a party without the student role is `unknown_student`; a party in a path that does not exist is the
   CRM's `party_not_found`, one named in a body `unknown_student`.

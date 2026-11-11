@@ -51,10 +51,11 @@ Note = Annotated[
 StartsAt = Annotated[AwareDatetime, AfterValidator(_in_utc), Field(examples=["2026-11-02T16:00:00+01:00"])]
 Minutes = Annotated[int, Field(gt=0, le=MAX_LESSON_MINUTES, multiple_of=15, examples=[60])]
 CentsPerHour = Annotated[int, Field(ge=0, le=MAX_CENTS_PER_HOUR, examples=[3000])]
-# A sevDesk id is a number sent as a string; it is stored as given and checked against nothing.
+# A sevDesk id is a positive integer sent as a string; it is stored as given and checked against nothing. Only its
+# canonical form passes - no leading zero - so one contact cannot be linked to two parties as "4711" and "04711".
 SevdeskContactId = Annotated[
     str,
-    StringConstraints(strip_whitespace=True, min_length=1, max_length=64, pattern=r"^[0-9]+$"),
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=64, pattern=r"^[1-9][0-9]*$"),
     Field(examples=["1234567"]),
 ]
 
@@ -243,7 +244,8 @@ class SevdeskContactPutRequest(ApiModel):
     """Body of `PUT /parties/{party_id}/sevdesk-contact`: the contact the party's invoices go to."""
 
     sevdesk_contact_id: SevdeskContactId
-    """ID of the contact in sevDesk, digits only. It is stored as given; nothing is looked up in sevDesk."""
+    """ID of the contact in sevDesk: a positive integer without leading zeros. It is stored as given; nothing is
+    looked up in sevDesk."""
 
 
 class SevdeskContactResponse(ApiModel):

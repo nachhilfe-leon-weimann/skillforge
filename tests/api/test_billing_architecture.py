@@ -5,6 +5,7 @@ boilerplate, by the CRM's check; and no route deletes a lesson (money rule 14).
 """
 
 import ast
+import re
 from pathlib import Path
 from typing import TypeIs
 
@@ -101,28 +102,47 @@ async def test_no_route_deletes_a_lesson(path: str):
     assert response.status_code == 405
 
 
+# The table named in SQL text: qualified by its schema, quoted or not, or right after a keyword that writes or reads.
+SEVDESK_CONTACT_IN_TEXT = re.compile(
+    r'\bext"?\s*\.\s*"?sevdesk_contact\b|\b(?:from|into|update|join|table)\s+"?sevdesk_contact\b', re.IGNORECASE
+)
+TABLE_CONSTRUCTORS = {"table", "Table", "TableClause"}
+
+
 def _sevdesk_contact_uses(source: str) -> list[str]:
     """Return what in a source file could write ``ext.sevdesk_contact``.
 
-    That is the model used as anything but the owner of a column - constructed, or handed to ``insert``,
-    ``update``, ``delete`` or ``select`` (whose rows could be changed) - under any name it is imported as, the
-    party's relationship to it, and the table named in text. A column (``SevdeskContact.party_id``) is a read - the
-    CRM's delete guard asks with it - and so is a type annotation.
+    Flagged: the model under any name it is imported as, unless it is a type annotation or the owner of a column
+    used as an operand (``SevdeskContact.party_id == ...``, the CRM's delete guard) - so a construction, ``insert``,
+    ``update``, ``delete``, ``select`` (whose rows could be changed), ``__table__`` and a column's ``.table`` are
+    flagged; the party's relationship ``.sevdesk_contact``; the table built by name (``table("sevdesk_contact")``);
+    and the table named in SQL text (``SEVDESK_CONTACT_IN_TEXT``), docstrings aside.
+
+    A static check cannot see: a name built at run time (string formatting, ``getattr``), the table unqualified in
+    SQL text outside the keywords above (a ``search_path`` that includes ``ext``), the table reached by iterating the
+    metadata, or a write through an instance some other path loaded without naming the model.
     """
     tree = ast.parse(source)
-    names = {"SevdeskContact"} | {
-        alias.asname
+    parents = {id(child): node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    imported = {
+        alias.asname or alias.name: alias.name
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom)
         for alias in node.names
-        if alias.name == "SevdeskContact" and alias.asname
     }
+    names = {"SevdeskContact"} | {name for name, original in imported.items() if original == "SevdeskContact"}
+    constructors = TABLE_CONSTRUCTORS | {name for name, original in imported.items() if original in TABLE_CONSTRUCTORS}
     columns = set(SevdeskContact.__table__.columns.keys())
 
     def is_model(node: ast.AST) -> TypeIs[ast.Name | ast.Attribute]:
         return (isinstance(node, ast.Name) and node.id in names) or (
             isinstance(node, ast.Attribute) and node.attr == "SevdeskContact"
         )
+
+    def is_operand(column: ast.Attribute) -> bool:
+        """A column read as it is - not the receiver of another attribute such as ``.table``."""
+        parent = parents.get(id(column))
+        return not (isinstance(parent, ast.Attribute) and parent.value is column)
 
     annotations = [
         node.annotation for node in ast.walk(tree) if isinstance(node, (ast.arg, ast.AnnAssign)) and node.annotation
@@ -134,7 +154,7 @@ def _sevdesk_contact_uses(source: str) -> list[str]:
     reads = {
         id(node.value)
         for node in ast.walk(tree)
-        if isinstance(node, ast.Attribute) and node.attr in columns and is_model(node.value)
+        if isinstance(node, ast.Attribute) and node.attr in columns and is_model(node.value) and is_operand(node)
     } | {id(node) for annotation in annotations for node in ast.walk(annotation)}
     found = [
         f"SevdeskContact at line {node.lineno}" for node in ast.walk(tree) if is_model(node) and id(node) not in reads
@@ -144,6 +164,18 @@ def _sevdesk_contact_uses(source: str) -> list[str]:
         for node in ast.walk(tree)
         if isinstance(node, ast.Attribute) and node.attr == "sevdesk_contact"
     ]
+    found += [
+        f"the table built by name at line {node.lineno}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and (
+            (isinstance(node.func, ast.Name) and node.func.id in constructors)
+            or (isinstance(node.func, ast.Attribute) and node.func.attr in TABLE_CONSTRUCTORS)
+        )
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and node.args[0].value == "sevdesk_contact"
+    ]
     # A string that is a statement of its own - a docstring - does nothing.
     docstrings = {id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Expr)}
     found += [
@@ -151,7 +183,7 @@ def _sevdesk_contact_uses(source: str) -> list[str]:
         for node in ast.walk(tree)
         if isinstance(node, ast.Constant)
         and isinstance(node.value, str)
-        and "ext.sevdesk_contact" in node.value
+        and SEVDESK_CONTACT_IN_TEXT.search(node.value)
         and id(node) not in docstrings
     ]
     return found
@@ -181,6 +213,12 @@ def test_only_the_payer_service_writes_sevdesk_contacts():
         "delete(SevdeskContact.__table__)",
         "party.sevdesk_contact = None",
         "await session.execute(text('DELETE FROM ext.sevdesk_contact'))",
+        "update(SevdeskContact.party_id.table).values(sevdesk_id='2')",
+        'await session.execute(text(\'DELETE FROM "ext"."sevdesk_contact" WHERE party_id = :p\'))',
+        "await session.execute(text('UPDATE sevdesk_contact SET sevdesk_id = :s'))",
+        "from sqlalchemy import table as sa_table\ndelete(sa_table('sevdesk_contact', schema='ext'))",
+        "delete(sqlalchemy.table('sevdesk_contact', schema='ext'))",
+        "metadata.tables['ext.sevdesk_contact'].delete()",
     ],
 )
 def test_the_sevdesk_contact_check_catches_every_write_form(source: str):

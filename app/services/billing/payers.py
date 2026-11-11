@@ -14,11 +14,12 @@ from sqlalchemy import delete, exists, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db.models import Lesson, ManualPayer, Party, SevdeskContact
+from app.core.db.models import Lesson, ManualPayer, SevdeskContact
 from app.services.crm.errors import PartyNotFoundError
 from app.services.crm.payers import PayerResolution, resolve_payer
 
 from .errors import LessonNotFoundError, SevdeskContactAlreadyLinkedError
+from .locks import hold_party
 
 
 @dataclass(frozen=True)
@@ -57,11 +58,17 @@ async def lesson_payer(session: AsyncSession, *, student_id: uuid.UUID, billable
 
     ``None`` for a lesson that is not billable - it has no payer - and for a student with several payers: the tick is
     never refused, and the preview blocks a billable lesson without a payer instead of picking one.
+
+    The payer is held (``hold_party``) before the lesson names it. A payer deleted meanwhile took its ``pays_for``
+    along, so the CRM is asked again; every round follows a party delete that committed, so the rounds end.
     """
     if not billable:
         return None
 
-    return (await resolve_payer(session, student_id)).payer_id
+    while True:
+        payer_id = (await resolve_payer(session, student_id)).payer_id
+        if payer_id is None or await hold_party(session, payer_id):
+            return payer_id
 
 
 async def resolve_lesson_payer(session: AsyncSession, lesson_id: uuid.UUID) -> Lesson:
@@ -84,7 +91,7 @@ async def link_sevdesk_contact(session: AsyncSession, party_id: uuid.UUID, sevde
     A contact linked to another party, or another contact for this party, is ``SevdeskContactAlreadyLinkedError``.
     One statement decides, so two racing requests cannot both link, and neither fails on a unique constraint.
     """
-    await _hold_party(session, party_id)
+    await _require_party(session, party_id)
 
     linked = (
         await session.scalars(
@@ -110,13 +117,13 @@ async def link_sevdesk_contact(session: AsyncSession, party_id: uuid.UUID, sevde
 
 async def unlink_sevdesk_contact(session: AsyncSession, party_id: uuid.UUID) -> None:
     """Remove the party's sevDesk contact link; a party without one is left as it is."""
-    await _hold_party(session, party_id)
+    await _require_party(session, party_id)
     await session.execute(delete(SevdeskContact).where(SevdeskContact.party_id == party_id))
 
 
 async def put_manual_payer(session: AsyncSession, party_id: uuid.UUID, *, note: str | None = None) -> ManualPayer:
     """Mark the party as billed by hand, or replace the note of its mark. The same note again changes nothing."""
-    await _hold_party(session, party_id)
+    await _require_party(session, party_id)
 
     mark = insert(ManualPayer).values(party_id=party_id, note=note)
     written = (
@@ -139,16 +146,12 @@ async def put_manual_payer(session: AsyncSession, party_id: uuid.UUID, *, note: 
 
 async def delete_manual_payer(session: AsyncSession, party_id: uuid.UUID) -> None:
     """Unmark the party; a party that is not marked is left as it is."""
-    await _hold_party(session, party_id)
+    await _require_party(session, party_id)
     await session.execute(delete(ManualPayer).where(ManualPayer.party_id == party_id))
 
 
-async def _hold_party(session: AsyncSession, party_id: uuid.UUID) -> None:
-    """Make sure the party exists and keep it until the request ends.
-
-    ``FOR KEY SHARE`` is the lock a foreign key takes: a concurrent ``delete_party`` waits and then its guard sees the
-    row written here, and a party deleted first is ``PartyNotFoundError`` - never a foreign-key violation.
-    """
-    held = await session.scalar(select(Party.id).where(Party.id == party_id).with_for_update(key_share=True))
-    if held is None:
+async def _require_party(session: AsyncSession, party_id: uuid.UUID) -> None:
+    """Hold the party until the request ends (``hold_party``): a party deleted first is ``PartyNotFoundError``,
+    never a foreign-key violation."""
+    if not await hold_party(session, party_id):
         raise PartyNotFoundError(f"No party with id {party_id}")
