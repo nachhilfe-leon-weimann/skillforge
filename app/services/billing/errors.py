@@ -20,8 +20,15 @@ class LessonAlreadyExistsError(ConflictError):
     message = "The student already has a lesson at this start"
 
 
+class RateNotFoundError(NotFoundError):
+    """The student has no rate taking effect on the requested day."""
+
+    message = "Rate not found"
+
+
 class UnknownStudentError(DomainValidationError):
-    """A student referenced in a request body is no party with the student role (body reference: 422, not 404)."""
+    """A party named as a student holds no student role. A body reference that names no party at all is one too
+    (422, not 404); a party in a path that does not exist is the CRM's ``PartyNotFoundError``."""
 
     message = "Unknown student"
 

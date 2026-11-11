@@ -11,18 +11,13 @@ from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db.models import Lesson, LessonStatus, Party
+from app.core.db.models import Lesson, LessonStatus
 from app.core.unset import UNSET, Unset
 from app.services.crm.errors import PartyNotFoundError
-from app.services.crm.parties import load_party
 
-from .errors import (
-    LessonAlreadyExistsError,
-    LessonNotBillableError,
-    LessonNotFoundError,
-    RateNotQuarterHourError,
-    UnknownStudentError,
-)
+from .errors import LessonAlreadyExistsError, LessonNotBillableError, LessonNotFoundError, UnknownStudentError
+from .rates import require_quarter_hour_rate
+from .students import require_student
 
 # Lessons are stored in UTC and billed by the Berlin calendar, daylight saving included (money rule 9).
 BILLING_TIME_ZONE = ZoneInfo("Europe/Berlin")
@@ -86,7 +81,8 @@ async def create_lesson(
 ) -> Lesson:
     """Add a lesson by hand. It starts ``planned`` and not billable: the tick is a change of its status."""
     await _require_student(session, student_id)
-    _require_quarter_hour_rate(rate_cents_per_hour)
+    if rate_cents_per_hour is not None:
+        require_quarter_hour_rate(rate_cents_per_hour)
 
     lesson = Lesson(
         student_party_id=student_id,
@@ -139,7 +135,8 @@ async def update_lesson(
         if value is not None
     }
     if rate_cents_per_hour is not UNSET:
-        _require_quarter_hour_rate(rate_cents_per_hour)
+        if rate_cents_per_hour is not None:
+            require_quarter_hour_rate(rate_cents_per_hour)
         sent["rate_cents_per_hour"] = rate_cents_per_hour
     if note is not UNSET:
         sent["note"] = note
@@ -189,28 +186,11 @@ async def _get_lesson_for_update(session: AsyncSession, lesson_id: uuid.UUID) ->
 
 
 async def _require_student(session: AsyncSession, party_id: uuid.UUID) -> None:
-    """Raise ``UnknownStudentError`` unless the party holds the student role, read through the CRM's loading path.
-
-    The party is locked first, ``FOR KEY SHARE`` - the lock the lesson's foreign key takes, taken before the write -
-    until the transaction ends. It and ``delete_party``'s ``FOR UPDATE`` exclude each other: a delete holding the
-    party makes this wait and then find no party, instead of the ``RESTRICT`` foreign key failing the write as a 500;
-    a delete that comes later waits for this transaction and answers ``party_in_use``. Nothing else waits: neither
-    another billing write naming the party nor a CRM write (``saved`` takes ``FOR NO KEY UPDATE``).
-    """
-    # read=True: `key_share=True` alone renders FOR NO KEY UPDATE, which would serialize billing and CRM writes.
-    await session.execute(select(Party.id).where(Party.id == party_id).with_for_update(read=True, key_share=True))
+    """A student named in a body: a party that does not exist is no student either (422, not 404)."""
     try:
-        party = await load_party(session, party_id)
+        await require_student(session, party_id)
     except PartyNotFoundError:
         raise UnknownStudentError(f"No party with id {party_id}") from None
-    if party.person is None or party.person.student is None:
-        raise UnknownStudentError(f"Party {party_id} holds no student role")
-
-
-def _require_quarter_hour_rate(cents_per_hour: int | None) -> None:
-    """Rule G for a lesson's own rate (PD3): checked here, so ``ck_lesson_quarter_hour_cents`` never answers."""
-    if cents_per_hour is not None and (cents_per_hour < 0 or cents_per_hour % 4):
-        raise RateNotQuarterHourError(f"{cents_per_hour} cents per hour is not a quarter-hour rate")
 
 
 @asynccontextmanager

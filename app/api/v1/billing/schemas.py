@@ -5,14 +5,14 @@ sentinel, as the CRM's do: an unset field is absent from ``model_dump()``, so th
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Annotated, Self
 
 from pydantic import AfterValidator, AwareDatetime, Field, StringConstraints
 from pydantic.experimental.missing_sentinel import MISSING
 
 from app.api.v1.common import ApiModel
-from app.core.db.models import Lesson, LessonStatus
+from app.core.db.models import Lesson, LessonStatus, Rate
 from app.services.crm.inputs import require_storable_text
 
 # A lesson longer than a day is a typo. Rule G (minutes divisible by 15) is request validation: the catalog has no
@@ -140,3 +140,43 @@ class LessonUpdateRequest(ApiModel):
     default."""
     note: Note | None | MISSING = MISSING
     """Free-text note; `null` clears it."""
+
+
+class RateResponse(ApiModel):
+    """A student's own rate from a day on; it holds until the day of the next one."""
+
+    student_id: uuid.UUID
+    """ID of the student's party."""
+    valid_from: date
+    """The day the rate takes effect."""
+    cents_per_hour: int
+    """The rate in cents per hour, divisible by 4. 45 and 90 minutes are priced linearly."""
+    note: str | None
+    """Free-text note."""
+    created_at: datetime
+    """When the rate was first set."""
+    updated_at: datetime
+    """When amount or note last changed."""
+
+    @classmethod
+    def from_model(cls, rate: Rate) -> Self:
+        return cls(
+            student_id=rate.student_party_id,
+            valid_from=rate.valid_from,
+            cents_per_hour=rate.cents_per_hour,
+            note=rate.note,
+            created_at=rate.created_at,
+            updated_at=rate.updated_at,
+        )
+
+
+class RatePutRequest(ApiModel):
+    """Body of `PUT /students/{party_id}/rates/{valid_from}`: the whole rate of that day.
+
+    It replaces amount and note of a rate already set for the day; the same values again change nothing.
+    """
+
+    cents_per_hour: CentsPerHour
+    """The rate in cents per hour: 0 or more, divisible by 4."""
+    note: Note | None = None
+    """Free-text note; leaving it out clears it."""

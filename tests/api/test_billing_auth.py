@@ -21,7 +21,11 @@ from app.core.db.dependencies import get_db_session
 from app.main import app
 
 HTTP_METHODS = {"get", "put", "post", "delete", "patch"}
-PATH_VALUES = {"lesson_id": "00000000-0000-0000-0000-0000000000aa"}
+PATH_VALUES = {
+    "lesson_id": "00000000-0000-0000-0000-0000000000aa",
+    "party_id": "00000000-0000-0000-0000-0000000000bb",
+    "valid_from": "2026-09-01",
+}
 
 
 def _billing_operations() -> list[tuple[str, str]]:
@@ -44,6 +48,16 @@ def test_the_operation_table_holds_the_lesson_routes():
         ("POST", "/api/v1/billing/lessons"),
         ("GET", f"/api/v1/billing/lessons/{PATH_VALUES['lesson_id']}"),
         ("PATCH", f"/api/v1/billing/lessons/{PATH_VALUES['lesson_id']}"),
+    }
+
+
+def test_the_operation_table_holds_the_rate_routes():
+    rates = f"/api/v1/billing/students/{PATH_VALUES['party_id']}/rates"
+
+    assert set(_billing_operations()) >= {
+        ("GET", rates),
+        ("PUT", f"{rates}/{PATH_VALUES['valid_from']}"),
+        ("DELETE", f"{rates}/{PATH_VALUES['valid_from']}"),
     }
 
 

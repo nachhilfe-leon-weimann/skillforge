@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0, SF1-1 to SF1-3c, SF2-1 and SF2-2 done; SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
+> Status: Draft - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
 > then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
@@ -1116,12 +1116,18 @@ write (`invoices.py`)._
   synthetic families, students, payers, rates and lessons for local screens. It runs only against a local
   database: the host is a loopback address or a single-label host name, such as a compose service; a host name with
   a dot is refused. `AGENTS.md` names the recipe among the commands that need a local database.
+- _Tests that change:_ the registries of the billing route tests gain the rate routes: `PATH_VALUES` in
+  `tests/api/test_billing_auth.py`; the endpoint list of `test_the_billing_endpoints_carry_no_boilerplate` in
+  `tests/api/test_billing_architecture.py`; in `tests/api/test_billing_error_contract.py`, `ENDPOINTS`,
+  `EXPECTATIONS` and `CATALOG` gain the rate routes and `RateNotFoundError`, and
+  `test_every_pinned_error_is_documented_on_its_route` and `test_no_route_documents_a_domain_error_that_is_not_pinned`
+  also walk the new `CRM_EXPECTATIONS` - the CRM's `party_not_found` on the rate routes.
 - _Acceptance criteria:_
-  - [ ] Setting a rate twice for the same day changes nothing; a rate that breaks rule G is
+  - [x] Setting a rate twice for the same day changes nothing; a rate that breaks rule G is
         `rate_not_quarter_hour`.
   - [ ] Deleting a rate changes no stored charge (test from SF5-3 on).
-  - [ ] `just seed-demo` writes synthetic data only and can run twice.
-  - [ ] It accepts `localhost`, a loopback address and a compose host name, and refuses a fully qualified host
+  - [x] `just seed-demo` writes synthetic data only and can run twice.
+  - [x] It accepts `localhost`, a loopback address and a compose host name, and refuses a fully qualified host
         name (one test each).
 
 **SF3-1 - Payer and sevDesk contact.** _Needs PD1._

@@ -127,6 +127,13 @@ bootstrap-client *args:
 bootstrap-admin *args:
     uv run python -m app.cli.bootstrap admin "$@"
 
+# --- Demo data ---
+
+# Write synthetic families, students, payers, rates and lessons for local screens; run again, it changes nothing.
+# It refuses any database host but localhost, a loopback address or a single-label name (a compose service).
+seed-demo:
+    uv run python -m app.cli.seed_demo
+
 # --- sevDesk ---
 # These call sevDesk: only the maintainer runs them, never CI. The trial's settings come from its env file, outside
 # the repository (SKILLFORGE_SEVDESK_TRIAL_ENV overrides the path), and never mix with SEVDESK__ variables of the
