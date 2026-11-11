@@ -19,8 +19,9 @@ from uuid import UUID
 # The match tokens (billing spec, "Match tokens are not family-visible text").
 TITLE_SEPARATOR = "mit"
 """``<Fach> mit <Vorname Nachname>``: the subject before the first ``mit``, the name after it."""
-FIRST_MEETING = "Kennenlernen"
-"""The subject of the free first meeting: never a subject of a lesson."""
+FIRST_MEETING = "Kennenlern"
+"""A subject that contains it, normalised, is the free first meeting - ``Kennenlernen``, ``Erstes Kennenlernen``,
+``Kennenlerngespräch`` - and never a subject of a lesson."""
 PHONE_CATEGORY = "Telefon"
 LATE_CANCELLATION_CATEGORY = "Abgesagt"
 """The category of a late cancellation and a no-show alike (Q9)."""
@@ -154,7 +155,7 @@ def propose(occurrence: Occurrence, roster: Roster) -> Proposal:
         return NoLesson(NoLessonReason.PHONE)
 
     title = parse_title(occurrence.title)
-    if title is not None and normalize_name(title.subject) == normalize_name(FIRST_MEETING):
+    if title is not None and normalize_name(FIRST_MEETING) in normalize_name(title.subject):
         return NoLesson(NoLessonReason.FIRST_MEETING)
     if title is None:
         return NoLesson(NoLessonReason.NO_TITLE_PATTERN)

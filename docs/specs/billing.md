@@ -329,7 +329,7 @@ What happens to an occurrence, first match wins:
 |---|---|
 | All day | No lesson; `reason = all_day`. |
 | Category "Telefon", or a location that is a phone number | No lesson; `reason = phone`. |
-| Title `Kennenlernen mit <Name>` | No lesson; `reason = first_meeting`. `Kennenlernen` is never read as a subject. |
+| Title `Kennenlernen mit <Name>`: a subject that contains `kennenlern` after normalisation, such as `Erstes Kennenlernen` or `Kennenlerngespräch` | No lesson; `reason = first_meeting`. `Kennenlernen` is never read as a subject. |
 | Title without ` mit ` | No lesson; `reason = no_title_pattern`. Shows as unassigned. |
 | Duration not a multiple of 15 minutes | No lesson; `reason = duration`. Shows as unassigned. |
 | Name matches no student | No lesson; `reason = unmatched`. Shows as unassigned. |
@@ -338,7 +338,7 @@ What happens to an occurrence, first match wins:
 | Anything else - a Teams meeting (`isOnlineMeeting`) included | A `planned` lesson. |
 
 - **Title.** The subject is the text before the first ` mit ` (case-insensitive), the name the text after it.
-- **Match tokens are not family-visible text.** The words the import matches on - `mit`, `Kennenlernen`,
+- **Match tokens are not family-visible text.** The words the import matches on - `mit`, `Kennenlern`,
   `Telefon` and the late-cancellation category - are constants of `app/services/billing/calendar_rules.py`
   (SF4-2).
 - **Matching.** An alias (`billing.calendar_alias`) wins. Otherwise the name is compared with the students'
@@ -526,7 +526,7 @@ marked **pending approval** is a proposal: it is not built before the maintainer
 
 What is _not_ family-visible text and lives elsewhere - German words included, because they are matching data:
 
-- **Match tokens** - `mit`, `Kennenlernen`, `Telefon`, the late-cancellation category
+- **Match tokens** - `mit`, `Kennenlern`, `Telefon`, the late-cancellation category
   (`app/services/billing/calendar_rules.py`); `Zahlungsverfahren`, `PayPal`, `Überweisung` as sevDesk reports them
   (`app/services/billing/payment_methods.py`, and the field by its configured id).
 - **The contact person.** The name under the foot text comes from sevDesk - its placeholder, or the user behind

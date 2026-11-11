@@ -113,6 +113,37 @@ def test_row_3_a_first_meeting_is_no_lesson_even_for_a_known_name(title: str):
 @pytest.mark.parametrize(
     "title",
     [
+        "Erstes Kennenlernen mit Jonas Probe",
+        "Kennenlernen (kostenlos) mit Jonas Probe",
+        "Kennenlernen: mit Jonas Probe",
+        "Kennenlerngespraech mit Jonas Probe",
+        "Kennenlerngespräch mit Erika Mustermann",
+        "KENNENLERNEN mit Jonas Probe",
+    ],
+)
+def test_row_3_a_subject_that_contains_the_first_meeting_token_is_a_first_meeting(title: str):
+    """Any subject that holds ``kennenlern`` after normalisation: the name behind it is never read, known or not."""
+    assert propose(_occurrence(title), ROSTER) == NoLesson(NoLessonReason.FIRST_MEETING)
+
+
+def test_row_3_a_subject_without_the_first_meeting_token_is_still_a_lesson():
+    assert propose(_occurrence("Lernen mit Erika Mustermann"), ROSTER) == _lesson(
+        ProposedStatus.PLANNED, subject="Lernen"
+    )
+
+
+def test_row_3_the_first_meeting_token_in_the_name_is_still_a_lesson():
+    """Only the subject is searched: a student whose name holds the token keeps the lesson."""
+    roster = Roster(students=(StudentName(LENA, "Lena", "Kennenlernfeld"),))
+
+    proposal = propose(_occurrence("Mathe mit Lena Kennenlernfeld"), roster)
+
+    assert proposal == _lesson(ProposedStatus.PLANNED, student=LENA)
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
         "Vorbereitung Klausur",
         "Kennenlernen",
         "Mathe mit",
