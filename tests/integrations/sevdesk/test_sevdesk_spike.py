@@ -80,7 +80,7 @@ def trial(fake_sevdesk: FakeSevdesk) -> FakeSevdesk:
         ("DELETE", "/Invoice/501"): httpx.Response(200, json={"objects": [None]}),
         ("GET", "/SevSequence/Factory/getByType"): objects({
             "id": "7",
-            "format": "RE-[%NUMBER%]",
+            "format": "RE-%NUMBER",
             "nextSequence": "1001",
             "type": "RE",
         }),
@@ -290,7 +290,7 @@ async def test_the_sevuser_names_are_learned_before_a_step_run_on_its_own(live_s
     trial.on(
         "GET",
         "/SevSequence/Factory/getByType",
-        objects({"id": "7", "format": "Synthia-[%NUMBER%]", "nextSequence": "1", "type": "RE"}),
+        objects({"id": "7", "format": "Synthia-%NUMBER", "nextSequence": "1", "type": "RE"}),
     )
 
     code, _ = await _spike(live_settings, trial, tmp_path, "--step", "sequence")
@@ -429,6 +429,19 @@ async def test_the_numbered_drafts_send_the_numbers_of_the_sequence(live_setting
     assert code == 0
     sent = [json.loads(r.content)["invoice"] for r in trial.requests if r.url.path.endswith("/saveInvoice")]
     assert [draft["invoiceNumber"] for draft in sent] == ["RE-1001", "RE-1002"]
+
+
+async def test_a_sequence_format_without_its_number_sends_no_draft(live_settings, trial, tmp_path):
+    trial.on(
+        "GET",
+        "/SevSequence/Factory/getByType",
+        objects({"id": "7", "format": "RE-[NR]", "nextSequence": "1001", "type": "RE"}),
+    )
+
+    with pytest.raises(SystemExit, match="holds no %NUMBER"):
+        await _spike(live_settings, trial, tmp_path, "--contact-id", "21", "--step", "numbers")
+
+    assert not [request for request in trial.requests if request.method == "POST"]
 
 
 async def test_the_cut_connection_sends_its_write_once_then_only_reads(live_settings, trial, tmp_path):

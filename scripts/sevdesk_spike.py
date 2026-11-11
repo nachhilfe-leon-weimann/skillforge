@@ -86,6 +86,8 @@ TOPUP_TEXT = "Vorauszahlung für kommende Unterrichtsstunden"
 """S11: ``TOPUP_POSITION_DESCRIPTION`` of billing.md (M4)."""
 LESSON_TEXT = "Montag, 3. November 2025 / 14:00 – 15:30"
 """A lesson's description in the form of ``POSITION_DESCRIPTION`` (billing.md); synthetic."""
+SEQUENCE_NUMBER = "%NUMBER"
+"""Where a ``SevSequence`` format takes the number: ``RE-%NUMBER``, without brackets (fixture ``numbers-48``)."""
 PDF_MAGIC = b"%PDF-"
 """How a PDF starts: ``getPdf`` with ``download`` answers with the document itself, not with JSON."""
 PAYMENT_METHODS = ("PayPal", "Überweisung")
@@ -267,8 +269,10 @@ async def rounding(spike: Spike) -> None:
 
 async def numbers(spike: Spike) -> None:
     found = await spike.client.invoice_sequence()
+    if SEQUENCE_NUMBER not in found.format:
+        raise SystemExit(f"the invoice sequence's format {found.format!r} holds no {SEQUENCE_NUMBER}: nothing sent")
     for offset, label in enumerate(("first", "second")):
-        number = found.format.replace("[%NUMBER%]", str(found.next_sequence + offset))
+        number = found.format.replace(SEQUENCE_NUMBER, str(found.next_sequence + offset))
         body = invoice_payload(
             _draft(spike, _lesson(spike, f"{label} numbered")), contact_person_id=_contact_person(spike)
         )
