@@ -595,7 +595,7 @@
             "type": "boolean"
           },
           "changed": {
-            "description": "The appointment differs from its lesson, which the import did not change: moved, resized, cancelled,\nvanished, or no longer this student's lesson of this subject by the rules - or it could not get its lesson.\nDismissing acknowledges it.",
+            "description": "The maintainer has to look: the rules give another student or subject than the lesson's (flagged at every\nimport until the lesson, the title or an alias settles it); the rules give no lesson; the appointment of a lesson\nthe import does not change moved, was resized, cancelled or vanished; a lesson could not follow; or the\noccurrence could not get its lesson. Dismissing acknowledges all but another student or subject, until the\noccurrence changes again.",
             "title": "Changed",
             "type": "boolean"
           },
@@ -639,7 +639,7 @@
                 "type": "null"
               }
             ],
-            "description": "Why no lesson was proposed; `null` when it has one, or when its student has a lesson at that start already."
+            "description": "Why the rules give no lesson, as last seen - for an occurrence with a lesson too (an assigned one keeps the\nreason it waited for); `null` while the rules give a lesson, or when its student has a lesson at that start\nalready."
           },
           "starts_at": {
             "description": "When the appointment starts, in UTC, as last seen.",

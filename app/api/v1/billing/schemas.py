@@ -408,11 +408,15 @@ class CalendarEventResponse(ApiModel):
     cancelled: bool
     """Cancelled in the calendar or by the late-cancellation category."""
     reason: NoLessonReason | None
-    """Why no lesson was proposed; `null` when it has one, or when its student has a lesson at that start already."""
+    """Why the rules give no lesson, as last seen - for an occurrence with a lesson too (an assigned one keeps the
+    reason it waited for); `null` while the rules give a lesson, or when its student has a lesson at that start
+    already."""
     changed: bool
-    """The appointment differs from its lesson, which the import did not change: moved, resized, cancelled,
-    vanished, or no longer this student's lesson of this subject by the rules - or it could not get its lesson.
-    Dismissing acknowledges it."""
+    """The maintainer has to look: the rules give another student or subject than the lesson's (flagged at every
+    import until the lesson, the title or an alias settles it); the rules give no lesson; the appointment of a lesson
+    the import does not change moved, was resized, cancelled or vanished; a lesson could not follow; or the
+    occurrence could not get its lesson. Dismissing acknowledges all but another student or subject, until the
+    occurrence changes again."""
     vanished: bool
     """Gone from the calendar while its lesson stays."""
     lesson_id: uuid.UUID | None

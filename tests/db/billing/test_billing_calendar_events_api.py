@@ -19,6 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.billing.params import get_calendar_reader
 from app.core.db.models import CalendarAlias, CalendarEvent, Lesson
 from app.core.logging import LogFormat, LoggingSettings, LogLevel, configure_logging
+from app.integrations.graph import client as graph_client
+from app.integrations.graph.client import READ_DEADLINE_SECONDS
 from app.integrations.graph.config import GraphSettings
 from app.main import app
 from app.services.crm import companies
@@ -34,6 +36,7 @@ from tests.db.billing.calendar_support import (
 )
 from tests.integrations.graph.fake_graph import (
     CALENDARS,
+    GRAPH_HOST,
     TOKEN_REQUEST,
     VIEW_PATH,
     Credential,
@@ -165,6 +168,64 @@ async def test_every_failure_of_the_calendar_is_502_calendar_unavailable_and_wri
     assert await snapshot(session) == before
 
 
+class Clock:
+    """A monotonic clock the test moves - the Graph client's deadline reads it."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+@pytest.mark.parametrize("bound", ["deadline-mid-listing", "deadline-at-the-token", "page-cap"])
+async def test_a_read_cut_by_the_graph_clients_bounds_is_502_and_hands_over_nothing(
+    api: AsyncClient,
+    fake: FakeGraph,
+    session: AsyncSession,
+    settings: GraphSettings,
+    monkeypatch: pytest.MonkeyPatch,
+    bound: str,
+):
+    """The client ends one read within its deadline and refuses a listing past its page cap - never cut short. Each
+    page holds G2's second read, which would move a lesson: no row changes, so no partial listing reached the
+    import."""
+    await new_student(session, MAX)
+    answer_view(fake, fixture_events("g2-series-first-read"))
+    await _import(api, G2_RANGE)
+    before = await snapshot(session)
+    clock = Clock()
+    page = {
+        "value": fixture_events("g2-series-second-read"),
+        "@odata.nextLink": f"https://{GRAPH_HOST}{VIEW_PATH}?$skip=1",
+    }
+
+    def slow_page(request: httpx.Request) -> httpx.Response:
+        clock.now += 50
+        return httpx.Response(200, json=page)
+
+    def slow_token(request: httpx.Request) -> httpx.Response:
+        clock.now += READ_DEADLINE_SECONDS
+        return answer("g7-token-response")
+
+    match bound:
+        case "deadline-mid-listing":
+            fake.on("GET", VIEW_PATH, slow_page)
+        case "deadline-at-the-token":
+            fake.on("POST", TOKEN_REQUEST["path"], slow_token)
+        case "page-cap":
+            monkeypatch.setattr(graph_client, "MAX_PAGES", 3)
+            fake.on("GET", VIEW_PATH, httpx.Response(200, json=page))
+    app.dependency_overrides[get_calendar_reader] = lambda: reader(fake, settings, clock)
+
+    response = await api.post(IMPORT, json=G2_RANGE)
+
+    assert (response.status_code, response.json()) == (502, UNAVAILABLE)
+    assert await snapshot(session) == before
+    views = sum(request.url.path == VIEW_PATH for request in fake.requests)
+    assert views == {"deadline-mid-listing": 1 + 3, "deadline-at-the-token": 1, "page-cap": 1 + 3}[bound]
+
+
 @pytest.mark.parametrize(
     "days",
     [
@@ -260,12 +321,15 @@ async def test_assign_creates_the_lesson_through_the_lesson_services_and_clears_
     )
     assert lesson["starts_at"] == "2026-12-02T15:00:00Z"
     event = await session.get(CalendarEvent, event_id, populate_existing=True)
-    assert event is not None and (event.title_name, event.reason) == (None, None)
+    # The name goes (PD13); the reason it waited for stays, as the rules' answer the assignment acknowledged.
+    assert event is not None and (event.title_name, event.reason) == (None, "unmatched")
     assert (await api.get(EVENTS)).json()["total"] == 0
     aliases = list(await session.scalars(select(CalendarAlias.name_normalized)))
     assert aliases == ["student z"]
-    # The alias holds for the next import: the occurrence keeps its one lesson.
-    assert (await _import(api, ONE_DAY))["lessons_created"] == 0
+    # The alias holds for the next import: the occurrence keeps its one lesson, and the rules now agree with it -
+    # no difference, though the lesson is 45 minutes and the appointment 60.
+    counts = await _import(api, ONE_DAY)
+    assert (counts["lessons_created"], counts["changed"]) == (0, 0)
 
 
 async def test_assign_of_a_cancelled_occurrence_creates_a_cancelled_lesson(

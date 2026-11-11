@@ -8,9 +8,11 @@ invents, moves, duplicates or drops a lesson a person may have looked at.
 - An occurrence with a lesson is judged by the rules again at every import. Only while they still give this student
   and this subject, and the lesson is untouched - ``planned``, no note, no own rate, at the start and length of its
   occurrence as last seen - does it follow a moved, resized or cancelled appointment, and go with a vanished one.
-- Anything else is flagged: a touched lesson whose appointment changed or vanished, an appointment the rules no longer
-  give this lesson, a lesson that cannot follow. ``dismiss`` acknowledges the occurrence as last seen, and so does an
-  assignment; a new difference is flagged again.
+- Flagged: the rules give another student or subject - at every import, until the lesson, the title or an alias
+  settles it; the rules give no lesson; a touched lesson's appointment changed or vanished; a lesson that cannot
+  follow. ``dismiss`` - and an assignment - acknowledges the occurrence as last seen: a "no lesson" answer and a
+  change already seen stay quiet until start, end, cancellation, subject, the no-lesson reason or presence changes
+  again. Another student or subject is never acknowledged. A vanishing is flagged once (``vanished``).
 - An occurrence without a lesson is proposed at every import until it gets one, unless it was dismissed or flagged
   because it could not get its lesson: then it waits for the maintainer. ``assign`` gives it its lesson through
   ``lessons.py``. Only an occurrence that starts inside the range can vanish.
@@ -24,6 +26,7 @@ with the next import.
 """
 
 import asyncio
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
@@ -35,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db.models import CalendarAlias, CalendarEvent, Lesson, LessonStatus
 from app.core.logging import get_logger
 from app.integrations.errors import IntegrationError
-from app.integrations.graph.client import GraphClient, Sleep
+from app.integrations.graph.client import Clock, GraphClient, Sleep
 from app.integrations.graph.config import GraphSettings
 from app.integrations.graph.credential import TOKENS, TokenCache
 from app.integrations.graph.models import CalendarEvent as GraphEvent
@@ -111,11 +114,15 @@ def graph_calendar(
     transport: InnerTransport | None = None,
     tokens: TokenCache = TOKENS,
     sleep: Sleep = asyncio.sleep,
+    clock: Clock = time.monotonic,
 ) -> CalendarReader:
-    """The lesson calendar through Microsoft Graph: each read connects anew, so the calendar is confirmed every time."""
+    """The lesson calendar through Microsoft Graph: each read connects anew, so the calendar is confirmed every time.
+    The block holds the read alone - the client's deadline covers it - and hands over the whole listing or raises."""
 
     async def read(start: datetime, end: datetime) -> list[GraphEvent]:
-        async with GraphClient.connect(settings, transport=transport, tokens=tokens, sleep=sleep) as client:
+        async with GraphClient.connect(
+            settings, transport=transport, tokens=tokens, sleep=sleep, clock=clock
+        ) as client:
             return await client.calendar_view(start, end)
 
     return read
@@ -224,8 +231,9 @@ async def assign_event(
     )
     if event.cancelled:
         lesson = await lessons.update_lesson(session, lesson.id, status=LessonStatus.CANCELLED)
-    # The assignment acknowledges the occurrence as it is: the rules may never name this student (``_check``).
-    event.title_name, event.reason, event.changed, event.dismissed = None, None, False, True
+    # The assignment acknowledges the occurrence as it is - its reason included, which the rules give again at the
+    # next import (``_check``); a rules answer naming another student or subject is never acknowledged.
+    event.title_name, event.changed, event.dismissed = None, False, True
     await session.flush()
     return lesson
 
@@ -266,22 +274,23 @@ async def _take(
     event.title_subject = title.subject if title is not None else None
     event.vanished, event.last_seen_at = False, now
 
-    if lesson is not None:
-        await _check(
-            session,
-            event,
-            lesson,
-            propose(occurrence, roster),
-            counts,
-            differs=seen_before != _seen(event),
-            untouched=untouched,
-        )
-    elif event.dismissed or event.changed:
-        # Waits for the maintainer: dismissed, or flagged because it could not get its lesson - proposing it again
-        # could add a second lesson once it moves away from the one that blocked it.
-        event.title_name = None
-    else:
-        await _propose(session, event, occurrence, roster, counts)
+    if lesson is None:
+        if event.dismissed or event.changed:
+            # Waits for the maintainer: dismissed, or flagged because it could not get its lesson - proposing it
+            # again could add a second lesson once it moves away from the one that blocked it.
+            event.title_name = None
+        else:
+            await _propose(session, event, occurrence, roster, counts)
+        return
+
+    # The rules' answer is part of what was seen: a "no lesson" answer by its reason, never by the name (PD13). A new
+    # reason is a difference; an answer that turns into this lesson is not - an alias stored on assigning does that.
+    reason_before = event.reason
+    proposal = propose(occurrence, roster)
+    event.reason = proposal.reason if isinstance(proposal, NoLesson) else None
+    event.title_name = None
+    differs = seen_before != _seen(event) or event.reason not in (None, reason_before)
+    await _check(session, event, lesson, proposal, counts, differs=differs, untouched=untouched)
 
 
 async def _check(
@@ -294,24 +303,33 @@ async def _check(
     differs: bool,
     untouched: bool,
 ) -> None:
-    """Judge an occurrence that has a lesson. Only when the rules still give this student and this subject may an
-    untouched lesson follow a changed appointment; anything else is flagged and the lesson stays exactly as it is.
+    """Judge an occurrence that has a lesson; the lesson itself changes only by following.
 
-    ``dismissed`` is the maintainer's acknowledgment of the occurrence as last seen - by a dismiss or by the assignment
-    itself - so it holds until the appointment changes again.
+    - The rules give another student or another subject: flagged at every import, whatever was acknowledged - the
+      flag stays until the lesson, the title or an alias settles it.
+    - The rules give no lesson, or the appointment changed and the lesson is touched: flagged, unless the maintainer
+      acknowledged the occurrence as it is (``dismissed``: a dismiss, or the assignment - an assigned occurrence has
+      no lesson by the rules). Any difference in start, end, cancellation, subject, the no-lesson reason or presence
+      ends the acknowledgment.
+    - Otherwise - this student, this subject, an untouched lesson - it follows a changed appointment.
     """
-    event.reason, event.title_name = None, None
     if differs:
         event.dismissed = False
-    same = isinstance(proposal, LessonProposal) and (proposal.student_id, proposal.subject) == (
-        lesson.student_party_id,
-        lesson.subject,
-    )
-    if not same or (differs and not untouched):
-        if not event.dismissed:
+    match proposal:
+        case LessonProposal(student_id=student_id, subject=subject) if (student_id, subject) != (
+            lesson.student_party_id,
+            lesson.subject,
+        ):
             event.changed = True
-        return
+            return
+        case NoLesson():
+            if not event.dismissed:
+                event.changed = True
+            return
     if not differs:
+        return
+    if not untouched:
+        event.changed = True
         return
 
     status = LessonStatus.CANCELLED if proposal.status is ProposedStatus.CANCELLED else None

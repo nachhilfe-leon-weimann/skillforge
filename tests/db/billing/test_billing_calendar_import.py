@@ -41,6 +41,7 @@ pytestmark = pytest.mark.db
 
 BERLIN = ZoneInfo("Europe/Berlin")
 G2_DAYS = (dt.date(2026, 11, 23), dt.date(2026, 12, 13))
+ASSIGNED_START = dt.datetime(2026, 12, 2, 15, tzinfo=dt.UTC)
 # An hour after G2's occurrence of 2026-12-01.
 START_LATER = dt.datetime(2026, 12, 1, 16, tzinfo=dt.UTC)
 G2_MOVED = next(
@@ -751,18 +752,19 @@ def _turned(event: dict, variant: str) -> dict:
     raise AssertionError(variant)
 
 
-TURNS = [
-    "all-day",
-    "phone-category",
-    "phone-location",
-    "first-meeting",
-    "no-title-pattern",
-    "other-student",
-    "other-subject",
-]
+# Each turn with the reason the rules now give; `None` where they give a lesson - of another student or subject.
+TURNS = {
+    "all-day": NoLessonReason.ALL_DAY,
+    "phone-category": NoLessonReason.PHONE,
+    "phone-location": NoLessonReason.PHONE,
+    "first-meeting": NoLessonReason.FIRST_MEETING,
+    "no-title-pattern": NoLessonReason.NO_TITLE_PATTERN,
+    "other-student": None,
+    "other-subject": None,
+}
 
 
-@pytest.mark.parametrize("variant", TURNS)
+@pytest.mark.parametrize("variant", list(TURNS))
 async def test_a_planned_lesson_whose_appointment_is_no_longer_its_lesson_stays_and_is_flagged(
     session: AsyncSession, fake: FakeGraph, run, variant: str
 ):
@@ -782,31 +784,132 @@ async def test_a_planned_lesson_whose_appointment_is_no_longer_its_lesson_stays_
     assert await _row(session, planned_id) == row
     assert (counts.lessons_created, counts.lessons_updated, counts.lessons_removed, counts.changed) == (0, 0, 0, 1)
     event = await _event(session, G2_MOVED)
-    assert (event.changed, event.title_name, event.reason) == (True, None, None)
+    assert (event.changed, event.title_name, event.reason) == (True, None, TURNS[variant])
+
+    before = await snapshot(session)
+    await run(*G2_DAYS)
+    assert await snapshot(session) == before, "the flag is set once; an unchanged calendar writes nothing"
 
 
-async def test_an_acknowledged_difference_from_the_rules_stays_acknowledged_until_the_appointment_changes(
+async def test_another_subject_is_flagged_again_after_a_dismiss_until_the_lesson_settles_it(
     session: AsyncSession, fake: FakeGraph, run
 ):
     await new_student(session, MAX)
     first_read = fixture_events("g2-series-first-read")
-    other = [_turned(event, "other-subject") if event["id"] == G2_MOVED else event for event in first_read]
     answer_view(fake, first_read)
     await run(*G2_DAYS)
     planned_id = (await _lesson_of(session, G2_MOVED)).id
-    row = await _row(session, planned_id)
-    answer_view(fake, other)
+    answer_view(fake, [_turned(event, "other-subject") if event["id"] == G2_MOVED else event for event in first_read])
     await run(*G2_DAYS)
 
     await calendar.dismiss_event(session, (await _event(session, G2_MOVED)).id)
     await run(*G2_DAYS)
-    assert (await _event(session, G2_MOVED)).changed is False
+    assert (await _event(session, G2_MOVED)).changed is True, "another subject is never acknowledged"
 
-    answer_view(fake, [moved(event, START_LATER) if event["id"] == G2_MOVED else event for event in other])
+    await lessons.update_lesson(session, planned_id, subject="Physik")
+    await calendar.dismiss_event(session, (await _event(session, G2_MOVED)).id)
+    await run(*G2_DAYS)
+    assert (await _event(session, G2_MOVED)).changed is False, "settled: the rules give this lesson again"
+
+
+async def _assigned_to(session: AsyncSession, run, fake: FakeGraph, title: str, student: uuid.UUID) -> uuid.UUID:
+    """An occurrence of 2026-12-02 named ``title`` that waits, assigned to ``student``; returns the lesson's id."""
+    answer_view(fake, [graph_event("assigned", title, ASSIGNED_START)])
+    await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))
+    event_id = (await _event(session, "assigned")).id
+    lesson = await calendar.assign_event(session, event_id, student_id=student, subject="Mathe", minutes=60)
+    return lesson.id
+
+
+async def test_an_assigned_occurrence_whose_title_names_another_student_is_flagged(
+    session: AsyncSession, fake: FakeGraph, run
+):
+    """P1: same time and subject, only the name changes - to a student of the roster. The acknowledgment of the
+    assignment covered "nobody matches", never another student."""
+    max_id = await new_student(session, MAX)
+    await new_student(session, PAULA)
+    lesson_id = await _assigned_to(session, run, fake, "Mathe mit Student Z", max_id)
+    assert (await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))).changed == 0
+    row = await _row(session, lesson_id)
+
+    answer_view(fake, [graph_event("assigned", "Mathe mit Paula Beispiel", ASSIGNED_START)])
+    counts = await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))
+
+    assert (counts.changed, counts.lessons_created) == (1, 0)
+    assert await _row(session, lesson_id) == row
+    before = await snapshot(session)
+    await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))
+    assert await snapshot(session) == before, "flagged once; the repeat import writes nothing"
+
+
+async def test_an_ambiguous_name_assigned_to_one_namesake_is_flagged_when_it_names_the_other_alone(
+    session: AsyncSession, fake: FakeGraph, run
+):
+    """P1b: the namesake the lesson went to loses the student role; the title now means the other one alone."""
+    first = await new_student(session, MAX)
+    await new_student(session, MAX)
+    lesson_id = await _assigned_to(session, run, fake, "Mathe mit Max Mustermann", first)
+    assert (await _event(session, "assigned")).reason == NoLessonReason.AMBIGUOUS
+    assert (await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))).changed == 0
+    row = await _row(session, lesson_id)
+
+    await roles.remove_student_role(session, first)
+    counts = await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))
+
+    assert counts.changed == 1
+    assert await _row(session, lesson_id) == row
+
+
+async def test_a_dismissed_other_student_is_flagged_again_when_the_title_names_a_third(
+    session: AsyncSession, fake: FakeGraph, run
+):
+    """P2: a dismiss never covers another student - not the one it was given for, not a third one."""
+    await new_student(session, MAX)
+    await new_student(session, PAULA)
+    await new_student(session, ERIKA)
+    first_read = fixture_events("g2-series-first-read")
+    answer_view(fake, first_read)
+    await run(*G2_DAYS)
+    planned_id = (await _lesson_of(session, G2_MOVED)).id
+    row = await _row(session, planned_id)
+    answer_view(fake, [_turned(event, "other-student") if event["id"] == G2_MOVED else event for event in first_read])
+    await run(*G2_DAYS)
+    await calendar.dismiss_event(session, (await _event(session, G2_MOVED)).id)
+
+    third = {**next(e for e in first_read if e["id"] == G2_MOVED), "subject": "Mathematik mit Erika Mustermann"}
+    answer_view(fake, [third if event["id"] == G2_MOVED else event for event in first_read])
     counts = await run(*G2_DAYS)
-    assert (await _event(session, G2_MOVED)).changed is True
-    assert counts.lessons_updated == 0
+
+    assert (counts.changed, counts.lessons_updated) == (1, 0)
     assert await _row(session, planned_id) == row
+
+
+async def test_a_subject_change_after_an_acknowledgment_is_flagged(session: AsyncSession, fake: FakeGraph, run):
+    """The subject is part of what was seen: an assigned occurrence whose subject changes is the maintainer's again,
+    although the rules still match nobody."""
+    student = await new_student(session, MAX)
+    lesson_id = await _assigned_to(session, run, fake, "Mathe mit Student Z", student)
+    row = await _row(session, lesson_id)
+
+    answer_view(fake, [graph_event("assigned", "Physik mit Student Z", ASSIGNED_START)])
+    counts = await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))
+
+    assert counts.changed == 1
+    assert await _row(session, lesson_id) == row
+
+
+async def test_an_unchanged_touched_lesson_is_not_flagged(session: AsyncSession, fake: FakeGraph, run):
+    """A ticked lesson whose appointment did not change is no difference: the list does not fill with every tick."""
+    await new_student(session, MAX)
+    answer_view(fake, fixture_events("g2-series-first-read"))
+    await run(*G2_DAYS)
+    await _tick(session, await _lesson_of(session, G2_MOVED))
+    before = await snapshot(session)
+
+    counts = await run(*G2_DAYS)
+
+    assert counts.changed == 0
+    assert await snapshot(session) == before
 
 
 async def test_an_assigned_lesson_is_not_flagged_by_the_rules_until_its_appointment_changes(
@@ -932,6 +1035,30 @@ async def test_a_planned_lesson_corrected_by_hand_is_touched_and_never_follows_o
 
     assert await _row(session, planned_id) == row
     assert (counts.lessons_updated, counts.lessons_removed, counts.changed) == (0, 0, 1)
+
+
+async def test_a_second_vanishing_is_flagged_again_after_the_occurrence_was_seen_in_between(
+    session: AsyncSession, fake: FakeGraph, run
+):
+    """`vanished` is cleared when the occurrence is seen again, so its next vanishing is a difference of its own."""
+    await new_student(session, MAX)
+    first_read = fixture_events("g2-series-first-read")
+    without = [event for event in first_read if event["id"] != G2_MOVED]
+    answer_view(fake, first_read)
+    await run(*G2_DAYS)
+    await _tick(session, await _lesson_of(session, G2_MOVED))
+
+    for read in (without, first_read):
+        answer_view(fake, read)
+        await run(*G2_DAYS)
+        await calendar.dismiss_event(session, (await _event(session, G2_MOVED)).id)
+    assert (await _event(session, G2_MOVED)).vanished is False
+
+    answer_view(fake, without)
+    await run(*G2_DAYS)
+
+    event = await _event(session, G2_MOVED)
+    assert (event.changed, event.vanished) == (True, True)
 
 
 async def test_a_vanishing_after_a_dismissed_move_is_flagged_without_an_import_in_between(

@@ -5,6 +5,7 @@ reaches Microsoft. Names and ids are synthetic.
 """
 
 import datetime as dt
+import time
 import uuid
 from collections.abc import Iterable
 from typing import Any
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.models import PreferredMeetingTool
 from app.integrations.config import IntegrationMode
+from app.integrations.graph.client import Clock
 from app.integrations.graph.config import GraphSettings
 from app.integrations.graph.credential import TokenCache
 from app.services.billing.calendar import CalendarReader, graph_calendar
@@ -50,9 +52,10 @@ def graph_settings(credential: Credential) -> GraphSettings:
     )
 
 
-def reader(fake: FakeGraph, settings: GraphSettings) -> CalendarReader:
-    """The import's reader over the fake: the real client, a token cache of its own, no real sleep."""
-    return graph_calendar(settings, transport=fake.transport, tokens=TokenCache(), sleep=fake.sleep)
+def reader(fake: FakeGraph, settings: GraphSettings, clock: Clock = time.monotonic) -> CalendarReader:
+    """The import's reader over the fake: the real client, a token cache of its own, no real sleep - and, for the
+    client's deadline, the clock a test moves."""
+    return graph_calendar(settings, transport=fake.transport, tokens=TokenCache(), sleep=fake.sleep, clock=clock)
 
 
 def answer_view(fake: FakeGraph, events: Iterable[dict[str, Any]]) -> None:

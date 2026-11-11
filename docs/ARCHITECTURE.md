@@ -274,9 +274,12 @@ writes `billing:write`.
   `changed` and changes nothing: an occurrence with a lesson is judged by `propose` again at every import, and only
   while it still gives this student and this subject does an untouched lesson - `planned`, no note, no own rate, at
   the start and length of its occurrence as last seen - follow a change (or go with its vanished occurrence). Any
-  other difference is flagged, a vanishing once (`vanished`); a dismiss or an assignment acknowledges the occurrence
-  as last seen until it changes again. An occurrence that could not get its lesson - its student has one at that
-  start - stays flagged and is not proposed again; a student who lost the role is `unmatched`. A title with a NUL
+  other difference is flagged, a vanishing once (`vanished`). A dismiss or an assignment acknowledges a "no lesson"
+  answer of the rules and a change already seen, until start, end, cancellation, subject, the no-lesson reason
+  (`reason`, kept for an occurrence with a lesson too) or presence changes again; a rules answer naming another
+  student or subject is never acknowledged and stays flagged until the lesson, the title or an alias settles it.
+  An occurrence that could not get its lesson - its student has one at that start - stays flagged and is not
+  proposed again; a student who lost the role is `unmatched`. A title with a NUL
   character is read as no title. The roster is read through the CRM's `list_parties`.
   `GET /billing/calendar/events` lists the occurrences that wait or are flagged; `.../{event_id}/assign` creates the
   lesson (optionally storing an alias) and `.../{event_id}/dismiss` takes an occurrence off the list. PD13:
