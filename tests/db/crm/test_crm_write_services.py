@@ -39,7 +39,7 @@ from app.core.db.models import (
     TutorSubject,
 )
 from app.services import crm as crm_services
-from app.services.crm import companies, contact_infos, parties, persons, relations, roles, subjects
+from app.services.crm import companies, contact_infos, parties, payers, persons, relations, roles, subjects
 from app.services.crm.inputs import NewContactInfo, StudentRoleData, TutorRoleData
 
 pytestmark = pytest.mark.db
@@ -53,6 +53,7 @@ NOT_AGGREGATE_WRITES = {
     parties.saved,  # the bookkeeping every write ends with
     persons.get_person,
     companies.get_company,
+    payers.resolve_payer,  # a read for billing (billing spec, SF3-1)
     # Subjects are reference data outside the aggregate: no party, no updated_at.
     subjects.list_subjects,
     subjects.get_subject,

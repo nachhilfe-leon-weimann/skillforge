@@ -12,7 +12,8 @@ from pydantic import AfterValidator, AwareDatetime, Field, StringConstraints
 from pydantic.experimental.missing_sentinel import MISSING
 
 from app.api.v1.common import ApiModel
-from app.core.db.models import Lesson, LessonStatus, Rate
+from app.core.db.models import Lesson, LessonStatus, ManualPayer, Rate, SevdeskContact
+from app.services.billing.payers import StudentPayer
 from app.services.crm.inputs import require_storable_text
 
 # A lesson longer than a day is a typo. Rule G (minutes divisible by 15) is request validation: the catalog has no
@@ -50,6 +51,12 @@ Note = Annotated[
 StartsAt = Annotated[AwareDatetime, AfterValidator(_in_utc), Field(examples=["2026-11-02T16:00:00+01:00"])]
 Minutes = Annotated[int, Field(gt=0, le=MAX_LESSON_MINUTES, multiple_of=15, examples=[60])]
 CentsPerHour = Annotated[int, Field(ge=0, le=MAX_CENTS_PER_HOUR, examples=[3000])]
+# A sevDesk id is a number sent as a string; it is stored as given and checked against nothing.
+SevdeskContactId = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=64, pattern=r"^[0-9]+$"),
+    Field(examples=["1234567"]),
+]
 
 
 class LessonResponse(ApiModel):
@@ -180,3 +187,99 @@ class RatePutRequest(ApiModel):
     """The rate in cents per hour: 0 or more, divisible by 4."""
     note: Note | None = None
     """Free-text note; leaving it out clears it."""
+
+
+class StudentPayerResponse(ApiModel):
+    """Who pays for a student's lessons: what a lesson that becomes billable now stores (PD1)."""
+
+    student_id: uuid.UUID
+    """ID of the student's party."""
+    payer_id: uuid.UUID | None
+    """The party that pays: the one party with a `pays_for` relation to the student - a person or a company - or the
+    student itself when none has. `null` when several have."""
+    ambiguous: bool
+    """Whether several parties pay for the student: a lesson that becomes billable then stores no payer, and the
+    CRM's `pays_for` relations are corrected first."""
+    sevdesk_contact_linked: bool
+    """Whether the payer has a sevDesk contact; without one there is no invoice draft. `false` while ambiguous."""
+    manual_billing: bool
+    """Whether the payer is billed by hand: their lessons never reach a draft. `false` while ambiguous."""
+
+    @classmethod
+    def from_model(cls, payer: StudentPayer) -> Self:
+        return cls(
+            student_id=payer.resolution.student_id,
+            payer_id=payer.resolution.payer_id,
+            ambiguous=payer.resolution.ambiguous,
+            sevdesk_contact_linked=payer.sevdesk_contact_linked,
+            manual_billing=payer.manual_billing,
+        )
+
+
+class LessonPayerResponse(ApiModel):
+    """The payer stored on a lesson."""
+
+    lesson_id: uuid.UUID
+    """ID of the lesson."""
+    student_id: uuid.UUID
+    """ID of the student's party."""
+    billable: bool
+    """Whether the lesson is billable; only a billable lesson stores a payer."""
+    payer_id: uuid.UUID | None
+    """The payer stored on the lesson. `null` when the lesson is not billable, or when several parties pay for the
+    student: such a lesson is not billed until it has a payer."""
+
+    @classmethod
+    def from_model(cls, lesson: Lesson) -> Self:
+        return cls(
+            lesson_id=lesson.id,
+            student_id=lesson.student_party_id,
+            billable=lesson.billable,
+            payer_id=lesson.payer_party_id,
+        )
+
+
+class SevdeskContactPutRequest(ApiModel):
+    """Body of `PUT /parties/{party_id}/sevdesk-contact`: the contact the party's invoices go to."""
+
+    sevdesk_contact_id: SevdeskContactId
+    """ID of the contact in sevDesk, digits only. It is stored as given; nothing is looked up in sevDesk."""
+
+
+class SevdeskContactResponse(ApiModel):
+    """The link between a party and its sevDesk contact."""
+
+    party_id: uuid.UUID
+    """ID of the party."""
+    sevdesk_contact_id: str
+    """ID of the contact in sevDesk."""
+    created_at: datetime
+    """When the link was made."""
+
+    @classmethod
+    def from_model(cls, contact: SevdeskContact) -> Self:
+        return cls(party_id=contact.party_id, sevdesk_contact_id=contact.sevdesk_id, created_at=contact.created_at)
+
+
+class ManualBillingPutRequest(ApiModel):
+    """Body of `PUT /parties/{party_id}/manual-billing`: the whole mark. The same note again changes nothing."""
+
+    note: Note | None = None
+    """Free-text note, such as why the payer is billed by hand; leaving it out clears it."""
+
+
+class ManualBillingResponse(ApiModel):
+    """A payer billed by hand: their lessons show as "bill manually" and never reach a draft."""
+
+    party_id: uuid.UUID
+    """ID of the party."""
+    note: str | None
+    """Free-text note."""
+    created_at: datetime
+    """When the party was marked."""
+    updated_at: datetime
+    """When the note last changed."""
+
+    @classmethod
+    def from_model(cls, payer: ManualPayer) -> Self:
+        return cls(party_id=payer.party_id, note=payer.note, created_at=payer.created_at, updated_at=payer.updated_at)

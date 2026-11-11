@@ -61,6 +61,19 @@ def test_the_operation_table_holds_the_rate_routes():
     }
 
 
+def test_the_operation_table_holds_the_payer_routes():
+    party = f"/api/v1/billing/parties/{PATH_VALUES['party_id']}"
+
+    assert set(_billing_operations()) >= {
+        ("GET", f"/api/v1/billing/students/{PATH_VALUES['party_id']}/payer"),
+        ("POST", f"/api/v1/billing/lessons/{PATH_VALUES['lesson_id']}/resolve-payer"),
+        ("PUT", f"{party}/sevdesk-contact"),
+        ("DELETE", f"{party}/sevdesk-contact"),
+        ("PUT", f"{party}/manual-billing"),
+        ("DELETE", f"{party}/manual-billing"),
+    }
+
+
 @pytest.mark.parametrize(("method", "path"), _billing_operations())
 async def test_billing_route_answers_401_without_a_token(method: str, path: str):
     async with _client() as client:

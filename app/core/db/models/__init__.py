@@ -17,6 +17,7 @@ from .auth import (
 from .billing import (
     Lesson,
     LessonStatus,
+    ManualPayer,
     Rate,
 )
 from .core import (
@@ -68,6 +69,7 @@ __all__ = [
     "UserSession",
     "Lesson",
     "LessonStatus",
+    "ManualPayer",
     "Rate",
     "ClockodoCustomer",
     "ClockodoProject",

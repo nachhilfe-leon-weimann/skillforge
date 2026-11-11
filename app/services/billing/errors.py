@@ -26,6 +26,13 @@ class RateNotFoundError(NotFoundError):
     message = "Rate not found"
 
 
+class SevdeskContactAlreadyLinkedError(ConflictError):
+    """The sevDesk contact is linked to another party, or the party to another contact: a party has at most one
+    contact and a contact one party (``ext.sevdesk_contact``). A link is removed before another one is made."""
+
+    message = "The party or the sevDesk contact is already linked"
+
+
 class UnknownStudentError(DomainValidationError):
     """A party named as a student holds no student role. A body reference that names no party at all is one too
     (422, not 404); a party in a path that does not exist is the CRM's ``PartyNotFoundError``."""

@@ -20,6 +20,11 @@ StudentId = Annotated[
     Path(description="ID of the student's party.", examples=["7d9f4f3e-1c2b-4a5d-9e8f-0a1b2c3d4e5f"]),
 ]
 
+PartyId = Annotated[
+    uuid.UUID,
+    Path(description="ID of the party: a person or a company.", examples=["3b8e2c1d-4f5a-4b6c-9d7e-8f9a0b1c2d3e"]),
+]
+
 ValidFrom = Annotated[
     date,
     Path(description="The day the rate takes effect; it holds until the next rate's day.", examples=["2026-09-01"]),

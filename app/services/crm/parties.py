@@ -15,6 +15,7 @@ from app.core.db.models import (
     ContactInfo,
     DiscordAccount,
     Lesson,
+    ManualPayer,
     MicrosoftAccount,
     MicrosoftContact,
     Party,
@@ -53,8 +54,8 @@ class ExternalLink(NamedTuple):
 
     kind: str
     """The name a client sees in ``party_in_use``."""
-    party_column: InstrumentedAttribute[uuid.UUID]
-    """The column naming the party."""
+    party_column: InstrumentedAttribute[uuid.UUID] | InstrumentedAttribute[uuid.UUID | None]
+    """The column naming the party; a nullable one names none while it is empty."""
     still_linked: ColumnElement[bool]
     """When a row still counts."""
 
@@ -73,6 +74,8 @@ EXTERNAL_LINKS = (
     ExternalLink("microsoft_contact", MicrosoftContact.party_id, true()),
     ExternalLink("lesson", Lesson.student_party_id, true()),
     ExternalLink("rate", Rate.student_party_id, true()),
+    ExternalLink("lesson_payer", Lesson.payer_party_id, true()),
+    ExternalLink("manual_payer", ManualPayer.party_id, true()),
 )
 
 # Sorts persons ("Mustermann Max") and companies into one case-insensitive order.

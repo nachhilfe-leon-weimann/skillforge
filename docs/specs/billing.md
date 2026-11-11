@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
+> Status: Draft - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3, SF3-1 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
 > then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
@@ -1139,14 +1139,20 @@ write (`invoices.py`)._
   and keeps `billing.manual_payer` (PD5); the payer routes; one revision; `Lesson.payer_party_id` and
   `ManualPayer.party_id` join `EXTERNAL_LINKS`.
 - _Tests that change:_ `NOT_AGGREGATE_WRITES` in `tests/db/crm/test_crm_write_services.py` gains `resolve_payer`;
-  `LINKS` in `tests/db/crm/test_crm_party_delete_api.py` gains `lesson_payer` and `manual_payer`.
+  `LINKS` in `tests/db/crm/test_crm_party_delete_api.py` gains `manual_payer` - a `lesson_payer` row names its party
+  in `payer_party_id`, not `party_id`, so it gets a test of its own in the same file. The registries of the billing
+  route tests gain the payer routes: the endpoint list of `test_the_billing_endpoints_carry_no_boilerplate` in
+  `tests/api/test_billing_architecture.py`; in `tests/api/test_billing_error_contract.py`, `ENDPOINTS`,
+  `EXPECTATIONS`, `CRM_EXPECTATIONS` and `CATALOG` gain the payer routes and `SevdeskContactAlreadyLinkedError`.
+  `test_the_billing_party_references_are_lesson_and_rate_and_restrict` in `tests/db/models/test_billing_models.py`
+  gains `lesson.payer_party_id` and `manual_payer.party_id`.
 - _Acceptance criteria:_
-  - [ ] No `pays_for`: the student. One: that party, a company included. Two: ambiguous.
-  - [ ] A lesson gets its payer when it becomes billable: by a tick, and by a late cancellation marked billable.
-  - [ ] A billable lesson keeps its payer when `pays_for` changes afterwards; becoming billable again, or
+  - [x] No `pays_for`: the student. One: that party, a company included. Two: ambiguous.
+  - [x] A lesson gets its payer when it becomes billable: by a tick, and by a late cancellation marked billable.
+  - [x] A billable lesson keeps its payer when `pays_for` changes afterwards; becoming billable again, or
         `resolve-payer`, resolves afresh.
-  - [ ] Only `app/services/billing/payers.py` writes `ext.sevdesk_contact` (architecture test).
-  - [ ] A contact already linked to another party, or a second contact for one party, is
+  - [x] Only `app/services/billing/payers.py` writes `ext.sevdesk_contact` (architecture test).
+  - [x] A contact already linked to another party, or a second contact for one party, is
         `sevdesk_contact_already_linked`.
 
 **SF3-2 - Backfill.**

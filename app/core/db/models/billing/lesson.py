@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import UUID, CheckConstraint, DateTime, Enum, ForeignKey, Text, UniqueConstraint, false, text
+from sqlalchemy import UUID, CheckConstraint, DateTime, Enum, ForeignKey, Index, Text, UniqueConstraint, false, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..shared import TimestampMixin
@@ -25,8 +25,8 @@ class Lesson(TimestampMixin, BillingBase):
 
     Rule G holds in the database: minutes are divisible by 15 and the lesson's own rate (PD3), if any, by 4 - so
     every amount is a whole cent. ``billable`` is only ever true for a ``held`` or ``cancelled`` lesson.
-    ``student_party_id`` is ``RESTRICT``: the CRM's delete guard names a party with a lesson before the database
-    refuses it (PD9).
+    ``student_party_id`` and ``payer_party_id`` are ``RESTRICT``: the CRM's delete guard names a party with a lesson
+    before the database refuses it (PD9).
     """
 
     __tablename__ = "lesson"
@@ -37,6 +37,8 @@ class Lesson(TimestampMixin, BillingBase):
             "rate_cents_per_hour >= 0 AND rate_cents_per_hour % 4 = 0", name="ck_lesson_quarter_hour_cents"
         ),
         CheckConstraint("NOT billable OR status IN ('held', 'cancelled')", name="ck_lesson_billable_status"),
+        # The delete guard asks for a party's lessons as payer, as it does for the student (uq_lesson_student_start).
+        Index("ix_lesson_payer_party_id", "payer_party_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -62,6 +64,12 @@ class Lesson(TimestampMixin, BillingBase):
         server_default=text("'planned'"),
     )
     billable: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=false())
+
+    payer_party_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("core.party.id", ondelete="RESTRICT"), nullable=True
+    )
+    """Who pays, stored when the lesson becomes billable (PD1): the CRM's payer then, kept when ``pays_for`` changes
+    later. ``None`` while the lesson is not billable, and for a billable one whose student had several payers."""
 
     rate_cents_per_hour: Mapped[int | None] = mapped_column(nullable=True)
     """The lesson's own rate (PD3); ``None`` resolves the student's rate or the default."""

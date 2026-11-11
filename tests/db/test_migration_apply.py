@@ -589,3 +589,74 @@ def test_the_billing_revision_is_reversible_and_holds_the_quarter_hour_rule(migr
 
     _alembic(migration_db_url, "upgrade", _REVISION_0015)
     assert asyncio.run(_rows(migration_db_url, _BILLING_CONSTRAINTS)) == _BILLING_CONSTRAINTS_AT_0015
+
+
+# --- 0016_billing_payer (billing spec, SF3-1) ---
+
+_REVISION_0016 = "0016_billing_payer"
+_COMPANY_PAYER_ID = "88888888-8888-8888-8888-888888888888"
+_MANUAL_PAYER_ID = "99999999-9999-9999-9999-999999999999"
+_BILLING_CONSTRAINTS_AT_0016 = [
+    *_BILLING_CONSTRAINTS_AT_0015,
+    (
+        "lesson",
+        "lesson_payer_party_id_fkey",
+        "FOREIGN KEY (payer_party_id) REFERENCES core.party(id) ON DELETE RESTRICT",
+    ),
+    (
+        "manual_payer",
+        "manual_payer_party_id_fkey",
+        "FOREIGN KEY (party_id) REFERENCES core.party(id) ON DELETE RESTRICT",
+    ),
+]
+# What the schema accepts: a lesson without a payer, a billable one whose payer is a company (decision I), and a
+# payer marked as billed by hand without a note. One party is only a lesson's payer, the other only marked, so each
+# foreign key refuses on its own.
+_PAYER_SEED = f"""
+INSERT INTO core.party (id, type) VALUES
+    ('{_PARTY_ID}', 'PERSON'), ('{_COMPANY_PAYER_ID}', 'COMPANY'), ('{_MANUAL_PAYER_ID}', 'COMPANY');
+INSERT INTO billing.lesson (id, student_party_id, subject, starts_at, minutes, status, billable, payer_party_id) VALUES
+    (gen_random_uuid(), '{_PARTY_ID}', 'Mathe', '2026-11-02 15:00+00', 60, 'planned', false, NULL),
+    (gen_random_uuid(), '{_PARTY_ID}', 'Mathe', '2026-11-03 15:00+00', 60, 'held', true, '{_COMPANY_PAYER_ID}');
+INSERT INTO billing.manual_payer (party_id) VALUES ('{_MANUAL_PAYER_ID}');
+"""
+_SEEDED_PAYERS = """
+SELECT l.payer_party_id::text, p.type::text FROM billing.lesson l LEFT JOIN core.party p ON p.id = l.payer_party_id
+ORDER BY l.starts_at
+"""
+_SEEDED_MARKS = "SELECT party_id::text, note FROM billing.manual_payer"
+_PAYER_REFUSALS = [
+    (f"INSERT INTO billing.manual_payer (party_id) VALUES ('{_MANUAL_PAYER_ID}')", "manual_payer_pkey"),
+    (f"INSERT INTO billing.manual_payer (party_id) VALUES ('{uuid.uuid4()}')", "manual_payer_party_id_fkey"),
+    # RESTRICT: a party keeps the lessons it pays for and its mark.
+    (f"DELETE FROM core.party WHERE id = '{_COMPANY_PAYER_ID}'", "lesson_payer_party_id_fkey"),
+    (f"DELETE FROM core.party WHERE id = '{_MANUAL_PAYER_ID}'", "manual_payer_party_id_fkey"),
+]
+
+
+def _billing_constraints(url: str) -> list[tuple[object, ...]]:
+    return sorted(asyncio.run(_rows(url, _BILLING_CONSTRAINTS)))
+
+
+def test_the_payer_revision_is_reversible_and_restricts_both_party_references(migration_db_url: str) -> None:
+    # `alembic check` compares no foreign key's ON DELETE: pin every definition, and what the schema accepts and
+    # refuses; the downgrade by one leaves the 0015 schema, the seeded lessons with it.
+    _alembic(migration_db_url, "upgrade", _REVISION_0016)
+    assert _billing_constraints(migration_db_url) == sorted(_BILLING_CONSTRAINTS_AT_0016)
+    assert asyncio.run(_primary_key_columns(migration_db_url, "billing", "manual_payer")) == ["party_id"]
+
+    asyncio.run(_run_on_server(migration_db_url, _PAYER_SEED))
+    assert asyncio.run(_rows(migration_db_url, _SEEDED_PAYERS)) == [(None, None), (_COMPANY_PAYER_ID, "COMPANY")]
+    assert asyncio.run(_rows(migration_db_url, _SEEDED_MARKS)) == [(_MANUAL_PAYER_ID, None)]
+    for statement, constraint in _PAYER_REFUSALS:
+        assert asyncio.run(_refusing_constraint(migration_db_url, statement)) == constraint
+
+    _alembic(migration_db_url, "downgrade", _REVISION_0015)
+    assert _billing_constraints(migration_db_url) == sorted(_BILLING_CONSTRAINTS_AT_0015)
+    relations = {name for (name,) in asyncio.run(_rows(migration_db_url, _BILLING_RELATIONS))}
+    assert {"lesson", "rate"} <= relations
+    assert relations.isdisjoint({"manual_payer", "manual_payer_pkey", "ix_lesson_payer_party_id"})
+    assert asyncio.run(_rows(migration_db_url, "SELECT count(*) FROM billing.lesson")) == [(2,)]
+
+    _alembic(migration_db_url, "upgrade", _REVISION_0016)
+    assert _billing_constraints(migration_db_url) == sorted(_BILLING_CONSTRAINTS_AT_0016)
