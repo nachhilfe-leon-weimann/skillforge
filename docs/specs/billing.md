@@ -1161,9 +1161,9 @@ write (`invoices.py`)._
 - _Technique:_ `just billing-backfill <file>` (`app/cli/billing_backfill.py`) reads a mapping CSV the maintainer
   confirmed - student, payer, sevDesk contact id, own rate with its day, billed by hand - from outside the
   repository and applies it through the services: `pays_for` through the CRM's relation service, the contact link,
-  the rate, the marker. It is a data step: the maintainer runs it, an agent sees counts. Every run - the dry run
-  and `--apply` - prints, before anything is written, the smallest and the largest rate of the file in euros per
-  hour: rule G cannot catch euros typed as cents (`32`). The file's columns:
+  the rate, the marker. It is a data step: the maintainer runs it, an agent sees counts and the rates' span. Every
+  run - the dry run and `--apply` - prints, before anything is written, the smallest and the largest rate of the
+  file in euros per hour: rule G cannot catch euros typed as cents (`32`). The file's columns:
   `student_party_id`, `payer_party_id`, `sevdesk_contact_id`, `manual_billing`, `rate_cents_per_hour`,
   `rate_valid_from` - parties by id, never by name; the module docstring holds the format.
 - _Acceptance criteria:_
