@@ -10,7 +10,7 @@ given: nothing here calls sevDesk, and no message repeats a contact id.
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import delete, exists, func, select
+from sqlalchemy import delete, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -91,29 +91,43 @@ async def link_sevdesk_contact(session: AsyncSession, party_id: uuid.UUID, sevde
 
     A contact linked to another party, or another contact for this party, is ``SevdeskContactAlreadyLinkedError``.
     One statement decides, so two racing requests cannot both link, and neither fails on a unique constraint.
+
+    An insert that did nothing met a committed link (``ON CONFLICT`` waits for one that is not committed yet). When
+    the look that follows finds neither this link nor another one in the way, that link's delete committed in
+    between - the party lock does not keep an unlink out - and the insert runs again. Every round follows such a
+    committed delete, so the rounds end.
     """
     await _require_party(session, party_id)
 
-    linked = (
-        await session.scalars(
-            insert(SevdeskContact)
-            .values(sevdesk_id=sevdesk_id, party_id=party_id)
-            .on_conflict_do_nothing()
-            .returning(SevdeskContact),
-            execution_options={"populate_existing": True},
-        )
-    ).one_or_none()
-    if linked is not None:
-        return linked
+    while True:
+        linked = (
+            await session.scalars(
+                insert(SevdeskContact)
+                .values(sevdesk_id=sevdesk_id, party_id=party_id)
+                .on_conflict_do_nothing()
+                .returning(SevdeskContact),
+                execution_options={"populate_existing": True},
+            )
+        ).one_or_none()
+        if linked is not None:
+            return linked
 
-    # Something conflicted: either exactly this link exists - nothing to do - or another one stands in the way.
-    existing = await session.scalar(
-        select(SevdeskContact).where(SevdeskContact.sevdesk_id == sevdesk_id, SevdeskContact.party_id == party_id)
-    )
-    if existing is None:
-        raise SevdeskContactAlreadyLinkedError(f"Party {party_id} or the contact is linked elsewhere")
-
-    return existing
+        # Something conflicted: exactly this link - nothing to do -, another one in the way, or nothing any more.
+        in_the_way = (
+            await session.scalars(
+                select(SevdeskContact).where(
+                    or_(SevdeskContact.sevdesk_id == sevdesk_id, SevdeskContact.party_id == party_id)
+                ),
+                execution_options={"populate_existing": True},
+            )
+        ).all()
+        match in_the_way:
+            case [link] if (link.sevdesk_id, link.party_id) == (sevdesk_id, party_id):
+                return link
+            case []:
+                continue
+            case _:
+                raise SevdeskContactAlreadyLinkedError(f"Party {party_id} or the contact is linked elsewhere")
 
 
 async def unlink_sevdesk_contact(session: AsyncSession, party_id: uuid.UUID) -> None:

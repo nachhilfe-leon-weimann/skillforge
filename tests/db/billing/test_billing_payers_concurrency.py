@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import delete, select, text
+from sqlalchemy import Insert, delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import Database
@@ -29,15 +29,18 @@ from app.services.crm.inputs import StudentRoleData
 pytestmark = pytest.mark.db
 
 CONTACT = "4711003"
+OTHER_CONTACT = "4711004"
 
 
-async def _race(db: Database, first_party: uuid.UUID, second_party: uuid.UUID) -> SevdeskContact:
-    """Link the contact to ``first_party`` without committing, start linking it to ``second_party``, see that wait,
-    commit the first and return what the second answers."""
+async def _race(
+    db: Database, first_party: uuid.UUID, second_party: uuid.UUID, *, second_contact: str = CONTACT
+) -> SevdeskContact:
+    """Link the contact to ``first_party`` without committing, start linking ``second_contact`` to ``second_party``,
+    see that wait, commit the first and return what the second answers."""
     first, second = db.session_factory(), db.session_factory()
     try:
         await payers.link_sevdesk_contact(first, first_party, CONTACT)
-        racing = asyncio.create_task(payers.link_sevdesk_contact(second, second_party, CONTACT))
+        racing = asyncio.create_task(payers.link_sevdesk_contact(second, second_party, second_contact))
         await asyncio.sleep(0.5)
         assert not racing.done(), "the second link waits for the first"
 
@@ -54,7 +57,7 @@ async def two_parties(db: Database):
         ids = [(await persons.create_person(setup, firstname=name, lastname="A")).id for name in ("Race", "Other")]
     yield ids
     async with db.session() as cleanup:
-        await cleanup.execute(delete(SevdeskContact).where(SevdeskContact.sevdesk_id == CONTACT))
+        await cleanup.execute(delete(SevdeskContact).where(SevdeskContact.party_id.in_(ids)))
         for party_id in ids:
             await parties.delete_party(cleanup, party_id)
 
@@ -66,12 +69,53 @@ async def test_linking_one_contact_to_two_parties_at_once_is_already_linked(db: 
         await _race(db, party, other)
 
 
+async def test_linking_two_contacts_to_one_party_at_once_is_already_linked(db: Database, two_parties):
+    party, _ = two_parties
+
+    with pytest.raises(SevdeskContactAlreadyLinkedError):
+        await _race(db, party, party, second_contact=OTHER_CONTACT)
+
+
 async def test_the_same_link_twice_at_once_answers_the_link_both_times(db: Database, two_parties):
     party, _ = two_parties
 
     link = await _race(db, party, party)
 
     assert (link.sevdesk_id, link.party_id) == (CONTACT, party)
+
+
+async def test_the_same_link_again_while_it_is_unlinked_links_it_again(db: Database, two_parties):
+    """The party lock lets an unlink of the party pass: one committed between the insert that met the link and the
+    look that follows leaves nothing in the way, and the insert runs again - no `sevdesk_contact_already_linked`."""
+    party, _ = two_parties
+    async with db.session() as setup:
+        await payers.link_sevdesk_contact(setup, party, CONTACT)
+    linking, unlinking = db.session_factory(), db.session_factory()
+    execute = linking.execute
+    statements: list[object] = []
+
+    async def unlink_after_the_first_insert(statement, *args, **kwargs):
+        # The statement after the first insert is the look at what is in the way: the unlink commits just before it.
+        if len(statements) == 1 and isinstance(statements[0], Insert):
+            await unlinking.execute(LOCK_TIMEOUT)
+            await payers.unlink_sevdesk_contact(unlinking, party)
+            await unlinking.commit()
+        statements.append(statement)
+        return await execute(statement, *args, **kwargs)
+
+    linking.execute = unlink_after_the_first_insert
+    try:
+        link = await payers.link_sevdesk_contact(linking, party, CONTACT)
+        await linking.commit()
+    finally:
+        await linking.close()
+        await unlinking.close()
+
+    assert (link.sevdesk_id, link.party_id) == (CONTACT, party)
+    # The insert that met the link, the look that found nothing in the way, and the insert that linked again.
+    assert [isinstance(statement, Insert) for statement in statements] == [True, False, True]
+    async with db.session(write=False) as check:
+        assert await check.scalar(select(SevdeskContact.party_id).where(SevdeskContact.sevdesk_id == CONTACT)) == party
 
 
 # --- A lesson's payer against a delete of that payer (PD1, PD9) ---
