@@ -250,7 +250,7 @@ writes `billing:write`.
   `cancelled` lesson of one student, or no lesson with its reason - by the spec's table, first match wins
   (`propose`). It is pure: it takes plain data (`Occurrence`, `Roster`), imports only an allowlist of the standard
   library and reads no clock (architecture test in `tests/test_billing_calendar_rules.py`), and holds the match
-  tokens (`mit`, `Kennenlernen`, `Telefon`, `Abgesagt`). Durations are measured between instants, so a lesson across
+  tokens (`mit`, `Kennenlern`, `Telefon`, `Abgesagt`). Durations are measured between instants, so a lesson across
   a clock change keeps its minutes; one longer than a day (`MAX_LESSON_DURATION`, the bound of the lesson routes) is
   `duration`. A location is a phone number when, stripped, it is an optional leading `+` followed only by digits,
   spaces and `/ ( ) -`, with 5 to 15 digits (`is_phone_number`); letters - a room, an address, Teams - never make

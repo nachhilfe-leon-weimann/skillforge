@@ -576,6 +576,22 @@ async def test_the_name_is_never_stored_for_all_day_phone_and_first_meeting_occu
     }
 
 
+async def test_a_first_meeting_beyond_the_exact_subject_keeps_no_name_and_gets_no_lesson(
+    session: AsyncSession, fake: FakeGraph, run
+):
+    """`Erstes Kennenlernen mit <Name>` with a name no student holds: no lesson, and the name is not kept (PD13)."""
+    await new_student(session, MAX)
+    start = dt.datetime(2026, 12, 2, 15, tzinfo=dt.UTC)
+    answer_view(fake, [graph_event("first-meeting", "Erstes Kennenlernen mit Student Z", start)])
+
+    counts = await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))
+
+    event = await _event(session, "first-meeting")
+    assert (event.reason, event.title_name) == (NoLessonReason.FIRST_MEETING, None)
+    assert counts == ImportCounts(occurrences=1)
+    assert await session.scalar(select(func.count()).select_from(Lesson)) == 0
+
+
 async def test_the_name_is_cleared_when_the_import_matches_the_occurrence(session: AsyncSession, fake: FakeGraph, run):
     student = await new_student(session, ("Moritz", "Beispiel"))
     answer_view(fake, [graph_event("nickname", "Mathe mit Mo", dt.datetime(2026, 12, 2, 15, tzinfo=dt.UTC))])
