@@ -1,9 +1,9 @@
 // PreToolUse hook for the Bash and Monitor tools: stops merges, secret reads,
-// remote shells and repository administration before they run. Agents act
-// with the maintainer's logins, so neither GitHub nor this machine can tell
-// them apart. The hook catches accidents and is not a security boundary: a
-// command that computes its target at run time, or a program that reads a
-// secret on its own, gets through.
+// remote shells, repository administration and the data recipes before they
+// run. Agents act with the maintainer's logins, so neither GitHub nor this
+// machine can tell them apart. The hook catches accidents and is not a
+// security boundary: a command that computes its target at run time, or a
+// program that reads a secret on its own, gets through.
 //
 // Claude Code passes the tool call as JSON on stdin. The hook splits the
 // command line into simple commands the way a POSIX shell does (quotes,
@@ -48,6 +48,8 @@ export const RULES = {
     "Agents never read, print, copy or source secrets: .env files other than *.example, ~/.config/skillforge/, the environment, secret variables and tokens. Find env files with ls or git check-ignore, never by reading them.",
   "remote-shell":
     "Agents open no remote shells and copy nothing to or from other hosts (ssh, scp, sftp, ssh-add, rsync to a host).",
+  "data-recipe":
+    "just seed-demo and just billing-backfill, and the modules they run, write to the configured database, which may be production; only the maintainer runs them. Reading them and running their tests stay allowed.",
   "repo-admin":
     "Secrets, variables, rulesets, releases, tags and repository settings are left to the maintainer.",
   "repo-destructive":
@@ -1020,10 +1022,12 @@ function checkProgram(program, args, invocation, context) {
       return args.find((arg) => !arg.startsWith("-")) === "merge"
         ? { rule: "stack-merge" }
         : null;
+    case "just":
+      return checkJust(args);
     default:
       return REMOTE_SHELLS.has(program)
         ? { rule: "remote-shell", detail: program }
-        : null;
+        : checkDataModule(program, args);
   }
 }
 
@@ -1173,6 +1177,56 @@ function rsyncIsRemote(args) {
   return rsyncPositionals(args).some(
     (arg) => /^rsync:\/\//i.test(arg) || /^[^/]*:/.test(arg),
   );
+}
+
+// --- Data recipes -----------------------------------------------------------
+
+// Recipes that write to the configured database, which may be production, and
+// the module each one runs.
+const DATA_RECIPES = new Map([
+  ["seed-demo", "app.cli.seed_demo"],
+  ["billing-backfill", "app.cli.billing_backfill"],
+]);
+// just options that print a recipe instead of running it.
+const JUST_SHOWS = new Set(["-s", "--show", "-n", "--dry-run"]);
+const PYTHON = /^python(?:\d+(?:\.\d+)?)?$/;
+
+// just runs every recipe its words name, also as dir/recipe.
+function checkJust(args) {
+  if (args.some((arg) => JUST_SHOWS.has(arg))) return null;
+  const recipe = args.map(basename).find((arg) => DATA_RECIPES.has(arg));
+  return recipe === undefined
+    ? null
+    : { rule: "data-recipe", detail: `just ${recipe}` };
+}
+
+// Returns what python runs: the module of -m, or the script file.
+function pythonTarget(args) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    const module = /^-[bBdEhiIOPqRsSuvx]*m(.*)$/.exec(arg);
+    if (module !== null) return module[1] || (args[i + 1] ?? null);
+    if (arg === "-c" || arg === "-") return null;
+    if (["-W", "-X"].includes(arg)) i++;
+    else if (!arg.startsWith("-")) return arg;
+  }
+  return null;
+}
+
+// python -m with a recipe's module or python with its file; uv run -m and
+// uv run with the file leave the module or the file as the program.
+function checkDataModule(program, args) {
+  const target = PYTHON.test(program) ? pythonTarget(args) : program;
+  if (target === null) return null;
+  for (const [recipe, module] of DATA_RECIPES) {
+    const file = `${module.split(".").pop()}.py`;
+    if (target === module || basename(target) === file)
+      return {
+        rule: "data-recipe",
+        detail: `${module}, which just ${recipe} runs`,
+      };
+  }
+  return null;
 }
 
 // --- git --------------------------------------------------------------------
