@@ -20,7 +20,9 @@ in any order, and a row per student - or several: a fact given in more than one 
 An empty cell is "not given"; a contact or `manual_billing` needs a payer in its row. A party id is a hyphenated
 UUID. The file is named by an absolute path to a regular file outside this repository and every other git work
 tree, symlinks resolved, and refused before it is read and before anything connects. The output holds counts, line
-numbers (the header is line 1) and reason codes - never a cell, an id or the database URL.
+numbers (the header is line 1) and reason codes - never a cell, an id or the database URL. One exception: before
+anything connects, every run prints the smallest and the largest rate of the file's well-formed rows in euros per
+hour, so euros typed as cents (`32` for 32 euros) show; rule G cannot catch them.
 """
 
 import argparse
@@ -47,6 +49,7 @@ from app.core.config import get_settings
 from app.core.db import Database
 from app.core.db.models import ManualPayer, PartyRelationType, Rate, SevdeskContact
 from app.core.errors import DomainError
+from app.integrations.sevdesk.invoices import euros
 from app.services.billing import payers, rates
 from app.services.billing.errors import RateNotQuarterHourError, UnknownStudentError
 from app.services.billing.students import require_student
@@ -125,6 +128,12 @@ class Mapping:
     """The well-formed rows; a malformed one is only a problem."""
     problems: list[Problem]
     count: int
+
+    def lines(self) -> list[str]:
+        """The row count and, if the rows give rates, the smallest and the largest in euros per hour."""
+        cents = [row.rate[1] for row in self.rows if row.rate is not None]
+        span = [f"rates: {euros(min(cents))} to {euros(max(cents))} euros per hour"] if cents else []
+        return [f"rows: {self.count}", *span]
 
 
 @dataclass
@@ -431,6 +440,8 @@ async def billing_backfill(file: str, *, apply: bool) -> None:
         mapping = read_mapping(file)
     except MappingRefusedError as exc:
         raise SystemExit(f"billing-backfill refused: {exc}") from None
+    for line in mapping.lines():
+        print(line)
 
     try:
         db = Database.from_url(str(get_settings().db.url))
@@ -452,7 +463,6 @@ async def billing_backfill(file: str, *, apply: bool) -> None:
     finally:
         await db.dispose()
 
-    print(f"rows: {mapping.count}")
     if plan.problems:
         for problem in plan.problems:
             print(problem)

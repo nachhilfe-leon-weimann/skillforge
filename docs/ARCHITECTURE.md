@@ -311,7 +311,8 @@ writes `billing:write`.
   collides with nothing ends as if it had come right after the run, and nothing is overwritten. `SERIALIZABLE` adds the
   protection against a second backfill at the same time. It only adds - a row that contradicts the database is a
   problem, never an update - so a second run changes no row. The output holds counts, line numbers and reason codes,
-  never an id, a cell, the path or the database URL - a failure prints its error code or class, never its message. The
+  never an id, a cell, the path or the database URL - a failure prints its error code or class, never its message;
+  before it connects, it prints the smallest and the largest rate of the file in euros per hour (`Mapping.lines`). The
   payer already stored on a lesson (PD1) is not touched.
 - **Errors.** The catalog is closed (the spec's "Error catalog"); its classes live in `app/services/billing/errors.py`
   and are pinned per route by `tests/api/test_billing_error_contract.py`.

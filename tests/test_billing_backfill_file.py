@@ -337,6 +337,45 @@ def test_row_rules_and_line_numbers(tmp_path: Path):
     ]
 
 
+# --- The rates' span --------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("apply", [False, True], ids=["dry run", "apply"])
+async def test_every_run_prints_the_smallest_and_the_largest_rate_in_euros_before_anything_connects(
+    tmp_path: Path, monkeypatch, capsys, apply: bool
+):
+    """Rule G cannot catch euros typed as cents - `32` is a valid rate of 32 cents per hour - so the span shows them.
+    A malformed row is no rate."""
+    days = ("2026-03-01", "2026-03-02", "2026-03-03", "2026-03-04")
+    path = _mapping(
+        tmp_path,
+        *(
+            _row(student_party_id=STUDENT, rate_cents_per_hour=cents, rate_valid_from=day)
+            for cents, day in zip(("3200", "32", "4504", "1.00"), days, strict=True)
+        ),
+        _row(student_party_id=STUDENT),
+    )
+    printed: list[str] = []
+
+    def from_url(url: str) -> None:
+        printed.append(capsys.readouterr().out)
+        raise ValueError("stops here")
+
+    monkeypatch.setattr(billing_backfill, "get_settings", lambda: SimpleNamespace(db=SimpleNamespace(url="synthetic")))
+    monkeypatch.setattr(billing_backfill, "Database", SimpleNamespace(from_url=from_url))
+
+    with pytest.raises(SystemExit):
+        await billing_backfill.billing_backfill(str(path), apply=apply)
+
+    assert printed == ["rows: 5\nrates: 0.32 to 45.04 euros per hour\n"]
+
+
+def test_a_file_without_a_rate_prints_no_span(tmp_path: Path):
+    path = _mapping(tmp_path, _row(student_party_id=STUDENT, payer_party_id=PAYER))
+
+    assert read_mapping(str(path)).lines() == ["rows: 1"]
+
+
 # --- The command ------------------------------------------------------------------------------------------------
 
 
