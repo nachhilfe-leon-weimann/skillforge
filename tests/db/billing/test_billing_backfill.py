@@ -1,6 +1,6 @@
 """`just billing-backfill` on Postgres (billing spec, SF3-2): a dry run writes and commits nothing; `--apply` writes the
 whole file in one transaction, or nothing; a second run changes no row; one bad row refuses the whole file; the output
-holds counts, line numbers and reason codes only.
+holds counts, the smallest and the largest rate in euros, line numbers and reason codes only.
 
 The command runs in-process on the test's session: `--apply` in a SAVEPOINT standing in for its transaction, a dry
 run on the session as it is - so a write of a dry run stays visible to the snapshot, and a commit is recorded. The
@@ -456,7 +456,7 @@ async def test_the_output_holds_counts_and_line_numbers_only(
     session: AsyncSession, family: Family, backfill, tmp_path: Path, monkeypatch
 ):
     """Runs whose file holds recognisable values - a dry run, an apply, a refused file, a failure midway - print
-    no party id, no contact id, no cell, no path and no part of the database URL."""
+    no party id, no contact id, no cell but the rates' span in euros, no path and no part of the database URL."""
     unknown = uuid.uuid4()
     runs = [
         await backfill(*family.rows, apply=False),

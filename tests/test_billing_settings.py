@@ -41,7 +41,7 @@ def test_a_rate_off_the_quarter_hour_or_below_zero_is_refused(clean_env, value: 
         BillingSettings(_env_file=None)
 
 
-@pytest.mark.parametrize("value", ["32.00", "32.5", "3e3", "3000.0", " 3000", "3_000", "+3000"])
+@pytest.mark.parametrize("value", ["32.00", "32.5", "3e3", "3000.0", " 3000", "3_000", "+3000", "３０００"])
 def test_a_rate_written_otherwise_than_in_digits_is_refused_from_the_environment(clean_env, value: str):
     """Lax parsing would take `32.00` as 32 cents: a rate meant in euros would pass rule G."""
     clean_env.setenv("BILLING__DEFAULT_RATE_CENTS_PER_HOUR", value)
