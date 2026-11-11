@@ -648,7 +648,7 @@ may change how it is written (which tags sevDesk keeps, `<br>` or paragraphs), n
 `FOOT_TRANSFER`:
 
 ```html
-<strong>Zahlungsverfahren:</strong> <em>Überweisung</em><br>
+<strong>Zahlungsverfahren:</strong> <i>Überweisung</i><br>
 Bitte begleichen Sie den Rechnungsbetrag <strong>bis zum {Zahlungsziel}</strong> unter Angabe der Rechnungs- oder Kundennummer.<br>
 Bei Rückfragen stehe ich Ihnen gerne zur Verfügung.<br>
 Mit freundlichen Grüßen<br>
@@ -658,7 +658,7 @@ Mit freundlichen Grüßen<br>
 `FOOT_PAYPAL`:
 
 ```html
-<strong>Zahlungsverfahren:</strong> <em>PayPal (<a href="{Zahlungslink}">Weiter mit PayPal</a>)</em><br>
+<strong>Zahlungsverfahren:</strong> <i>PayPal (<a href="{Zahlungslink}">Weiter mit PayPal</a>)</i><br>
 Bitte begleichen Sie den Rechnungsbetrag <strong>bis zum {Zahlungsziel}</strong> unter Angabe der Rechnungs- oder Kundennummer.<br>
 Bei Rückfragen stehe ich Ihnen gerne zur Verfügung.<br>
 Mit freundlichen Grüßen<br>

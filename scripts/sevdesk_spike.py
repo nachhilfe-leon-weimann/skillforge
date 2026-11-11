@@ -65,14 +65,15 @@ _FOOT_REST = LINE.join((
     "[%KONTAKTPERSON%]",
 ))
 FOOT_TEXT = (
-    f'Spike {{run_id}}: <strong>Zahlungsverfahren:</strong> <em>PayPal (<a href="{PAY_LINK}">Weiter mit PayPal</a>)'
-    f"</em>{LINE}{_FOOT_REST}"
+    f'Spike {{run_id}}: <strong>Zahlungsverfahren:</strong> <i>PayPal (<a href="{PAY_LINK}">Weiter mit PayPal</a>)'
+    f"</i>{LINE}{_FOOT_REST}"
 )
-"""S15: the markup of ``FOOT_PAYPAL`` in billing.md, with candidate placeholders; ``discovery`` lists the account's."""
+"""S15: the markup of ``FOOT_PAYPAL`` in billing.md, with candidate placeholders (``discovery`` lists the account's)
+and italic as ``<i>``: sevDesk's editor drops ``<em>`` when the maintainer saves a draft."""
 FOOT_TEXT_DOCUMENT_NUMBER = FOOT_TEXT.replace(PAY_LINK, PAY_LINK_DOCUMENT_NUMBER)
 """S15: ``FOOT_TEXT`` with ``PAY_LINK_DOCUMENT_NUMBER``, on one variant of S11."""
-FOOT_TRANSFER = f"Spike {{run_id}}: <strong>Zahlungsverfahren:</strong> <em>Überweisung</em>{LINE}{_FOOT_REST}"
-"""S15: ``FOOT_TRANSFER`` of billing.md, on one variant of S11."""
+FOOT_TRANSFER = f"Spike {{run_id}}: <strong>Zahlungsverfahren:</strong> <i>Überweisung</i>{LINE}{_FOOT_REST}"
+"""S15: ``FOOT_TRANSFER`` of billing.md, italic as ``<i>``, on one variant of S11."""
 HEAD_TEXT = LINE.join((
     "Spike {run_id}: [%VOLLEANREDE%],",
     "",
