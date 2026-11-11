@@ -595,7 +595,7 @@
             "type": "boolean"
           },
           "changed": {
-            "description": "The maintainer has to look: the rules give another student or subject than the lesson's (flagged at every\nimport until the lesson, the title or an alias settles it); the rules give no lesson; the appointment of a lesson\nthe import does not change moved, was resized, cancelled or vanished; a lesson could not follow; or the\noccurrence could not get its lesson. Dismissing acknowledges all but another student or subject, until the\noccurrence changes again.",
+            "description": "The maintainer has to look: the title names another student or subject than the lesson's (flagged at every\nimport until the lesson, the title or an alias settles it; a dismiss then clears it); the rules give no lesson;\nthe appointment of a lesson the import does not change moved, was resized, cancelled or vanished; a lesson could\nnot follow; or the occurrence could not get its lesson. Dismissing acknowledges all but another student or\nsubject, until the occurrence changes again.",
             "title": "Changed",
             "type": "boolean"
           },
@@ -726,7 +726,7 @@
         "description": "What an import did, in counts only.",
         "properties": {
           "changed": {
-            "description": "Occurrences of the range that differ from a lesson the import does not change, or could not get their lesson:\nthey are listed until dismissed.",
+            "description": "Occurrences of the range flagged `changed` (see `GET /calendar/events`): listed until dismissed - except one\nwhose title names another student or subject, which is flagged again at every import until it is settled.",
             "title": "Changed",
             "type": "integer"
           },
@@ -7508,7 +7508,7 @@
     },
     "/api/v1/billing/calendar/events/{event_id}/dismiss": {
       "post": {
-        "description": "Take an occurrence off the list: it waits for no assignment, and a difference from its lesson is acknowledged.\nIdempotent.",
+        "description": "Take an occurrence off the list. Without a lesson it waits for no assignment and is not proposed again. With\none, the occurrence as last seen is acknowledged: a \"no lesson\" answer of the rules and a change already seen stay\nquiet until it changes again. A title naming another student or subject is never acknowledged - the next import\nflags it again. Idempotent.",
         "operationId": "billing_dismiss_calendar_event",
         "parameters": [
           {
@@ -7631,7 +7631,7 @@
     },
     "/api/v1/billing/calendar/import": {
       "post": {
-        "description": "Import the lesson calendar for a range of Berlin days: the calendar proposes, a person confirms.\n\nAn occurrence becomes a `planned` lesson, a `cancelled` one for a late cancellation, or waits for an assignment.\nA `planned` lesson follows its appointment and goes when it vanishes; any other lesson never changes - its\noccurrence is flagged `changed`. Importing a range again changes nothing. Answers with counts only; a calendar\nthat cannot be read is `calendar_unavailable`, and nothing is imported.",
+        "description": "Import the lesson calendar for a range of Berlin days: the calendar proposes, a person confirms.\n\nA new occurrence becomes a `planned` lesson, a `cancelled` one for a late cancellation, or waits for an\nassignment. An occurrence with a lesson is judged by the title rules again: only while they still give this\nstudent and this subject, and the lesson is untouched - `planned`, no note, no own rate, at the start and length\nof its occurrence as last seen - does it follow a moved, resized or cancelled appointment, and go when it\nvanishes. Otherwise the lesson never changes and its occurrence is flagged `changed`. Importing an unchanged\nrange again changes nothing. Answers with counts only; a calendar that cannot be read is `calendar_unavailable`,\nand nothing is imported.",
         "operationId": "billing_import_calendar",
         "requestBody": {
           "content": {

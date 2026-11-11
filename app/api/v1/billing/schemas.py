@@ -372,8 +372,8 @@ class CalendarImportResponse(ApiModel):
     lessons_removed: int
     """`planned` lessons whose appointment vanished from the range."""
     changed: int
-    """Occurrences of the range that differ from a lesson the import does not change, or could not get their lesson:
-    they are listed until dismissed."""
+    """Occurrences of the range flagged `changed` (see `GET /calendar/events`): listed until dismissed - except one
+    whose title names another student or subject, which is flagged again at every import until it is settled."""
     unassigned: int
     """Occurrences of the range that wait for an assignment."""
     deleted: int
@@ -412,11 +412,11 @@ class CalendarEventResponse(ApiModel):
     reason it waited for); `null` while the rules give a lesson, or when its student has a lesson at that start
     already."""
     changed: bool
-    """The maintainer has to look: the rules give another student or subject than the lesson's (flagged at every
-    import until the lesson, the title or an alias settles it); the rules give no lesson; the appointment of a lesson
-    the import does not change moved, was resized, cancelled or vanished; a lesson could not follow; or the
-    occurrence could not get its lesson. Dismissing acknowledges all but another student or subject, until the
-    occurrence changes again."""
+    """The maintainer has to look: the title names another student or subject than the lesson's (flagged at every
+    import until the lesson, the title or an alias settles it; a dismiss then clears it); the rules give no lesson;
+    the appointment of a lesson the import does not change moved, was resized, cancelled or vanished; a lesson could
+    not follow; or the occurrence could not get its lesson. Dismissing acknowledges all but another student or
+    subject, until the occurrence changes again."""
     vanished: bool
     """Gone from the calendar while its lesson stays."""
     lesson_id: uuid.UUID | None

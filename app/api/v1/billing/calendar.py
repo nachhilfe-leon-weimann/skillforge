@@ -40,10 +40,13 @@ async def import_calendar(
 ) -> CalendarImportResponse:
     """Import the lesson calendar for a range of Berlin days: the calendar proposes, a person confirms.
 
-    An occurrence becomes a `planned` lesson, a `cancelled` one for a late cancellation, or waits for an assignment.
-    A `planned` lesson follows its appointment and goes when it vanishes; any other lesson never changes - its
-    occurrence is flagged `changed`. Importing a range again changes nothing. Answers with counts only; a calendar
-    that cannot be read is `calendar_unavailable`, and nothing is imported.
+    A new occurrence becomes a `planned` lesson, a `cancelled` one for a late cancellation, or waits for an
+    assignment. An occurrence with a lesson is judged by the title rules again: only while they still give this
+    student and this subject, and the lesson is untouched - `planned`, no note, no own rate, at the start and length
+    of its occurrence as last seen - does it follow a moved, resized or cancelled appointment, and go when it
+    vanishes. Otherwise the lesson never changes and its occurrence is flagged `changed`. Importing an unchanged
+    range again changes nothing. Answers with counts only; a calendar that cannot be read is `calendar_unavailable`,
+    and nothing is imported.
     """
     counts = await calendar_service.import_calendar(
         session, reader, first_day=request.first_day, last_day=request.last_day, now=datetime.now(UTC)
@@ -87,8 +90,10 @@ async def assign_calendar_event(
     responses=error_responses(CalendarEventNotFoundError),
 )
 async def dismiss_calendar_event(event_id: EventId, session: DBSession) -> None:
-    """Take an occurrence off the list: it waits for no assignment, and a difference from its lesson is acknowledged.
-    Idempotent."""
+    """Take an occurrence off the list. Without a lesson it waits for no assignment and is not proposed again. With
+    one, the occurrence as last seen is acknowledged: a "no lesson" answer of the rules and a change already seen stay
+    quiet until it changes again. A title naming another student or subject is never acknowledged - the next import
+    flags it again. Idempotent."""
     await calendar_service.dismiss_event(session, event_id)
 
 

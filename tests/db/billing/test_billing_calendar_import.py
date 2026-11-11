@@ -884,6 +884,76 @@ async def test_a_dismissed_other_student_is_flagged_again_when_the_title_names_a
     assert await _row(session, planned_id) == row
 
 
+async def test_an_assigned_occurrence_of_an_odd_length_whose_title_names_another_student_is_flagged(
+    session: AsyncSession, fake: FakeGraph, run
+):
+    """Q2: the rules stop at the duration before they read the name; the name is matched for the lesson anyway."""
+    max_id = await new_student(session, MAX)
+    await new_student(session, PAULA)
+    answer_view(fake, [graph_event("odd", "Mathe mit Max Mustermann", ASSIGNED_START, minutes=50)])
+    await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))
+    event_id = (await _event(session, "odd")).id
+    lesson = await calendar.assign_event(session, event_id, student_id=max_id, subject="Mathe", minutes=45)
+    lesson_id = lesson.id
+    assert (await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))).changed == 0
+    row = await _row(session, lesson_id)
+
+    answer_view(fake, [graph_event("odd", "Mathe mit Paula Beispiel", ASSIGNED_START, minutes=50)])
+    counts = await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))
+
+    assert counts.changed == 1
+    assert await _row(session, lesson_id) == row
+    before = await snapshot(session)
+    await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))
+    assert await snapshot(session) == before
+
+
+@pytest.mark.parametrize(
+    ("variant", "other"),
+    [
+        ("phone-category", {"subject": "Mathematik mit Paula Beispiel", "categories": ["Telefon"]}),
+        ("first-meeting", {"subject": "Kennenlernen mit Paula Beispiel"}),
+    ],
+    ids=["phone", "first-meeting"],
+)
+async def test_a_dismissed_no_lesson_flag_is_flagged_again_when_the_title_names_another_student(
+    session: AsyncSession, fake: FakeGraph, run, variant: str, other: dict
+):
+    """Q3, Q3b: a dismissed phone or first-meeting flag stays quiet while the title still names the lesson's student;
+    the rules stop before the name, the name is matched anyway - another student is never acknowledged."""
+    await new_student(session, MAX)
+    await new_student(session, PAULA)
+    first_read = fixture_events("g2-series-first-read")
+    answer_view(fake, first_read)
+    await run(*G2_DAYS)
+    planned_id = (await _lesson_of(session, G2_MOVED)).id
+    row = await _row(session, planned_id)
+    answer_view(fake, [_turned(event, variant) if event["id"] == G2_MOVED else event for event in first_read])
+    await run(*G2_DAYS)
+    await calendar.dismiss_event(session, (await _event(session, G2_MOVED)).id)
+    assert (await run(*G2_DAYS)).changed == 0, "the lesson's own student: the acknowledgment holds"
+
+    answer_view(fake, [{**event, **other} if event["id"] == G2_MOVED else event for event in first_read])
+    counts = await run(*G2_DAYS)
+
+    assert counts.changed == 1
+    assert await _row(session, planned_id) == row
+
+
+async def test_a_new_no_lesson_reason_after_an_assignment_is_flagged(session: AsyncSession, fake: FakeGraph, run):
+    """N19: an assigned occurrence whose appointment becomes a phone call - start, length and subject unchanged."""
+    student = await new_student(session, MAX)
+    lesson_id = await _assigned_to(session, run, fake, "Mathe mit Student Z", student)
+    row = await _row(session, lesson_id)
+
+    answer_view(fake, [graph_event("assigned", "Mathe mit Student Z", ASSIGNED_START, categories=["Telefon"])])
+    counts = await run(dt.date(2026, 12, 2), dt.date(2026, 12, 2))
+
+    assert counts.changed == 1
+    assert (await _event(session, "assigned")).reason == NoLessonReason.PHONE
+    assert await _row(session, lesson_id) == row
+
+
 async def test_a_subject_change_after_an_acknowledgment_is_flagged(session: AsyncSession, fake: FakeGraph, run):
     """The subject is part of what was seen: an assigned occurrence whose subject changes is the maintainer's again,
     although the rules still match nobody."""

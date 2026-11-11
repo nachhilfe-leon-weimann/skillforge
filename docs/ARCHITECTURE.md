@@ -276,8 +276,10 @@ writes `billing:write`.
   the start and length of its occurrence as last seen - follow a change (or go with its vanished occurrence). Any
   other difference is flagged, a vanishing once (`vanished`). A dismiss or an assignment acknowledges a "no lesson"
   answer of the rules and a change already seen, until start, end, cancellation, subject, the no-lesson reason
-  (`reason`, kept for an occurrence with a lesson too) or presence changes again; a rules answer naming another
-  student or subject is never acknowledged and stays flagged until the lesson, the title or an alias settles it.
+  (`reason`, kept for an occurrence with a lesson too) or presence changes again. A title naming another student or
+  subject - by the rules' answer, or by its name where the rules stop before it (`_named`) - is never acknowledged:
+  flagged at every import until the lesson, the title or an alias settles it, then cleared by a dismiss. A name that
+  matches nobody or several cannot be compared, as no name is kept.
   An occurrence that could not get its lesson - its student has one at that start - stays flagged and is not
   proposed again; a student who lost the role is `unmatched`. A title with a NUL
   character is read as no title. The roster is read through the CRM's `list_parties`.

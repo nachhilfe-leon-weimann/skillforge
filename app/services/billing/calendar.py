@@ -8,11 +8,13 @@ invents, moves, duplicates or drops a lesson a person may have looked at.
 - An occurrence with a lesson is judged by the rules again at every import. Only while they still give this student
   and this subject, and the lesson is untouched - ``planned``, no note, no own rate, at the start and length of its
   occurrence as last seen - does it follow a moved, resized or cancelled appointment, and go with a vanished one.
-- Flagged: the rules give another student or subject - at every import, until the lesson, the title or an alias
-  settles it; the rules give no lesson; a touched lesson's appointment changed or vanished; a lesson that cannot
-  follow. ``dismiss`` - and an assignment - acknowledges the occurrence as last seen: a "no lesson" answer and a
-  change already seen stay quiet until start, end, cancellation, subject, the no-lesson reason or presence changes
-  again. Another student or subject is never acknowledged. A vanishing is flagged once (``vanished``).
+- Flagged: the title names another student or subject - by the rules' answer, or by its name where the rules stop
+  before it - at every import, until the lesson, the title or an alias settles it; the rules give no lesson; a
+  touched lesson's appointment changed or vanished; a lesson that cannot follow. ``dismiss`` - and an assignment -
+  acknowledges the occurrence as last seen: a "no lesson" answer and a change already seen stay quiet until start,
+  end, cancellation, subject, a new no-lesson reason or presence changes. Another student or subject is never
+  acknowledged; a name that matches nobody or several cannot be compared (PD13 keeps no name). A vanishing is flagged
+  once (``vanished``).
 - An occurrence without a lesson is proposed at every import until it gets one, unless it was dismissed or flagged
   because it could not get its lesson: then it waits for the maintainer. ``assign`` gives it its lesson through
   ``lessons.py``. Only an occurrence that starts inside the range can vanish.
@@ -57,6 +59,7 @@ from .calendar_rules import (
     Roster,
     StudentName,
     is_cancelled,
+    match_name,
     parse_title,
     propose,
 )
@@ -232,15 +235,17 @@ async def assign_event(
     if event.cancelled:
         lesson = await lessons.update_lesson(session, lesson.id, status=LessonStatus.CANCELLED)
     # The assignment acknowledges the occurrence as it is - its reason included, which the rules give again at the
-    # next import (``_check``); a rules answer naming another student or subject is never acknowledged.
+    # next import (``_check``); a title naming another student or subject is never acknowledged.
     event.title_name, event.changed, event.dismissed = None, False, True
     await session.flush()
     return lesson
 
 
 async def dismiss_event(session: AsyncSession, event_id: uuid.UUID) -> None:
-    """Take the occurrence off the list: it waits for nothing, and a difference from its lesson is acknowledged.
-    Idempotent. The import proposes a dismissed occurrence without a lesson no more."""
+    """Take the occurrence off the list. Without a lesson it waits for nothing: the import proposes it no more. With
+    one, the occurrence as last seen is acknowledged: a "no lesson" answer of the rules and a change already seen stay
+    quiet until start, end, cancellation, subject, a new no-lesson reason or presence changes. A title naming another
+    student or subject is never acknowledged: the next import flags it again. Idempotent."""
     await _lock_calendar(session)
     event = await _get_event(session, event_id)
     event.dismissed, event.changed, event.title_name = True, False, None
@@ -290,7 +295,16 @@ async def _take(
     event.reason = proposal.reason if isinstance(proposal, NoLesson) else None
     event.title_name = None
     differs = seen_before != _seen(event) or event.reason not in (None, reason_before)
-    await _check(session, event, lesson, proposal, counts, differs=differs, untouched=untouched)
+    await _check(
+        session,
+        event,
+        lesson,
+        proposal,
+        _named(proposal, occurrence, roster),
+        counts,
+        differs=differs,
+        untouched=untouched,
+    )
 
 
 async def _check(
@@ -298,6 +312,7 @@ async def _check(
     event: CalendarEvent,
     lesson: Lesson,
     proposal: Proposal,
+    named: _Named | None,
     counts: ImportCounts,
     *,
     differs: bool,
@@ -305,8 +320,9 @@ async def _check(
 ) -> None:
     """Judge an occurrence that has a lesson; the lesson itself changes only by following.
 
-    - The rules give another student or another subject: flagged at every import, whatever was acknowledged - the
-      flag stays until the lesson, the title or an alias settles it.
+    - The title names another student or another subject (``named``) - by the rules' answer, or by its name where the
+      rules stop before it: flagged at every import, whatever was acknowledged; once the lesson, the title or an alias
+      settles it, a dismiss clears the flag.
     - The rules give no lesson, or the appointment changed and the lesson is touched: flagged, unless the maintainer
       acknowledged the occurrence as it is (``dismissed``: a dismiss, or the assignment - an assigned occurrence has
       no lesson by the rules). Any difference in start, end, cancellation, subject, the no-lesson reason or presence
@@ -315,13 +331,12 @@ async def _check(
     """
     if differs:
         event.dismissed = False
+    if named is not None and (
+        named.student_id != lesson.student_party_id or named.subject not in (None, lesson.subject)
+    ):
+        event.changed = True
+        return
     match proposal:
-        case LessonProposal(student_id=student_id, subject=subject) if (student_id, subject) != (
-            lesson.student_party_id,
-            lesson.subject,
-        ):
-            event.changed = True
-            return
         case NoLesson():
             if not event.dismissed:
                 event.changed = True
@@ -410,6 +425,29 @@ def _untouched(lesson: Lesson, event: CalendarEvent) -> bool:
         and lesson.starts_at == event.starts_at
         and timedelta(minutes=lesson.minutes) == event.ends_at - event.starts_at
     )
+
+
+@dataclass(frozen=True)
+class _Named:
+    """The student a title names, and its subject - ``None`` where the title holds none (a first meeting)."""
+
+    student_id: uuid.UUID
+    subject: str | None
+
+
+def _named(proposal: Proposal, occurrence: Occurrence, roster: Roster) -> _Named | None:
+    """Whom the title names: the rules' lesson, or - where they stop before the name (a duration no lesson can have, a
+    phone call, an all-day entry, a first meeting) - the one student its name matches. ``None`` for a name that
+    matches nobody or several: PD13 keeps no name, so there is nothing to compare it with."""
+    match proposal:
+        case LessonProposal(student_id=student_id, subject=subject):
+            return _Named(student_id, subject)
+        case NoLesson(reason=reason):
+            title = parse_title(occurrence.title)
+            if title is None or not isinstance(student_id := match_name(title.name, roster), uuid.UUID):
+                return None
+            # `Kennenlernen` is never read as a subject (billing spec, "Calendar import").
+            return _Named(student_id, None if reason is NoLessonReason.FIRST_MEETING else title.subject)
 
 
 def _seen(event: CalendarEvent) -> tuple[object, ...]:

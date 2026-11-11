@@ -51,9 +51,10 @@ class CalendarEvent(TimestampMixin, BillingBase):
     dismissed: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=false())
     """The maintainer's acknowledgment: without a lesson, the occurrence is off the list for good; with one - by a
     dismiss or the assignment - a "no lesson" answer of the rules and a change already seen are accepted until the
-    occurrence changes again. A rules answer naming another student or subject is never acknowledged."""
+    occurrence changes again. A title naming another student or subject is never acknowledged."""
     changed: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=false())
-    """The appointment differs from a lesson the import must not change, or it could not get its lesson."""
+    """The maintainer has to look: the title names another student or subject, the rules give no lesson, a touched
+    lesson's appointment changed or vanished, a lesson could not follow - or the occurrence could not get its lesson."""
     vanished: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=false())
     """Gone from the calendar while its lesson stays: the vanishing is flagged once, as a difference of its own."""
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -360,7 +360,7 @@ title_name TEXT NULL                      -- the text after " mit ": a name, kep
 cancelled BOOLEAN NOT NULL
 reason TEXT NULL                          -- ck_calendar_event_reason: a NoLessonReason; NULL while the rules give a lesson
 dismissed BOOLEAN NOT NULL DEFAULT false  -- acknowledged by the maintainer (a dismiss, or the assignment)
-changed BOOLEAN NOT NULL DEFAULT false    -- differs from a lesson the import must not change, or got no lesson
+changed BOOLEAN NOT NULL DEFAULT false    -- the maintainer has to look: differs from its lesson, or got none
 vanished BOOLEAN NOT NULL DEFAULT false   -- gone from the calendar while its lesson stays; flagged once
 last_seen_at TIMESTAMPTZ NOT NULL
 created_at/updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
