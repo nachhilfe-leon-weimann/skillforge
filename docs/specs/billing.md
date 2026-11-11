@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0 and SF1-1 to SF1-3c done; SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
+> Status: Draft - SF0, SF1-1 to SF1-3c and SF2-1 done; SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
 > then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
@@ -149,7 +149,7 @@ fixtures ([Fixture manifest](#fixture-manifest)).
 | What does a lesson event carry? | Run, on 125 events over 70 days: `categories` arrive (50 events had at least one); the late-cancellation category is `Abgesagt` (Q9). `isCancelled` was never true, no event was all-day, `showAs` was always `busy`. 44 Teams meetings carry `isOnlineMeeting` and `teamsForBusiness`; a "Teams" category only colours them. Durations: 15, 30, 45, 60 and 120 minutes. Titles: 122 `<subject> mit <name>`, 1 `Kennenlernen`, 2 without the pattern. |
 | Is `httpx` installed? | Yes: `uv.lock` holds it through `fastapi[standard]`. |
 | How does a new schema get created? | `get_schemata` in `schemata.py` returns every model package; `migrations/env.py` creates its schema. |
-| What refuses the delete of a party? | `EXTERNAL_LINKS` in `app/services/crm/parties.py`: `(kind, model, still_linked)` rows that `_external_link_kinds` matches on `model.party_id`, answered as `party_in_use`. |
+| What refuses the delete of a party? | `EXTERNAL_LINKS` in `app/services/crm/parties.py`: `(kind, model, still_linked)` rows that `_external_link_kinds` matches on `model.party_id`, answered as `party_in_use`. Since SF2-1 a row is an `ExternalLink` naming its column (`party_column`). |
 | How does a request commit? | `DBSession` (`get_db_session` over `Database.session`) is one transaction for the whole request; it commits before the response. |
 
 ## Domain model
@@ -1081,13 +1081,13 @@ write (`invoices.py`)._
   `tests/db/test_migration_apply.py`; `LINKS` and the detail text in
   `tests/db/crm/test_crm_party_delete_api.py`; `PARTY_IN_USE` in `tests/api/test_crm_error_contract.py`.
 - _Acceptance criteria:_
-  - [ ] Upgrade, downgrade by one and upgrade again pass in `tests/db/test_migration_apply.py`.
-  - [ ] The database refuses a rate not divisible by 4 and a lesson's minutes not divisible by 15
+  - [x] Upgrade, downgrade by one and upgrade again pass in `tests/db/test_migration_apply.py`.
+  - [x] The database refuses a rate not divisible by 4 and a lesson's minutes not divisible by 15
         (`ck_rate_quarter_hour_cents`, `ck_lesson_quarter_hour_minutes`).
-  - [ ] Deleting a party that has a lesson or a rate answers `409 party_in_use` and names the kind; no path reaches
+  - [x] Deleting a party that has a lesson or a rate answers `409 party_in_use` and names the kind; no path reaches
         the database's `RESTRICT` as a 500.
-  - [ ] The existing link kinds answer as before, apart from the detail's first words.
-  - [ ] A token from the Discord exchange never carries a billing scope.
+  - [x] The existing link kinds answer as before, apart from the detail's first words.
+  - [x] A token from the Discord exchange never carries a billing scope.
 
 **SF2-2 - Lessons.**
 

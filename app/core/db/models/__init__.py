@@ -14,6 +14,11 @@ from .auth import (
     UserActionTokenPurpose,
     UserSession,
 )
+from .billing import (
+    Lesson,
+    LessonStatus,
+    Rate,
+)
 from .core import (
     Company,
     ContactInfo,
@@ -61,6 +66,9 @@ __all__ = [
     "UserActionToken",
     "UserActionTokenPurpose",
     "UserSession",
+    "Lesson",
+    "LessonStatus",
+    "Rate",
     "ClockodoCustomer",
     "ClockodoProject",
     "Company",

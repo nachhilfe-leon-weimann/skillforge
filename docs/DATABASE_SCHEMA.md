@@ -11,6 +11,7 @@ under `app/core/db/models/` - keep it in sync when models change.
 - `ext` - links from external system identifiers to a `core.party`
 - `auth` - OAuth2 application clients, secrets, scope grants per mode, user accounts (stored roles, sessions, one-time tokens), and the auth audit trail
 - `system` - internal runtime state (background-worker liveness heartbeats)
+- `billing` - lessons and students' rates ([billing spec](specs/billing.md))
 
 ## Shared Columns
 
@@ -176,7 +177,8 @@ updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 - Each `ext.*` table links an external system identifier to a `party`. The non-Discord links are
   one-to-one (`party_id` UNIQUE); `ext.discord_account` allows several per party, guarded by a
   partial unique of at most one `is_primary AND active` account.
-- Most foreign keys use `ON DELETE CASCADE`.
+- Most foreign keys use `ON DELETE CASCADE`. The `billing` ones into `core.party` use `ON DELETE RESTRICT`; each
+  has its row in `EXTERNAL_LINKS` (`app/services/crm/parties.py`), so deleting such a party answers `party_in_use`.
 
 ## Auth Schema
 
@@ -300,3 +302,34 @@ detail JSONB NULL                         -- optional per-cycle context (counter
 created_at/updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 ```
 
+## Billing Schema
+
+Lessons and the rates they are billed at ([billing spec](specs/billing.md)). Every reference to a party is
+`ON DELETE RESTRICT`. Rule G holds in the database: cents per hour are divisible by 4 and minutes by 15, so every
+amount is a whole cent.
+
+```sql
+billing.lesson_status = ('planned', 'held', 'cancelled', 'not_held')
+
+-- billing.rate  (a student's own rate from a day on)
+id UUID PRIMARY KEY DEFAULT uuid4
+student_party_id UUID NOT NULL REFERENCES core.party(id) ON DELETE RESTRICT
+cents_per_hour INTEGER NOT NULL CHECK (cents_per_hour >= 0 AND cents_per_hour % 4 = 0)  -- ck_rate_quarter_hour_cents
+valid_from DATE NOT NULL
+note TEXT NULL
+created_at/updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+UNIQUE (student_party_id, valid_from)  -- uq_rate_student_valid_from
+
+-- billing.lesson  (one appointment of one student)
+id UUID PRIMARY KEY DEFAULT uuid4
+student_party_id UUID NOT NULL REFERENCES core.party(id) ON DELETE RESTRICT
+subject TEXT NOT NULL                      -- the label of the calendar title, not a core.subject
+starts_at TIMESTAMPTZ NOT NULL
+minutes INTEGER NOT NULL CHECK (minutes > 0 AND minutes % 15 = 0)  -- ck_lesson_quarter_hour_minutes
+status lesson_status NOT NULL DEFAULT 'planned'
+billable BOOLEAN NOT NULL DEFAULT false    -- ck_lesson_billable_status: only when held or cancelled
+rate_cents_per_hour INTEGER NULL           -- the lesson's own rate; ck_lesson_quarter_hour_cents as on billing.rate
+note TEXT NULL
+created_at/updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+UNIQUE (student_party_id, starts_at)  -- uq_lesson_student_start
+```

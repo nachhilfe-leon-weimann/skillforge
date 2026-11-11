@@ -39,6 +39,8 @@ class Scope(StrEnum):
     CRM_READ_OWN = "crm:read:own", "Read parties within the caller's reach."
     CRM_WRITE = "crm:write", "Create, change and delete parties, relations and subjects."
     ACCOUNT_SELF = "account:self", "Manage the caller's own account."
+    BILLING_READ = "billing:read", "Read lessons, rates, invoices and credit accounts."
+    BILLING_WRITE = "billing:write", "Record lessons and rates, and create invoice drafts and credit entries."
 
 
 CLIENT_ONLY_SCOPES: frozenset[Scope] = frozenset({Scope.AUTH_USERS_LOGIN, Scope.AUTH_USERS_EXCHANGE})
@@ -48,9 +50,9 @@ VOUCHED_SCOPES: frozenset[Scope] = frozenset({Scope.CRM_READ, Scope.CRM_READ_OWN
 """The only scopes a token obtained without a password carries: a client vouched for the person (bot-decoupling spec,
 decision R).
 
-Every other scope - ``account:self``, every ``auth:*`` and every scope added later - needs a password login until it
-is added here on purpose. The exchange takes this set as a ceiling, and a token with ``amr: ["discord"]`` that
-carries another scope is invalid.
+Every other scope - ``account:self``, every ``auth:*``, every ``billing:*`` (billing spec, PD8) and every scope added
+later - needs a password login until it is added here on purpose. The exchange takes this set as a ceiling, and a
+token with ``amr: ["discord"]`` that carries another scope is invalid.
 """
 
 OWN_VARIANT: dict[Scope, Scope] = {

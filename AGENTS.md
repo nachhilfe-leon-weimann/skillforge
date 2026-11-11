@@ -13,7 +13,7 @@ commands, conventions and working rules; the _why_ lives in [`docs/`](docs/). "T
 | implement a slice or write a spec | its spec in `docs/specs/`; the pattern is in [`docs/specs/README.md`](docs/specs/README.md) |
 | want the reason behind a rule | [`docs/decisions/`](docs/decisions/) (ADRs) and the specs - an accepted ADR's body never changes, a new ADR supersedes or amends it |
 | call another system | [`app/integrations/AGENTS.md`](app/integrations/AGENTS.md); the layer in `ARCHITECTURE.md` |
-| touch the database | [`docs/DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md); schemas `core`, `geo`, `ext`, `auth`, `system` |
+| touch the database | [`docs/DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md); schemas `core`, `geo`, `ext`, `auth`, `system`, `billing` |
 | add or change an endpoint | [`api-conventions.md`](docs/specs/api-conventions.md), ADR 0006 |
 | brief an agent or write a handoff | [`docs/agent-work.md`](docs/agent-work.md) |
 | need the services' `UNSET` sentinel | `app/core/unset.py` |

@@ -24,7 +24,7 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
         app/services/system  health aggregation + worker heartbeats
         app/integrations  the only way out to other systems (guarded HTTP transport)
         app/core          cross-cutting: auth, db, logging, config
-                          `-> Postgres (schemas: core/geo/ext/auth/system)
+                          `-> Postgres (schemas: core/geo/ext/auth/system/billing)
 ```
 
 - **`app/main.py`** - FastAPI entry point. Mounts the top-level `app.api` router (which aggregates
@@ -165,16 +165,17 @@ CRM rules only, never against Discord state. The full design is in the [CRM API 
 - **Personal data stays out of logs.** Validation and domain messages never repeat a name or a
   contact value, text Postgres cannot store is rejected by the request models
   (`require_storable_text`), and the engine runs with `hide_parameters=True`.
-- **Deleting a party** is refused (`party_in_use`) while an active Discord link or another `ext` link
-  exists - a deactivated Discord link goes with the party: all foreign keys into `core.party` cascade,
-  so the guard - taken under a row lock - is what keeps external systems from being orphaned. The CRM
-  reads the `ext` tables there and nowhere else.
+- **Deleting a party** is refused (`party_in_use`) while a row of `EXTERNAL_LINKS` names it: an active
+  Discord link, another `ext` link, or a billing lesson or rate - a deactivated Discord link goes with the
+  party. The `ext` foreign keys into `core.party` cascade, so the guard - taken under a row lock - is what
+  keeps external systems from being orphaned; the billing ones are `RESTRICT`, and the guard answers 409
+  before the database refuses. The CRM reads these tables there and nowhere else.
 - **Commit before the response.** The CRM routes use `DBSession`, whose `scope="function"` ends the
   request transaction before the response is sent: a failing commit is a 500, not a 201.
 
 ## Database
 
-One Postgres DB, five schemas by domain - details in
+One Postgres DB, six schemas by domain - details in
 [`DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md):
 
 | Schema | Contents |
@@ -184,6 +185,7 @@ One Postgres DB, five schemas by domain - details in
 | `ext`  | Links from external system ids (Discord, sevDesk, Clockodo, Microsoft) to a `core.party` |
 | `auth` | OAuth2 clients, secrets, scope grants, user accounts, roles, sessions, one-time tokens, audit |
 | `system` | Runtime/operational state: background-worker liveness heartbeats |
+| `billing` | Lessons and students' rates ([billing spec](specs/billing.md)) |
 
 - **Async SQLAlchemy 2** over `asyncpg`; models under `app/core/db/models/<schema>/`, one
   `*Base` class per schema with `{"schema": ...}`.
@@ -223,8 +225,8 @@ read nor written.
   or `delegated` (the ceiling for people); a person gets `delegated ∩ role scopes` (on refresh also
   `∩` the session's scope, on the exchange also `∩ VOUCHED_SCOPES`). Purposes live on `Scope`;
   `CLIENT_ONLY_SCOPES` are application-only. A token obtained without a password carries only `VOUCHED_SCOPES`
-  (`crm:read`, `crm:read:own`, `crm:write`), checked at issuance and at validation: `account:self` and every
-  `auth:*` scope need a password login.
+  (`crm:read`, `crm:read:own`, `crm:write`), checked at issuance and at validation: `account:self`, every
+  `auth:*` and every `billing:*` scope need a password login.
 - **Roles** (`roles.py`) only produce scopes: `BASE_USER_SCOPES` for everyone, `ROLE_SCOPES` per role;
   `admin` is stored, the others are derived from the CRM.
 - **Reach:** `x:own` limits `x` to the caller's reach (`reach.py`); `require_access(...)` hands a route

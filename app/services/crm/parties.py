@@ -2,10 +2,11 @@
 
 import uuid
 from datetime import datetime
+from typing import NamedTuple
 
 from sqlalchemy import ColumnElement, delete, exists, func, literal, or_, select, true, union_all, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import InstrumentedAttribute, selectinload
 
 from app.core.db.models import (
     ClockodoCustomer,
@@ -13,12 +14,14 @@ from app.core.db.models import (
     Company,
     ContactInfo,
     DiscordAccount,
+    Lesson,
     MicrosoftAccount,
     MicrosoftContact,
     Party,
     PartyRelation,
     PartyType,
     Person,
+    Rate,
     SevdeskContact,
     Student,
     StudentSubject,
@@ -45,16 +48,31 @@ PARTY_GRAPH = (
 )
 
 
-# What keeps a party from being deleted, by the name a client sees, and when a row still counts. The Discord
-# table belongs to auth (ADR 0009) - a deactivated link is history that keeps no party alive; the other tables
-# belong to the integrations (ADR 0007). The CRM reads them here and nowhere else, and never writes them.
+class ExternalLink(NamedTuple):
+    """A column outside the CRM that keeps a party from being deleted while a row names it."""
+
+    kind: str
+    """The name a client sees in ``party_in_use``."""
+    party_column: InstrumentedAttribute[uuid.UUID]
+    """The column naming the party."""
+    still_linked: ColumnElement[bool]
+    """When a row still counts."""
+
+
+# What keeps a party from being deleted. The Discord table belongs to auth (ADR 0009) - a deactivated link is history
+# that keeps no party alive; the other ext tables belong to the integrations (ADR 0007). Their foreign keys cascade,
+# so the guard is what keeps another system from being orphaned. The billing tables (billing spec, PD9) reference the
+# party with RESTRICT, and every such column has its row here, so the guard answers before the database refuses. The
+# CRM reads these tables here and nowhere else, and never writes them.
 EXTERNAL_LINKS = (
-    ("discord_account", DiscordAccount, DiscordAccount.active.is_(true())),
-    ("sevdesk_contact", SevdeskContact, true()),
-    ("clockodo_customer", ClockodoCustomer, true()),
-    ("clockodo_project", ClockodoProject, true()),
-    ("microsoft_account", MicrosoftAccount, true()),
-    ("microsoft_contact", MicrosoftContact, true()),
+    ExternalLink("discord_account", DiscordAccount.party_id, DiscordAccount.active.is_(true())),
+    ExternalLink("sevdesk_contact", SevdeskContact.party_id, true()),
+    ExternalLink("clockodo_customer", ClockodoCustomer.party_id, true()),
+    ExternalLink("clockodo_project", ClockodoProject.party_id, true()),
+    ExternalLink("microsoft_account", MicrosoftAccount.party_id, true()),
+    ExternalLink("microsoft_contact", MicrosoftContact.party_id, true()),
+    ExternalLink("lesson", Lesson.student_party_id, true()),
+    ExternalLink("rate", Rate.student_party_id, true()),
 )
 
 # Sorts persons ("Mustermann Max") and companies into one case-insensitive order.
@@ -131,10 +149,11 @@ async def list_parties(
 
 
 async def delete_party(session: AsyncSession, party_id: uuid.UUID) -> None:
-    """Delete a party with its roles, contact infos and relations - unless an external system knows it."""
+    """Delete a party with its roles, contact infos and relations - unless an ``EXTERNAL_LINKS`` row names it."""
     # Every write that leaves a link active locks its party first (auth's Discord links explicitly, the other links
     # through their foreign key), so holding this lock means no active link can appear or come back between the check
-    # and the delete: every foreign key into core.party cascades, and such a link would silently vanish with the party.
+    # and the delete: the ext foreign keys into core.party cascade, and such a link would silently vanish with the
+    # party; the billing ones are RESTRICT, and the delete would fail as a 500 instead of answering 409.
     locked = await session.scalar(select(Party.id).where(Party.id == party_id).with_for_update())
     if locked is None:
         raise PartyNotFoundError(f"No party with id {party_id}")
@@ -206,14 +225,14 @@ def _filters(
 
 
 async def _external_link_kinds(session: AsyncSession, party_id: uuid.UUID) -> list[str]:
-    """Return the kinds of external links still holding the party, in the order of ``EXTERNAL_LINKS``."""
+    """Return the kinds of links still holding the party, in the order of ``EXTERNAL_LINKS``."""
     found = await session.scalars(
         union_all(
             *(
-                select(literal(kind)).where(exists().where(model.party_id == party_id, still_linked))
-                for kind, model, still_linked in EXTERNAL_LINKS
+                select(literal(link.kind)).where(exists().where(link.party_column == party_id, link.still_linked))
+                for link in EXTERNAL_LINKS
             )
         )
     )
     present = set(found)
-    return [kind for kind, _, _ in EXTERNAL_LINKS if kind in present]
+    return [link.kind for link in EXTERNAL_LINKS if link.kind in present]
