@@ -247,22 +247,29 @@ class IntegrationHttp:
         started = perf_counter()
         path = template or path_template(request.url.path)
         where = f"{self._name} {request.method} {path}"
+        # Every error is raised after its `except` block, never inside it: an error raised there would keep the httpx
+        # exception as its (suppressed) context - and with it the request, its headers and the form it sent.
+        failure: IntegrationError | None = None
         try:
             response = await self._client.send(request)
         except IntegrationRefusedError:
             raise
         except httpx.RequestError as exc:
-            # No chaining: an httpx error can carry the request, its headers and a header value in its message.
-            failure = type(exc).__name__
-            self._log(request, outcome=failure, started=started, path=path)
-            if write:
-                raise OutcomeUnknownError(f"{where} failed in transit ({failure}); its outcome is unknown") from None
-            raise IntegrationUnavailableError(f"{where} failed in transit ({failure})") from None
+            name = type(exc).__name__
+            self._log(request, outcome=name, started=started, path=path)
+            failure = (
+                OutcomeUnknownError(f"{where} failed in transit ({name}); its outcome is unknown")
+                if write
+                else IntegrationUnavailableError(f"{where} failed in transit ({name})")
+            )
         except Exception as exc:
             if not write:
                 raise
-            self._log(request, outcome=type(exc).__name__, started=started, path=path)
-            raise OutcomeUnknownError(f"{where} failed ({type(exc).__name__}); its outcome is unknown") from None
+            name = type(exc).__name__
+            self._log(request, outcome=name, started=started, path=path)
+            failure = OutcomeUnknownError(f"{where} failed ({name}); its outcome is unknown")
+        if failure is not None:
+            raise failure from None
 
         context = _Context(where=where, path=path, started=started, observe=observe)
         if not write:
@@ -273,10 +280,11 @@ class IntegrationHttp:
             raise
         except Exception as exc:
             # The write went out: whatever fails while its answer is handled leaves its outcome unknown.
-            raise OutcomeUnknownError(
+            failure = OutcomeUnknownError(
                 f"{where} was sent, but its answer failed ({type(exc).__name__}); its outcome is unknown",
                 status=response.status_code,
-            ) from None
+            )
+        raise failure from None
 
     def _answer(
         self, request: httpx.Request, body: object, response: httpx.Response, context: _Context, *, write: bool
