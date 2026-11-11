@@ -487,6 +487,62 @@ describe("remote shells", () => {
   ]);
 });
 
+describe("data recipes", () => {
+  expectBlocked([
+    ["just seed-demo", "data-recipe"],
+    ["just billing-backfill", "data-recipe"],
+    ["just billing-backfill /tmp/mapping.csv", "data-recipe"],
+    ["just billing-backfill /tmp/mapping.csv --apply", "data-recipe"],
+    ["cd ../other && just billing-backfill /tmp/mapping.csv", "data-recipe"],
+    ["just check && just seed-demo", "data-recipe"],
+    ["just check seed-demo", "data-recipe"],
+    ["just --justfile justfile seed-demo", "data-recipe"],
+    ["just ../other/seed-demo", "data-recipe"],
+    ["bash -c 'just billing-backfill /tmp/mapping.csv'", "data-recipe"],
+    ["DB__URL= just seed-demo", "data-recipe"],
+    // just reads its own options only before the recipe; later words go to it.
+    ["just billing-backfill /tmp/mapping.csv --dry-run", "data-recipe"],
+    ["just billing-backfill /tmp/mapping.csv --apply -n", "data-recipe"],
+    ["just billing-backfill --show /tmp/mapping.csv", "data-recipe"],
+    ["just seed-demo -n", "data-recipe"],
+    // The commands the recipes wrap.
+    ["uv run python -m app.cli.seed_demo", "data-recipe"],
+    [
+      "uv run python -m app.cli.billing_backfill /tmp/mapping.csv --apply",
+      "data-recipe",
+    ],
+    ["cd ../other && uv run python -m app.cli.seed_demo", "data-recipe"],
+    ["python3 -m app.cli.billing_backfill /tmp/mapping.csv", "data-recipe"],
+    [".venv/bin/python -mapp.cli.seed_demo", "data-recipe"],
+    ["python -Im app.cli.seed_demo", "data-recipe"],
+    ["uv run -m app.cli.billing_backfill /tmp/mapping.csv", "data-recipe"],
+    [
+      "uv run python app/cli/billing_backfill.py /tmp/mapping.csv",
+      "data-recipe",
+    ],
+    ["uv run app/cli/seed_demo.py", "data-recipe"],
+  ]);
+  expectAllowed([
+    "grep -n billing-backfill justfile",
+    "grep -rn seed_demo app tests",
+    "rg -n 'app.cli.billing_backfill' tests",
+    "cat app/cli/billing_backfill.py",
+    "cat app/cli/seed_demo.py tests/db/billing/test_seed_demo.py",
+    "just test-file tests/db/billing/test_billing_backfill.py",
+    "just test-file tests/test_billing_backfill_file.py",
+    "just test-file tests/test_seed_demo_guard.py",
+    "just test-one seed_demo",
+    "uv run pytest tests/db/billing/test_billing_backfill.py",
+    "uv run python -m pytest -k backfill",
+    "uv run ruff check app/cli/seed_demo.py",
+    "just --show billing-backfill",
+    "just -n seed-demo",
+    "just --list",
+    'git commit -m "chore: block just billing-backfill and just seed-demo"',
+    "echo 'just seed-demo'",
+  ]);
+});
+
 describe("ordinary commands", () => {
   expectAllowed([
     "",

@@ -90,15 +90,16 @@ Everything runs through [`just`](justfile), which wraps `uv`:
   maintainer runs; agents see only counts or redacted output.
 - **Secrets**: never read or print `.env` files, only the tracked `*.example` files. No environment dumps, no remote
   shells. A prompt for credentials or a login means stop and ask.
-- **The agent guard** (`.claude/hooks/guard.mjs`) blocks merges, secret reads, remote shells and repo administration;
-  it catches accidents, it is no security boundary. A block means stop and ask, never work around it.
+- **The agent guard** (`.claude/hooks/guard.mjs`) blocks merges, secret reads, remote shells, repo administration and
+  the data recipes (`just seed-demo`, `just billing-backfill`); it catches accidents, it is no security boundary. A
+  block means stop and ask, never work around it.
 - **No new external service** without asking. **Legal texts** change only on an explicit request; flag a change that
   may affect one.
 - **The configured database may be production.** The settings read `.env`, and `.env.example` names Neon as the
   production target. `just dev`, `just dev-local-core`, `just docker-run`, `just bootstrap-client`,
-  `just bootstrap-admin`, `just worker-housekeeping`, `just seed-demo` and Alembic run only after the maintainer
-  confirms in the session that `DB__URL` is local: `bootstrap-admin` prints tokens, `worker-housekeeping` deletes
-  rows, `seed-demo` writes them. `just billing-backfill` an agent never runs: it is meant for production.
+  `just bootstrap-admin`, `just worker-housekeeping` and Alembic run only after the maintainer confirms in the session
+  that `DB__URL` is local: `bootstrap-admin` prints tokens, `worker-housekeeping` deletes rows. `just seed-demo` and
+  `just billing-backfill` an agent never runs: they write rows, and `billing-backfill` is meant for production.
 - **sevDesk is a live system, its trial too.** An agent runs the trial recipes (`just sevdesk-doctor trial`,
   `just contract-sevdesk`, `just sevdesk-spike`) only after the maintainer's go in the session, and
   `just sevdesk-doctor live` never. The trial's settings live in the env file the recipes name, outside the
