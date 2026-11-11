@@ -526,7 +526,7 @@ marked **pending approval** is a proposal: it is not built before the maintainer
 
 What is _not_ family-visible text and lives elsewhere - German words included, because they are matching data:
 
-- **Match tokens** - `mit`, `Kennenlernen`, `Telefon`, the late-cancellation category
+- **Match tokens** - `mit`, `Kennenlern`, `Telefon`, the late-cancellation category
   (`app/services/billing/calendar_rules.py`); `Zahlungsverfahren`, `PayPal`, `Überweisung` as sevDesk reports them
   (`app/services/billing/payment_methods.py`, and the field by its configured id).
 - **The contact person.** The name under the foot text comes from sevDesk - its placeholder, or the user behind
