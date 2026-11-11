@@ -49,7 +49,7 @@ export const RULES = {
   "remote-shell":
     "Agents open no remote shells and copy nothing to or from other hosts (ssh, scp, sftp, ssh-add, rsync to a host).",
   "data-recipe":
-    "just seed-demo and just billing-backfill, and the modules they run, write to the configured database, which may be production; only the maintainer runs them. Reading them and running their tests stay allowed.",
+    "just seed-demo and just billing-backfill, and the modules they run, write rows to the configured database (billing-backfill is meant for production); only the maintainer runs them. Reading them and running their tests stay allowed.",
   "repo-admin":
     "Secrets, variables, rulesets, releases, tags and repository settings are left to the maintainer.",
   "repo-destructive":
@@ -1191,13 +1191,13 @@ const DATA_RECIPES = new Map([
 const JUST_SHOWS = new Set(["-s", "--show", "-n", "--dry-run"]);
 const PYTHON = /^python(?:\d+(?:\.\d+)?)?$/;
 
-// just runs every recipe its words name, also as dir/recipe.
+// just runs every recipe its words name, also as dir/recipe. Its own options
+// come before the recipe; a -n after it is the recipe's argument.
 function checkJust(args) {
-  if (args.some((arg) => JUST_SHOWS.has(arg))) return null;
-  const recipe = args.map(basename).find((arg) => DATA_RECIPES.has(arg));
-  return recipe === undefined
-    ? null
-    : { rule: "data-recipe", detail: `just ${recipe}` };
+  const at = args.findIndex((arg) => DATA_RECIPES.has(basename(arg)));
+  if (at === -1 || args.slice(0, at).some((arg) => JUST_SHOWS.has(arg)))
+    return null;
+  return { rule: "data-recipe", detail: `just ${basename(args[at])}` };
 }
 
 // Returns what python runs: the module of -m, or the script file.

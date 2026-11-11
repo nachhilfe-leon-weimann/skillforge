@@ -500,6 +500,11 @@ describe("data recipes", () => {
     ["just ../other/seed-demo", "data-recipe"],
     ["bash -c 'just billing-backfill /tmp/mapping.csv'", "data-recipe"],
     ["DB__URL= just seed-demo", "data-recipe"],
+    // just reads its own options only before the recipe; later words go to it.
+    ["just billing-backfill /tmp/mapping.csv --dry-run", "data-recipe"],
+    ["just billing-backfill /tmp/mapping.csv --apply -n", "data-recipe"],
+    ["just billing-backfill --show /tmp/mapping.csv", "data-recipe"],
+    ["just seed-demo -n", "data-recipe"],
     // The commands the recipes wrap.
     ["uv run python -m app.cli.seed_demo", "data-recipe"],
     [
