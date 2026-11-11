@@ -3,7 +3,8 @@ whole file in one transaction, or nothing; a second run changes no row; one bad 
 holds counts, line numbers and reason codes only.
 
 The command runs in-process on the test's session: `--apply` in a SAVEPOINT standing in for its transaction, a dry
-run on the session as it is - so a write of a dry run stays visible to the snapshot, and a commit is recorded.
+run on the session as it is - so a write of a dry run stays visible to the snapshot, and a commit is recorded. The
+race tests use the real `Database` on a database of their own, with two real transactions.
 """
 
 import re
@@ -17,12 +18,16 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from sqlalchemy import event, select
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
+from sqlalchemy import event, insert, make_url, select, text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, create_async_engine
 
 from app.cli import billing_backfill
 from app.cli.billing_backfill import COLUMNS
+from app.core.db import Database
 from app.core.db.models import ManualPayer, PartyRelation, PartyRelationType, PreferredMeetingTool, Rate, SevdeskContact
+from app.core.db.models.base import Base
+from app.core.db.models.schemata import get_schemata
 from app.services.billing import payers, rates
 from app.services.billing.errors import SevdeskContactAlreadyLinkedError
 from app.services.crm import companies, persons, relations
@@ -79,7 +84,15 @@ def commits(session: AsyncSession) -> Iterator[list[str]]:
 
 
 @pytest.fixture
-def backfill(session: AsyncSession, monkeypatch, capsys, tmp_path: Path) -> Callable[..., Awaitable[Run]]:
+def opened() -> list[tuple[bool, str | None]]:
+    """The transactions the command asked for: ``(write, isolation_level)``."""
+    return []
+
+
+@pytest.fixture
+def backfill(
+    session: AsyncSession, monkeypatch, capsys, tmp_path: Path, opened: list[tuple[bool, str | None]]
+) -> Callable[..., Awaitable[Run]]:
     """Write the rows to a CSV outside the repository and run the command on it."""
 
     class TestDatabase:
@@ -89,7 +102,10 @@ def backfill(session: AsyncSession, monkeypatch, capsys, tmp_path: Path) -> Call
             return cls()
 
         @asynccontextmanager
-        async def session(self, *, write: bool = True) -> AsyncGenerator[AsyncSession]:
+        async def session(
+            self, *, write: bool = True, isolation_level: str | None = None
+        ) -> AsyncGenerator[AsyncSession]:
+            opened.append((write, isolation_level))
             if write:
                 async with session.begin_nested():
                     yield session
@@ -167,7 +183,7 @@ async def _written(session: AsyncSession, family: Family) -> dict[str, list[Any]
 
 
 async def test_a_dry_run_prints_what_it_would_do_and_writes_and_commits_nothing(
-    session: AsyncSession, family: Family, backfill, commits: list[str]
+    session: AsyncSession, family: Family, backfill, commits: list[str], opened: list[tuple[bool, str | None]]
 ):
     before = await _snapshot(session)
 
@@ -184,9 +200,12 @@ async def test_a_dry_run_prints_what_it_would_do_and_writes_and_commits_nothing(
     ]
     assert await _snapshot(session) == before
     assert commits == []
+    assert opened == [(False, None)]
 
 
-async def test_apply_writes_the_file_and_a_second_run_changes_no_row(session: AsyncSession, family: Family, backfill):
+async def test_apply_writes_the_file_and_a_second_run_changes_no_row(
+    session: AsyncSession, family: Family, backfill, opened: list[tuple[bool, str | None]]
+):
     first = await backfill(*family.rows, apply=True)
     after_first = await _snapshot(session)
     second = await backfill(*family.rows, apply=True)
@@ -207,6 +226,7 @@ async def test_apply_writes_the_file_and_a_second_run_changes_no_row(session: As
         "rates": [(family.student, DAY, CENTS)],
     }
     assert await _snapshot(session) == after_first
+    assert opened == [(True, "SERIALIZABLE")] * 2
     assert second.code is None
     assert second.lines[1:5] == [
         "pays_for: 0 added, 2 unchanged",
@@ -324,6 +344,13 @@ async def _unmarked_in_the_file_marked_in_the_database(session: AsyncSession, fa
     return [_row(family.student, family.parent, manual_billing="false")], ["line 4: manual_billing_conflict"]
 
 
+async def _two_marks_in_the_file(session: AsyncSession, family: Family):
+    return [_row(family.self_payer, family.self_payer, manual_billing="false")], [
+        "line 3: manual_billing_conflict",
+        "line 4: manual_billing_conflict",
+    ]
+
+
 async def _malformed_cell(session: AsyncSession, family: Family):
     return [_row(family.student, family.parent, rate_cents_per_hour="30.00", rate_valid_from=DAY)], [
         "line 4: malformed_cell (rate_cents_per_hour)"
@@ -347,6 +374,7 @@ async def _malformed_cell(session: AsyncSession, family: Family):
         _two_contacts_in_the_file,
         _one_contact_for_two_payers,
         _unmarked_in_the_file_marked_in_the_database,
+        _two_marks_in_the_file,
         _malformed_cell,
     ],
 )
@@ -435,3 +463,99 @@ async def test_the_output_holds_counts_and_line_numbers_only(
         text = run.out + str(run.code or "")
         assert [secret for secret in secrets if secret.lower() in text.lower()] == []
         assert [line for line in run.lines if not OUTPUT_LINE.fullmatch(line)] == []
+
+
+async def test_a_database_error_prints_its_class_only(session: AsyncSession, family: Family, backfill, monkeypatch):
+    """A real unique violation midway: the error carries the contact id (the server's DETAIL is no bound parameter,
+    so `hide_parameters` does not hide it) and the statement; the output holds the class only. Nothing is
+    written."""
+    failures: list[str] = []
+
+    async def conflicting_put_rate(session: AsyncSession, *args: Any, **kwargs: Any) -> Any:
+        try:
+            await session.execute(
+                text(
+                    "INSERT INTO ext.sevdesk_contact (sevdesk_id, party_id, created_at, updated_at)"
+                    " VALUES (:contact, :party, now(), now())"
+                ),
+                {"contact": CONTACT, "party": family.self_payer},
+            )
+        except IntegrityError as exc:
+            # asyncpg's error, behind the adapter: its DETAIL names the key.
+            failures.append(f"{exc} {getattr(getattr(exc.orig, '__cause__', None), 'detail', '')}")
+            raise
+
+    monkeypatch.setattr(rates, "put_rate", conflicting_put_rate)
+    before = await _snapshot(session)
+
+    run = await backfill(*family.rows, apply=True)
+
+    assert CONTACT in failures[0]
+    assert run.code == "billing-backfill failed, nothing written: IntegrityError"
+    assert CONTACT not in run.out
+    assert await _snapshot(session) == before
+
+
+# --- Two real transactions --------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def own_database(db_url: str) -> AsyncGenerator[Database]:
+    """A database of its own on the test server: the command commits there, and it is dropped afterwards."""
+    url = make_url(db_url)
+    name = f"backfill_{uuid.uuid4().hex}"
+    admin = create_async_engine(url, isolation_level="AUTOCOMMIT")
+    async with admin.connect() as connection:
+        await connection.execute(text(f'CREATE DATABASE "{name}"'))
+    database = Database.from_url(url.set(database=name).render_as_string(hide_password=False))
+    try:
+        async with database.engine.begin() as connection:
+            for schema in get_schemata():
+                await connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
+            await connection.run_sync(Base.metadata.create_all)
+        yield database
+    finally:
+        await database.dispose()
+        async with admin.connect() as connection:
+            await connection.execute(text(f'DROP DATABASE "{name}" WITH (FORCE)'))
+        await admin.dispose()
+
+
+async def test_a_rate_written_between_check_and_write_makes_the_apply_write_nothing(
+    own_database: Database, monkeypatch, tmp_path: Path
+):
+    """Another transaction commits a rate for the file's day after the check, and before the write: at
+    `SERIALIZABLE` the upsert meets a row its snapshot does not see and the whole apply fails - the other rate is not
+    overwritten, and the file's other facts are not written either. The other writer inserts the row directly: the
+    rate service would first wait for the student the check holds (`require_student`) and so never race."""
+    async with own_database.session() as setup:
+        parent = await _person(setup, "A", student=False)
+        student = await _person(setup, "B")
+    cells: dict[str, object] = {"student_party_id": student, "payer_party_id": parent, "sevdesk_contact_id": CONTACT}
+    cells |= {"rate_cents_per_hour": CENTS, "rate_valid_from": DAY}
+    path = tmp_path / "mapping.csv"
+    path.write_text(f"{','.join(COLUMNS)}\n{','.join(str(cells.get(column, '')) for column in COLUMNS)}\n")
+    write_plan = billing_backfill.write_plan
+
+    async def write_after_a_concurrent_commit(session: AsyncSession, plan: Any) -> None:
+        async with own_database.session() as elsewhere:
+            await elsewhere.execute(
+                insert(Rate).values(id=uuid.uuid4(), student_party_id=student, valid_from=DAY, cents_per_hour=2800)
+            )
+        await write_plan(session, plan)
+
+    url = own_database.engine.url.render_as_string(hide_password=False)
+    monkeypatch.setattr(billing_backfill, "get_settings", lambda: SimpleNamespace(db=SimpleNamespace(url=url)))
+    monkeypatch.setattr(billing_backfill, "write_plan", write_after_a_concurrent_commit)
+
+    with pytest.raises(SystemExit) as failed:
+        await billing_backfill.billing_backfill(str(path), apply=True)
+
+    assert (
+        failed.value.code == "billing-backfill failed, nothing written: the data changed during the run; run it again"
+    )
+    async with own_database.session(write=False) as check:
+        stored_rates = list(await check.execute(select(Rate.student_party_id, Rate.cents_per_hour)))
+        relations_written = list(await check.scalars(select(PartyRelation.from_party_id)))
+        contacts = list(await check.scalars(select(SevdeskContact.sevdesk_id)))
+    assert (stored_rates, relations_written, contacts) == ([(student, 2800)], [], [])

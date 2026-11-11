@@ -12,7 +12,7 @@ in any order, and a row per student - or several: a fact given in more than one 
   student_party_id     required: the party id of a student
   payer_party_id       the party id of who pays for the student; the student's own id means "pays for themselves"
                        and writes no relation. It must be the student's one payer: the CRM holds it, or none.
-  sevdesk_contact_id   the payer's sevDesk contact id, digits only, stored as given
+  sevdesk_contact_id   the payer's sevDesk contact id: a positive integer, no leading zero; stored as given
   manual_billing       `true` or `false`: the payer is billed by hand; `false` for a marked payer is a problem
   rate_cents_per_hour  the student's own rate, rule G: divisible by 4
   rate_valid_from      its day, `YYYY-MM-DD`; a rate and its day come together. A day that has a rate keeps it.
@@ -37,10 +37,12 @@ from datetime import date
 from enum import StrEnum
 from pathlib import Path
 
-from sqlalchemy import or_, select
+from pydantic import TypeAdapter, ValidationError
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.billing.schemas import SevdeskContactId
 from app.core.config import get_settings
 from app.core.db import Database
 from app.core.db.models import ManualPayer, PartyRelationType, Rate, SevdeskContact
@@ -63,10 +65,12 @@ COLUMNS = (
     "rate_valid_from",
 )
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE | re.ASCII)
-_CONTACT_ID = re.compile(r"[0-9]{1,64}", re.ASCII)  # the API's `SevdeskContactId`
+_CONTACT_ID: TypeAdapter[str] = TypeAdapter(SevdeskContactId)  # the API's rule: canonical, no leading zero
 _CENTS = re.compile(r"[0-9]{1,10}", re.ASCII)
 _DAY = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", re.ASCII)
 _MAX_CENTS = 2**31 - 1
+_SERIALIZATION_FAILURE = "40001"
+_FAILED = "billing-backfill failed, nothing written"
 
 
 class MappingRefusedError(Exception):
@@ -147,11 +151,12 @@ def check_path(given: str) -> Path:
     """Return the real path of the file, or refuse it - before anything reads it."""
     if not os.path.isabs(given):
         raise MappingRefusedError("name the file by an absolute path")
-    lexical = Path(os.path.normpath(given))
-    if _in_git_work_tree(lexical):
+    # Not normalised: a `..` after a symlink leads where the link points, for the OS and so for these checks.
+    named = Path(given)
+    if _in_git_work_tree(named):
         raise MappingRefusedError("the file lies inside a git work tree; keep it outside every repository")
     try:
-        resolved = lexical.resolve(strict=True)
+        resolved = named.resolve(strict=True)
     except OSError, RuntimeError:
         raise MappingRefusedError("the file does not exist") from None
     if _in_git_work_tree(resolved):
@@ -170,6 +175,8 @@ def read_mapping(given: str) -> Mapping:
     path = check_path(given)
     try:
         text = path.read_bytes().decode("utf-8-sig")
+    except OSError:  # its message names the path
+        raise MappingRefusedError("the file cannot be read") from None
     except UnicodeDecodeError:
         raise MappingRefusedError("the file is not UTF-8") from None
 
@@ -210,7 +217,7 @@ def _parse_row(line: int, header: list[str], cells: list[str]) -> Row | list[Pro
 
     student_id = parse("student_party_id", _party_id)
     payer_id = parse("payer_party_id", _party_id)
-    contact_id = parse("sevdesk_contact_id", lambda cell: cell if _CONTACT_ID.fullmatch(cell) else None)
+    contact_id = parse("sevdesk_contact_id", _contact_id)
     manual = parse("manual_billing", {"true": True, "false": False}.get)
     cents = parse("rate_cents_per_hour", _cents)
     day = parse("rate_valid_from", _day)
@@ -224,6 +231,14 @@ def _parse_row(line: int, header: list[str], cells: list[str]) -> Row | list[Pro
         return problems
     rate = (day, cents) if day is not None and cents is not None else None
     return Row(line, student_id, payer_id, contact_id, manual, rate)
+
+
+def _contact_id(cell: str) -> str | None:
+    """The cell if it is a contact id in its one canonical form, as the API takes it - taken verbatim, not stripped."""
+    try:
+        return cell if _CONTACT_ID.validate_python(cell) == cell else None
+    except ValidationError:
+        return None
 
 
 def _party_id(cell: str) -> uuid.UUID | None:
@@ -265,12 +280,8 @@ class _Stored:
     @classmethod
     async def read(cls, session: AsyncSession, rows: list[Row]) -> _Stored:
         payer_ids = {row.payer_id for row in rows if row.payer_id is not None}
-        contact_ids = {row.contact_id for row in rows if row.contact_id is not None}
-        links = await session.execute(
-            select(SevdeskContact.party_id, SevdeskContact.sevdesk_id).where(
-                or_(SevdeskContact.party_id.in_(payer_ids), SevdeskContact.sevdesk_id.in_(contact_ids))
-            )
-        )
+        # Every link, read by its columns only (the architecture test's rule); there is one per payer at most.
+        links = await session.execute(select(SevdeskContact.party_id, SevdeskContact.sevdesk_id))
         contact_of = {party_id: contact_id for party_id, contact_id in links}
         marked = await session.scalars(select(ManualPayer.party_id).where(ManualPayer.party_id.in_(payer_ids)))
         stored_rates = await session.execute(
@@ -409,23 +420,32 @@ async def write_plan(session: AsyncSession, plan: Plan) -> None:
 async def billing_backfill(file: str, *, apply: bool) -> None:
     """Refuse a bad path or file before anything connects, check every row, then write all of it or nothing.
 
-    A dry run reads in a transaction that is rolled back; ``--apply`` checks and writes in one transaction.
+    A dry run reads in a transaction that is rolled back. ``--apply`` checks and writes in one ``SERIALIZABLE``
+    transaction, so a write of someone else between the check and the write fails the run instead of being
+    overwritten. A failure prints its code or its class, never its message: those name ids, cells and the URL.
     """
     try:
         mapping = read_mapping(file)
     except MappingRefusedError as exc:
         raise SystemExit(f"billing-backfill refused: {exc}") from None
 
-    db = Database.from_url(str(get_settings().db.url))
     try:
-        async with db.session(write=apply) as session:
+        db = Database.from_url(str(get_settings().db.url))
+    except ValueError, SQLAlchemyError:  # a settings or URL error repeats the URL
+        raise SystemExit("billing-backfill refused: the database settings cannot be read") from None
+    try:
+        async with db.session(write=apply, isolation_level="SERIALIZABLE" if apply else None) as session:
             plan = await plan_mapping(session, mapping)
             if apply and not plan.problems:
                 await write_plan(session, plan)
     except DomainError as exc:
-        raise SystemExit(f"billing-backfill failed, nothing written: {exc.code}") from None
+        raise SystemExit(f"{_FAILED}: {exc.code}") from None
     except SQLAlchemyError as exc:
-        raise SystemExit(f"billing-backfill failed, nothing written: {type(exc).__name__}") from None
+        if getattr(getattr(exc, "orig", None), "sqlstate", None) == _SERIALIZATION_FAILURE:
+            raise SystemExit(f"{_FAILED}: the data changed during the run; run it again") from None
+        raise SystemExit(f"{_FAILED}: {type(exc).__name__}") from None
+    except OSError as exc:  # connecting: the message names the host and the port
+        raise SystemExit(f"{_FAILED}: {type(exc).__name__}") from None
     finally:
         await db.dispose()
 

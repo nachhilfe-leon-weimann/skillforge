@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import text
 from sqlalchemy.engine import URL, make_url
+from sqlalchemy.engine.interfaces import IsolationLevel
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -43,11 +44,17 @@ class Database:
         return cls(engine=engine, session_factory=session_factory)
 
     @asynccontextmanager
-    async def session(self, *, write: bool = True) -> AsyncGenerator[AsyncSession]:
+    async def session(
+        self, *, write: bool = True, isolation_level: IsolationLevel | None = None
+    ) -> AsyncGenerator[AsyncSession]:
+        """A session; with ``write``, one transaction that commits when the block succeeds, at ``isolation_level`` if
+        one is given (the server's default otherwise)."""
         async with self.session_factory() as session:
             try:
                 if write:
                     async with session.begin():
+                        if isolation_level is not None:
+                            await session.connection(execution_options={"isolation_level": isolation_level})
                         yield session
                 else:
                     yield session
