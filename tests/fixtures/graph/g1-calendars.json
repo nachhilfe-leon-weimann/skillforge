@@ -3,7 +3,7 @@
     "method": "GET",
     "path": "/v1.0/users/lessons@example.org/calendars",
     "params": {
-      "$select": "id,name"
+      "$select": "id,name,owner"
     },
     "headers": {
       "accept": "application/json",
@@ -17,15 +17,23 @@
       "content-type": "application/json; odata.metadata=minimal; odata.streaming=true; IEEE754Compatible=false; charset=utf-8"
     },
     "body": {
-      "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('lessons@example.org')/calendars(id,name)",
+      "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('lessons@example.org')/calendars(id,name,owner)",
       "value": [
         {
           "id": "AAMkAGc3ludGhldGljOmNhbGVuZGFyOmRlZmF1bHQ=",
-          "name": "Kalender"
+          "name": "Kalender",
+          "owner": {
+            "name": "Example Tutoring",
+            "address": "lessons@example.org"
+          }
         },
         {
           "id": "AAMkAGc3ludGhldGljOmNhbGVuZGFyOmxlc3NvbnM=",
-          "name": "Unterricht"
+          "name": "Unterricht",
+          "owner": {
+            "name": "Example Tutoring",
+            "address": "lessons@example.org"
+          }
         }
       ]
     }

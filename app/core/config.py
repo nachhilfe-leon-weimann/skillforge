@@ -4,6 +4,7 @@ from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 from skillcore.config import CoreSettings
 
+from app.integrations.graph.config import GraphSettings
 from app.integrations.sevdesk.config import SevdeskSettings
 
 from .auth.config import AuthSettings
@@ -30,6 +31,7 @@ class Settings(CoreSettings):
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     # Nested settings come from this class's sources; the default reads no env file of its own.
     sevdesk: SevdeskSettings = Field(default_factory=lambda: SevdeskSettings(_env_file=None))
+    graph: GraphSettings = Field(default_factory=lambda: GraphSettings(_env_file=None))
     billing: BillingSettings = Field(default_factory=lambda: BillingSettings(_env_file=None))
 
 

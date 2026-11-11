@@ -2,11 +2,13 @@
 
 The only module in ``app/`` that imports httpx (``tests/integrations/test_integrations_architecture.py``).
 Every request passes ``_GuardedTransport``, which refuses a URL outside the base URL and the host allowlist and,
-under pytest, any real network. ``write`` sends nothing in ``dry_run`` and returns the ``PlannedRequest`` instead.
+under pytest, any real network. ``write`` sends nothing in ``dry_run`` and returns the ``PlannedRequest`` instead;
+a form POST that changes nothing - a token request - is a read (``read_form``) and goes out in every mode.
 Nothing is retried and no redirect is followed: a failed read may be repeated by its caller, a write never is - a
 write that may have reached the remote system is an ``OutcomeUnknownError`` for a later reconcile.
 """
 
+import asyncio
 import json as jsonlib
 import logging
 import re
@@ -95,6 +97,16 @@ def path_template(path: str) -> str:
     ``/Contact/{id}`` instead.
     """
     return "/".join(segment if _ROUTE_WORD.fullmatch(segment) else "{id}" for segment in path.split("/"))
+
+
+@dataclass(frozen=True, slots=True)
+class _Context:
+    """How a sent request is named and handled while its answer is read."""
+
+    where: str
+    path: str
+    started: float
+    observe: bool
 
 
 type Observer = Callable[[Exchange], None]
@@ -202,10 +214,22 @@ class IntegrationHttp:
             raise RuntimeError(f"{self!r} is used outside its `async with` block")
         return self._opened
 
-    async def read(self, path: str, *, params: Params | None = None) -> Reply:
-        """Send a GET; it goes out in every mode."""
+    async def read(self, path: str, *, params: Params | None = None, template: str | None = None) -> Reply:
+        """Send a GET; it goes out in every mode.
+
+        ``template`` names the path in the log line and in errors instead of ``path_template``, for a path whose
+        object segments a route word could pass for (a mailbox, a calendar id).
+        """
         request = self._client.build_request("GET", path, params=params)
-        return await self._send(request, body=None, write=False)
+        return await self._send(request, body=None, write=False, template=template)
+
+    async def read_form(self, path: str, *, form: Mapping[str, str], template: str | None = None) -> Reply:
+        """Send a form POST that changes nothing - a token request: a read, so it goes out in every mode.
+
+        The form and the answer carry credentials: neither reaches the observer, a log line or an error.
+        """
+        request = self._client.build_request("POST", path, data=form)
+        return await self._send(request, body=None, write=False, template=template, observe=False)
 
     async def write(
         self, method: WriteMethod, path: str, *, params: Params | None = None, json: object = None
@@ -218,56 +242,73 @@ class IntegrationHttp:
             return PlannedRequest(method, str(request.url), json)
         return await self._send(request, body=json, write=True)
 
-    async def _send(self, request: httpx.Request, *, body: object, write: bool) -> Reply:
+    async def _send(
+        self, request: httpx.Request, *, body: object, write: bool, template: str | None = None, observe: bool = True
+    ) -> Reply:
         started = perf_counter()
-        where = f"{self._name} {request.method} {path_template(request.url.path)}"
+        path = template or path_template(request.url.path)
+        where = f"{self._name} {request.method} {path}"
+        # Every error is raised after its `except` block, never inside it: an error raised there would keep the httpx
+        # exception as its (suppressed) context - and with it the request, its headers and the form it sent.
+        failure: IntegrationError | None = None
         try:
             response = await self._client.send(request)
         except IntegrationRefusedError:
             raise
+        except asyncio.CancelledError:
+            # A caller's deadline cut the request: it still writes its line, and the cancellation goes on unchanged.
+            self._log(request, outcome="cancelled", started=started, path=path)
+            raise
         except httpx.RequestError as exc:
-            # No chaining: an httpx error can carry the request, its headers and a header value in its message.
-            failure = type(exc).__name__
-            self._log(request, outcome=failure, started=started)
-            if write:
-                raise OutcomeUnknownError(f"{where} failed in transit ({failure}); its outcome is unknown") from None
-            raise IntegrationUnavailableError(f"{where} failed in transit ({failure})") from None
+            name = type(exc).__name__
+            self._log(request, outcome=name, started=started, path=path)
+            failure = (
+                OutcomeUnknownError(f"{where} failed in transit ({name}); its outcome is unknown")
+                if write
+                else IntegrationUnavailableError(f"{where} failed in transit ({name})")
+            )
         except Exception as exc:
             if not write:
                 raise
-            self._log(request, outcome=type(exc).__name__, started=started)
-            raise OutcomeUnknownError(f"{where} failed ({type(exc).__name__}); its outcome is unknown") from None
+            name = type(exc).__name__
+            self._log(request, outcome=name, started=started, path=path)
+            failure = OutcomeUnknownError(f"{where} failed ({name}); its outcome is unknown")
+        if failure is not None:
+            raise failure from None
 
+        context = _Context(where=where, path=path, started=started, observe=observe)
         if not write:
-            return self._answer(request, body, response, where=where, write=False, started=started)
+            return self._answer(request, body, response, context, write=False)
         try:
-            return self._answer(request, body, response, where=where, write=True, started=started)
+            return self._answer(request, body, response, context, write=True)
         except IntegrationError:
             raise
         except Exception as exc:
             # The write went out: whatever fails while its answer is handled leaves its outcome unknown.
-            raise OutcomeUnknownError(
+            failure = OutcomeUnknownError(
                 f"{where} was sent, but its answer failed ({type(exc).__name__}); its outcome is unknown",
                 status=response.status_code,
-            ) from None
+            )
+        raise failure from None
 
     def _answer(
-        self, request: httpx.Request, body: object, response: httpx.Response, *, where: str, write: bool, started: float
+        self, request: httpx.Request, body: object, response: httpx.Response, context: _Context, *, write: bool
     ) -> Reply:
-        self._log(request, outcome="response", started=started, status=response.status_code)
-        self._observe(request, body, response)
+        self._log(request, outcome="response", started=context.started, status=response.status_code, path=context.path)
+        if context.observe:
+            self._observe(request, body, response)
         reply = Reply(response.status_code, response.content)
         if response.is_success:
             return reply
 
-        remote_message = self._remote_message(reply)
+        where, remote, retry_after = context.where, self._remote_message(reply), response.headers.get("Retry-After")
         if response.is_client_error:
-            raise IntegrationRejectedError(f"{where} was rejected", status=reply.status, remote_message=remote_message)
-        if write:
-            raise OutcomeUnknownError(
-                f"{where} failed; its outcome is unknown", status=reply.status, remote_message=remote_message
-            )
-        raise IntegrationUnavailableError(f"{where} failed", status=reply.status, remote_message=remote_message)
+            error, message = IntegrationRejectedError, f"{where} was rejected"
+        elif write:
+            error, message = OutcomeUnknownError, f"{where} failed; its outcome is unknown"
+        else:
+            error, message = IntegrationUnavailableError, f"{where} failed"
+        raise error(message, status=reply.status, remote_message=remote, retry_after=retry_after)
 
     def _remote_message(self, reply: Reply) -> str | None:
         """The remote system's error text; a failure to extract it is logged and never hides the error itself."""
@@ -301,14 +342,20 @@ class IntegrationHttp:
         return {name: REDACTED if name.lower() in self._redacted else value for name, value in headers.items()}
 
     def _log(
-        self, request: httpx.Request, *, outcome: str, started: float | None = None, status: int | None = None
+        self,
+        request: httpx.Request,
+        *,
+        outcome: str,
+        started: float | None = None,
+        status: int | None = None,
+        path: str | None = None,
     ) -> None:
         """One line per request: never a header, a query or a body - they may hold the credential or personal data."""
         logger.info(
             "integration_request",
             integration=self._name,
             method=request.method,
-            path=path_template(request.url.path),
+            path=path or path_template(request.url.path),
             outcome=outcome,
             status=status,
             duration_ms=None if started is None else round((perf_counter() - started) * 1000),

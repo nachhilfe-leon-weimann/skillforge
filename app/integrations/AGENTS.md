@@ -10,7 +10,8 @@ too. The layer is described in [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.
   Under pytest real network and `live` are refused, except in the contract run (`SKILLFORGE_CONTRACT_RUN=1`, set
   only by `just contract-sevdesk`) against a `trial` account. Tests use `httpx.MockTransport` and synthetic data.
 - **Never retry a write.** A write that may have reached the remote system is an `OutcomeUnknownError`; the calling
-  service records it for a later reconcile. Calls run synchronously from services - no job queue.
+  service records it for a later reconcile. Calls run synchronously from services - no job queue - so a client that
+  repeats a read bounds it in attempts and in total time (Graph: `MAX_ATTEMPTS`, `READ_DEADLINE_SECONDS`).
 - **Errors stay internal.** Integration errors (`errors.py`) are no `DomainError`; the calling service decides what
   an API client sees. No message, log line or `repr` carries a credential, a header, a query, a body or an id:
   a path is named by its template (`path_template`).
@@ -25,4 +26,8 @@ too. The layer is described in [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.
   patched.
 - **Live calls need the maintainer's go.** `just sevdesk-doctor`, `just contract-sevdesk` (`@pytest.mark.contract`,
   skipped in every other run) and `just sevdesk-spike` (`scripts/sevdesk_spike.py`) reach sevDesk; an agent runs
-  the trial recipes only after the maintainer's go in the session, and `just sevdesk-doctor live` never.
+  the trial recipes only after the maintainer's go in the session, and `just sevdesk-doctor live` never. No test,
+  CI job or agent session reaches Microsoft Graph - only the maintainer's runs of `scripts/graph/` and the deployed
+  SkillForge do: `GraphClient` treats the tenant as a `live` account, which no test run, the contract run included,
+  may reach. `read_form` (a POST sent as a read) is the Graph token request's alone
+  (`tests/integrations/test_integrations_read_form.py`).

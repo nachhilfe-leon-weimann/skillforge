@@ -83,8 +83,8 @@ row, commit, call, record the outcome - there is no job queue.
   run (`SKILLFORGE_CONTRACT_RUN=1`) against a `trial` account (`IntegrationAccount`).
 - **No retry.** A failed read is `IntegrationUnavailableError` and may be repeated by its caller; a write that may
   have reached the remote system is `OutcomeUnknownError` and is never repeated - the service reconciles it. A
-  4xx is `IntegrationRejectedError`. These errors (`errors.py`) are internal, no `DomainError`: the service
-  decides what an API client sees.
+  4xx is `IntegrationRejectedError`; an error carries the response's `Retry-After` for a caller that repeats a
+  read. These errors (`errors.py`) are internal, no `DomainError`: the service decides what an API client sees.
 - **Nothing leaks.** The credential is passed as `credentials`, redacted in every `Exchange`; errors never chain
   the httpx exception, which can carry the request and a header value. One `integration_request` log line per call
   names the integration, method, path template, status and duration - never a header, a query or a body; httpx's
@@ -92,7 +92,8 @@ row, commit, call, record the outcome - there is no job queue.
   `/Contact/{id}`), never an object's id.
 - **Layering.** `app/integrations/` imports only `app.core` and itself, and `app/core/` imports no integration
   (`tests/integrations/test_integrations_architecture.py`) - with one exception: `app/core/config.py` imports
-  `app.integrations.sevdesk.config`, so that `Settings` nests `SevdeskSettings`.
+  `app.integrations.sevdesk.config` and `app.integrations.graph.config`, so that `Settings` nests
+  `SevdeskSettings` and `GraphSettings`.
 - **sevDesk** (`sevdesk/`): settings `SEVDESK__*` (`SevdeskSettings`, all optional, an empty id means unset, an
   empty token is refused; account-specific ids are configuration). A `SevdeskClient` comes from `connect`, which
   first confirms the account (`verify_account` in `identity.py`): the `SevClient` the token belongs to must have
@@ -103,6 +104,22 @@ row, commit, call, record the outcome - there is no job queue.
   SkillForge does not use; `invoices.py` builds the `saveInvoice` body of a draft under § 19 UStG (`taxRule` 11)
   with its delivery date or period, from integer cents and minutes sent as exact decimal strings - never a float;
   a position keeps the quarter-hour rule (minutes in steps of 15, cents per hour divisible by 4).
+- **Microsoft Graph** (`graph/`): the read of the one lesson calendar. Settings `GRAPH__*` (`GraphSettings`, all
+  optional; the certificate and its key are PEM texts base64-encoded into one line, as secrets). The app token
+  (`credential.py`) is a client-credentials grant with a client assertion signed PS256 by `pyjwt[crypto]`, sent
+  through the guarded transport as a read (`read_form`) and cached in memory until shortly before it expires. A
+  `GraphClient` comes from `connect`, which confirms the calendar first (`verify_calendar` in `identity.py`): the
+  calendar named `GRAPH__CALENDAR_NAME` among the mailbox's calendars must exist once and be owned by
+  `GRAPH__MAILBOX` - the app has no directory permission to read the mailbox itself; anything else, a failed read
+  included, is an `IdentityCheckError`. `calendar_view` reads `calendarView` in UTC with only the fields of
+  fixture G1 (`EVENT_FIELDS`), following `@odata.nextLink` on the Graph host, and refuses a listing longer than
+  `MAX_PAGES` instead of cutting it short; the client repeats a `429` as its `Retry-After` says, bounded
+  (`MAX_ATTEMPTS`, `MAX_RETRY_AFTER_SECONDS`), and nothing else. One read - a `connect` block with its token
+  request, identity check and pages - ends within `READ_DEADLINE_SECONDS` (120 s): no send starts and no wait is
+  taken without time left, a send still running is cut, and the read ends as `IntegrationUnavailableError` (inside
+  the identity check, as `IdentityCheckError`). Graph has no trial:
+  the client treats its tenant as a `live` account, which no test run reaches. Log lines and errors name paths by
+  their templates (`CALENDAR_VIEW_TEMPLATE`), never the mailbox or a calendar id.
 - **Tooling** for the maintainer, all calling sevDesk and none in CI: `just sevdesk-doctor trial|live`
   ([`app/cli/sevdesk_doctor.py`](../app/cli/sevdesk_doctor.py)) checks the configured ids read-only and, with
   `--discover` - the one read before the account is confirmed - prints the `sevClient` ids that `GET /SevClient`,

@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3, SF3-1, SF3-2 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
+> Status: Draft - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3, SF3-1, SF3-2, SF4-1 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
 > then nothing is built on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
@@ -1176,16 +1176,23 @@ write (`invoices.py`)._
   login host and the Graph host; a token for the app with this location's certificate, read from the PEM settings
   ([M5](#for-the-maintainer)); `calendarView` of the configured calendar with the fields of G1, paged by
   `@odata.nextLink`, times in UTC. The token request is a POST that changes nothing; the client declares it a read.
-  The identity check: before any other read the client reads the configured mailbox and resolves the configured
-  calendar in it; if the mailbox answers with another address, or the calendar is missing, it refuses to work
-  (`IdentityCheckError`).
+  The identity check: before any calendar read the client reads the mailbox's calendars
+  (`GET /users/{mailbox}/calendars?$select=id,name,owner`) - the app holds Exchange RBAC for one mailbox and no
+  directory permission, so it cannot read the mailbox itself - and finds the one named `GRAPH__CALENDAR_NAME`; if
+  that calendar is missing, has no owner or its `owner.address` is not `GRAPH__MAILBOX`, or the read fails, it
+  refuses to work (`IdentityCheckError`).
+- _Tests that change:_ `CORE_TO_INTEGRATIONS` in `tests/integrations/test_integrations_architecture.py` gains
+  `app.integrations.graph.config`, so that `Settings` can nest `GraphSettings`.
 - _Acceptance criteria:_
-  - [ ] Every test runs on fixtures G1 to G7 through a mocked transport.
-  - [ ] Paging reads to the end; a `429` is repeated as `Retry-After` says, a `403` is not.
-  - [ ] Only the fields of G1 are requested.
-  - [ ] No calendar read leaves before the identity check passed; a mailbox with another address and a missing
-        calendar each fail closed.
-  - [ ] Certificate, key and token appear in no log line or exception.
+  - [x] Every test runs through a mocked transport: on fixtures G1 to G7, and on an answer built in the test where
+        no fixture holds the case - a `429`, a `5xx`, a body that is no JSON or does not parse, an unusable token,
+        a transport error.
+  - [x] Paging reads to the end; a `429` is repeated as `Retry-After` says, within a total deadline per read, a
+        `403` is not.
+  - [x] Only the fields of G1 are requested.
+  - [x] No calendar read leaves before the identity check passed; a calendar owned by another address and a
+        missing calendar each fail closed.
+  - [x] Certificate, key and token appear in no log line or exception.
 
 **SF4-2 - Title rules, matching, aliases.**
 
