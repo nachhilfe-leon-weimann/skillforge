@@ -23,6 +23,10 @@ OPENAPI_TAGS: list[dict[str, Any]] = [
         ),
     },
     {
+        "name": "billing",
+        "description": "Billing: lessons and their life cycle, from planned to ticked.",
+    },
+    {
         "name": "crm",
         "description": "Customer relationship management: parties and the data attached to them.",
     },

@@ -951,6 +951,273 @@
         "title": "HealthStatus",
         "type": "string"
       },
+      "LessonCreateRequest": {
+        "description": "Body of `POST /lessons`: a lesson added by hand. It starts `planned` and not billable.",
+        "properties": {
+          "minutes": {
+            "description": "The duration, a multiple of 15.",
+            "examples": [
+              60
+            ],
+            "exclusiveMinimum": 0,
+            "maximum": 1440,
+            "multipleOf": 15,
+            "title": "Minutes",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Free-text note.",
+            "title": "Note"
+          },
+          "rate_cents_per_hour": {
+            "anyOf": [
+              {
+                "examples": [
+                  3000
+                ],
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The lesson's own rate in cents per hour: 0 or more, divisible by 4. Omit it for the student's rate or the\ndefault.",
+            "title": "Rate Cents Per Hour"
+          },
+          "starts_at": {
+            "description": "When the lesson starts, with its UTC offset (`Z` or `+01:00`).",
+            "examples": [
+              "2026-11-02T16:00:00+01:00"
+            ],
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "student_id": {
+            "description": "ID of a party holding the student role.",
+            "format": "uuid",
+            "title": "Student Id",
+            "type": "string"
+          },
+          "subject": {
+            "description": "The subject as a label (`Mathe`). Surrounding whitespace is stripped.",
+            "examples": [
+              "Mathe"
+            ],
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "student_id",
+          "subject",
+          "starts_at",
+          "minutes"
+        ],
+        "title": "LessonCreateRequest",
+        "type": "object"
+      },
+      "LessonResponse": {
+        "description": "One appointment of one student.",
+        "properties": {
+          "billable": {
+            "description": "Whether the lesson is billed: set by the tick, switched off on a `held` lesson as goodwill or on for a\n`cancelled` one; never on a `planned` or `not_held` lesson.",
+            "title": "Billable",
+            "type": "boolean"
+          },
+          "created_at": {
+            "description": "When the lesson was recorded.",
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "description": "ID of the lesson.",
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "minutes": {
+            "description": "The billed duration, a multiple of 15.",
+            "title": "Minutes",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Free-text note.",
+            "title": "Note"
+          },
+          "rate_cents_per_hour": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The lesson's own rate in cents per hour, or `null` for the student's rate or the default.",
+            "title": "Rate Cents Per Hour"
+          },
+          "starts_at": {
+            "description": "When the lesson starts, in UTC. Lessons are billed by its day in `Europe/Berlin`.",
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LessonStatus",
+            "description": "`planned` until the maintainer confirms it: `held` (the tick), `cancelled` (late or not attended) or\n`not_held` (costs nothing)."
+          },
+          "student_id": {
+            "description": "ID of the student's party.",
+            "format": "uuid",
+            "title": "Student Id",
+            "type": "string"
+          },
+          "subject": {
+            "description": "The subject as a label (`Mathe`), as the calendar title names it.",
+            "title": "Subject",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When the lesson last changed.",
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "student_id",
+          "subject",
+          "starts_at",
+          "minutes",
+          "status",
+          "billable",
+          "rate_cents_per_hour",
+          "note",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "LessonResponse",
+        "type": "object"
+      },
+      "LessonStatus": {
+        "enum": [
+          "planned",
+          "held",
+          "cancelled",
+          "not_held"
+        ],
+        "title": "LessonStatus",
+        "type": "string"
+      },
+      "LessonUpdateRequest": {
+        "description": "Body of `PATCH /lessons/{lesson_id}`: only the fields that are sent change; an empty body changes nothing.\n\nChanging `status` sets the default `billable` of the new status: `held` (the tick) makes the lesson billable,\nevery other status does not. Sending the status the lesson already has changes nothing. A `billable` sent along\nwins; `true` is `lesson_not_billable` for a `planned` or `not_held` lesson.",
+        "properties": {
+          "billable": {
+            "description": "Whether the lesson is billed: `false` on a `held` lesson is goodwill, `true` on a `cancelled` one bills it.",
+            "title": "Billable",
+            "type": "boolean"
+          },
+          "minutes": {
+            "description": "The duration, a multiple of 15 - corrected when a lesson ran differently.",
+            "examples": [
+              60
+            ],
+            "exclusiveMinimum": 0,
+            "maximum": 1440,
+            "multipleOf": 15,
+            "title": "Minutes",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Free-text note; `null` clears it.",
+            "title": "Note"
+          },
+          "rate_cents_per_hour": {
+            "anyOf": [
+              {
+                "examples": [
+                  3000
+                ],
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The lesson's own rate in cents per hour, divisible by 4; `null` falls back to the student's rate or the\ndefault.",
+            "title": "Rate Cents Per Hour"
+          },
+          "starts_at": {
+            "description": "When the lesson starts, with its UTC offset.",
+            "examples": [
+              "2026-11-02T16:00:00+01:00"
+            ],
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LessonStatus",
+            "description": "The new status; `held` is the tick.",
+            "title": "Status"
+          },
+          "student_id": {
+            "description": "ID of another party holding the student role.",
+            "format": "uuid",
+            "title": "Student Id",
+            "type": "string"
+          },
+          "subject": {
+            "description": "The subject as a label. Surrounding whitespace is stripped.",
+            "examples": [
+              "Mathe"
+            ],
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "title": "LessonUpdateRequest",
+        "type": "object"
+      },
       "MeResponse": {
         "description": "What the calling token says about its bearer.",
         "properties": {
@@ -1093,6 +1360,41 @@
           "offset"
         ],
         "title": "Page[DiscordLink]",
+        "type": "object"
+      },
+      "Page_LessonResponse_": {
+        "properties": {
+          "items": {
+            "description": "The items of this page, in the order of the list.",
+            "items": {
+              "$ref": "#/components/schemas/LessonResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "description": "The page size that was applied.",
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "description": "Number of items skipped before this page.",
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Number of items matching the request across all pages.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[LessonResponse]",
         "type": "object"
       },
       "Page_PartyListItem_": {
@@ -5800,6 +6102,651 @@
         ]
       }
     },
+    "/api/v1/billing/lessons": {
+      "get": {
+        "description": "List lessons by start. `from` and `to` are days in `Europe/Berlin`, both included.",
+        "operationId": "billing_list_lessons",
+        "parameters": [
+          {
+            "description": "Maximum number of items to return.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Maximum number of items to return.",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Number of items to skip before the first returned item.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Number of items to skip before the first returned item.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only lessons starting on this day or later, as a day in `Europe/Berlin` (included).",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only lessons starting on this day or later, as a day in `Europe/Berlin` (included).",
+              "title": "From"
+            }
+          },
+          {
+            "description": "Only lessons starting on this day or earlier, as a day in `Europe/Berlin` (included).",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only lessons starting on this day or earlier, as a day in `Europe/Berlin` (included).",
+              "title": "To"
+            }
+          },
+          {
+            "description": "Only lessons of this student party.",
+            "in": "query",
+            "name": "student_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only lessons of this student party.",
+              "title": "Student Id"
+            }
+          },
+          {
+            "description": "Only lessons in this status.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/LessonStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only lessons in this status.",
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_LessonResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:read"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:read"
+            ]
+          }
+        ],
+        "summary": "List Lessons",
+        "tags": [
+          "billing"
+        ]
+      },
+      "post": {
+        "description": "Add a lesson by hand. It starts `planned`; tick it with `PATCH`. The `Location` header points to it.",
+        "operationId": "billing_create_lesson",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LessonCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:write"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "lesson_already_exists": {
+                    "value": {
+                      "code": "lesson_already_exists",
+                      "detail": "The student already has a lesson at this start"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The student already has a lesson at this start"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "rate_not_quarter_hour": {
+                    "value": {
+                      "code": "rate_not_quarter_hour",
+                      "detail": "A rate must be at least 0 cents per hour and divisible by 4"
+                    }
+                  },
+                  "unknown_student": {
+                    "value": {
+                      "code": "unknown_student",
+                      "detail": "Unknown student"
+                    }
+                  },
+                  "validation_error": {
+                    "value": {
+                      "code": "validation_error",
+                      "detail": "Request validation failed",
+                      "errors": [
+                        {
+                          "loc": [
+                            "query",
+                            "limit"
+                          ],
+                          "message": "Input should be less than or equal to 100",
+                          "type": "less_than_equal"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unknown student / A rate must be at least 0 cents per hour and divisible by 4"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:write"
+            ]
+          }
+        ],
+        "summary": "Create Lesson",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/lessons/{lesson_id}": {
+      "get": {
+        "description": "Read a lesson.",
+        "operationId": "billing_get_lesson",
+        "parameters": [
+          {
+            "description": "ID of the lesson.",
+            "in": "path",
+            "name": "lesson_id",
+            "required": true,
+            "schema": {
+              "description": "ID of the lesson.",
+              "examples": [
+                "5c1e7a2b-3d4f-4a6b-8c9d-0e1f2a3b4c5d"
+              ],
+              "format": "uuid",
+              "title": "Lesson Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:read"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "lesson_not_found": {
+                    "value": {
+                      "code": "lesson_not_found",
+                      "detail": "Lesson not found"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Lesson not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:read"
+            ]
+          }
+        ],
+        "summary": "Get Lesson",
+        "tags": [
+          "billing"
+        ]
+      },
+      "patch": {
+        "description": "Change a lesson: tick it (`status: held`), switch `billable`, or correct its data.\n\nOnly the fields that are sent change; an empty body changes nothing.",
+        "operationId": "billing_update_lesson",
+        "parameters": [
+          {
+            "description": "ID of the lesson.",
+            "in": "path",
+            "name": "lesson_id",
+            "required": true,
+            "schema": {
+              "description": "ID of the lesson.",
+              "examples": [
+                "5c1e7a2b-3d4f-4a6b-8c9d-0e1f2a3b4c5d"
+              ],
+              "format": "uuid",
+              "title": "Lesson Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LessonUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:write"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "lesson_not_found": {
+                    "value": {
+                      "code": "lesson_not_found",
+                      "detail": "Lesson not found"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Lesson not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "lesson_already_exists": {
+                    "value": {
+                      "code": "lesson_already_exists",
+                      "detail": "The student already has a lesson at this start"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The student already has a lesson at this start"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "lesson_not_billable": {
+                    "value": {
+                      "code": "lesson_not_billable",
+                      "detail": "Only a held or cancelled lesson can be billable"
+                    }
+                  },
+                  "rate_not_quarter_hour": {
+                    "value": {
+                      "code": "rate_not_quarter_hour",
+                      "detail": "A rate must be at least 0 cents per hour and divisible by 4"
+                    }
+                  },
+                  "unknown_student": {
+                    "value": {
+                      "code": "unknown_student",
+                      "detail": "Unknown student"
+                    }
+                  },
+                  "validation_error": {
+                    "value": {
+                      "code": "validation_error",
+                      "detail": "Request validation failed",
+                      "errors": [
+                        {
+                          "loc": [
+                            "query",
+                            "limit"
+                          ],
+                          "message": "Input should be less than or equal to 100",
+                          "type": "less_than_equal"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unknown student / A rate must be at least 0 cents per hour and divisible by 4 / Only a held or cancelled lesson can be billable"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:write"
+            ]
+          }
+        ],
+        "summary": "Update Lesson",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
     "/api/v1/crm/companies": {
       "post": {
         "description": "Create a company, optionally together with contact infos. The `Location` header points to the party.",
@@ -9100,6 +10047,10 @@
     {
       "description": "OAuth2 token issuance - client credentials for applications, password and refresh-token logins for people through a client, and the Discord-user exchange for a person's linked Discord user - plus logout, user accounts, Discord links and application client management.",
       "name": "auth"
+    },
+    {
+      "description": "Billing: lessons and their life cycle, from planned to ticked.",
+      "name": "billing"
     },
     {
       "description": "Customer relationship management: parties and the data attached to them.",

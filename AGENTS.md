@@ -17,7 +17,7 @@ commands, conventions and working rules; the _why_ lives in [`docs/`](docs/). "T
 | add or change an endpoint | [`api-conventions.md`](docs/specs/api-conventions.md), ADR 0006 |
 | brief an agent or write a handoff | [`docs/agent-work.md`](docs/agent-work.md) |
 | need the services' `UNSET` sentinel | `app/core/unset.py` |
-| write a test | `tests/`: `api/`, `auth/`, `db/` (Postgres, `@pytest.mark.db`; `db/crm/`, `db/auth/`), `workers/`, `scripts/`, `integrations/` (`httpx.MockTransport`), `contract/` (`@pytest.mark.contract`, sevDesk trial only) |
+| write a test | `tests/`: `api/`, `auth/`, `db/` (Postgres, `@pytest.mark.db`; `db/crm/`, `db/auth/`, `db/billing/`), `workers/`, `scripts/`, `integrations/` (`httpx.MockTransport`), `contract/` (`@pytest.mark.contract`, sevDesk trial only) |
 | need a repo script | `scripts/`: `coverage_summary.py`, `dump_openapi.py`, `smoke_test_python_client.py`, `sevdesk_trial_env.sh` (the trial recipes' refusals); maintainer-run: `graph/exchange-rbac-calendar.ps1`, `graph/record_calendar.py` |
 | change a workflow | `.github/workflows/`; what they do: [`release-flow.md`](docs/specs/release-flow.md), [`project-intake.md`](docs/specs/project-intake.md) |
 

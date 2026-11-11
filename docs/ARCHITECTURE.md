@@ -21,6 +21,7 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
         app/api/v1        endpoints, request/response schemas, scope checks
         app/services/auth identity: accounts, clients and grants, tokens, sessions, Discord links
         app/services/crm  system of record: parties, roles, contact infos, relations, subjects
+        app/services/billing  lessons and their life cycle
         app/services/system  health aggregation + worker heartbeats
         app/integrations  the only way out to other systems (guarded HTTP transport)
         app/core          cross-cutting: auth, db, logging, config
@@ -33,7 +34,7 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
 - **`app/api/system/`** - `health.py`: `GET /health` (aggregate over all dependencies **and**
   workers; `200` healthy / `503` unhealthy / `500` on error), plus `/health/live`,
   `/health/dependencies[/{name}]`, and `/health/workers[/{name}]`.
-- **`app/api/v1/`** - `router.py` with prefix `/api/v1` aggregates two areas, which share the
+- **`app/api/v1/`** - `router.py` with prefix `/api/v1` aggregates three areas, which share the
   vocabulary in `common/` (see [API conventions](#api-conventions)):
   - `auth/` - `token.py` (OAuth2 token endpoint, four grants), `revoke.py` (logout), `password.py`
     (redeem a one-time token), `users.py` (accounts), `discord_links.py` (Discord links, their feed, redeeming
@@ -42,6 +43,7 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
     `companies.py` (typed create and update), `roles.py`, `contact_infos.py`, `relations.py`,
     `subjects.py`. `params.py` holds the path and query vocabulary, `schemas.py` the read and write
     models with their `from_model` mappers (see [CRM](#crm)).
+  - `billing/` - `lessons.py` (the lesson routes), `params.py`, `schemas.py` (see [Billing](#billing)).
 - **`app/services/auth/`** - the auth services, same shape as the CRM's: `clients.py`, `scopes.py` (grants
   per mode, `resolve_token_scopes`), `secrets.py` (client secrets), `tokens.py` (the four grants),
   `sessions.py`, `accounts.py`, `users.py`, `action_tokens.py` (invitations, resets and Discord link codes),
@@ -53,6 +55,8 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
   `companies.py`, `roles.py`, `contact_infos.py`, `relations.py`, `subjects.py`, `inputs.py` (enums,
   input dataclasses and `normalize_contact_value`, shared with the API), `errors.py` (the error
   catalog). Imports no other domain.
+- **`app/services/billing/`** - the billing services, in the CRM's shape: `lessons.py`, `errors.py` (the error
+  catalog). Imports only `app.core`, `app.integrations`, the CRM services and itself.
 - **`app/services/system/`** - health aggregation (`health_service.py`) and worker liveness
   (`heartbeat_service.py`), backing the `/health` tree.
 - **`app/core/`** - `auth/` (what validates a request: OAuth2 scheme, JWT, principals, scopes, roles, reach,
@@ -172,6 +176,27 @@ CRM rules only, never against Discord state. The full design is in the [CRM API 
   before the database refuses. The CRM reads these tables there and nowhere else.
 - **Commit before the response.** The CRM routes use `DBSession`, whose `scope="function"` ends the
   request transaction before the response is sent: a failing commit is a 500, not a 201.
+
+## Billing
+
+Lessons are central data: SkillForge knows which lessons took place, for whom and how long. The full design is in the
+[billing spec](specs/billing.md); the routes live under `/api/v1/billing` (tag `billing`), reads need `billing:read`,
+writes `billing:write`.
+
+- **A lesson's life.** A lesson starts `planned`; the tick (`PATCH /billing/lessons/{lesson_id}`, `status: held`)
+  makes it billable. Entering a status sets its default `billable` - only `held` is billable by itself, a
+  `cancelled` one only after the maintainer switches it on - and a `billable` sent along wins; `billable` on a
+  `planned` or `not_held` lesson is `lesson_not_billable` (`billable_after` in `lessons.py`), so
+  `ck_lesson_billable_status` never answers. A `PATCH` locks the lesson first.
+- **No delete route.** "Remove" is `not_held`; a lesson keeps its history.
+- **Times** are stored in UTC and filtered by days in `Europe/Berlin` (`BILLING_TIME_ZONE`, `berlin_midnight`):
+  `from` and `to` of `GET /billing/lessons` are Berlin days, both included.
+- **Uniqueness by constraint.** One lesson per student and start (`uq_lesson_student_start`), translated to
+  `lesson_already_exists` inside a SAVEPOINT (`_unique_start`), as the CRM does.
+- **Reading the CRM.** Whether a party is a student is read through the CRM's `load_party`; a body naming a party
+  without the student role is `unknown_student`.
+- **Errors.** The catalog is closed (the spec's "Error catalog"); its classes live in `app/services/billing/errors.py`
+  and are pinned per route by `tests/api/test_billing_error_contract.py`.
 
 ## Database
 
