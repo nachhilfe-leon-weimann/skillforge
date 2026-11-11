@@ -1,6 +1,6 @@
 """`just billing-backfill` on Postgres (billing spec, SF3-2): a dry run writes and commits nothing; `--apply` writes the
 whole file in one transaction, or nothing; a second run changes no row; one bad row refuses the whole file; the output
-holds counts, line numbers and reason codes only.
+holds counts, the smallest and the largest rate in euros, line numbers and reason codes only.
 
 The command runs in-process on the test's session: `--apply` in a SAVEPOINT standing in for its transaction, a dry
 run on the session as it is - so a write of a dry run stays visible to the snapshot, and a commit is recorded. The
@@ -56,9 +56,11 @@ DAY = date(2031, 7, 19)
 DATA_CHANGED = "billing-backfill failed, nothing written: the data changed during the run; run it again"
 DRY_RUN = "dry run: nothing written; pass --apply to write"
 REFUSED = re.compile(r"^billing-backfill refused: \d+ problems; nothing written$")
-# Every line the command may print: counts, line numbers and reason codes.
+RATES = "rates: 31.32 to 31.32 euros per hour"
+# Every line the command may print: counts, the rates' span, line numbers and reason codes.
 OUTPUT_LINE = re.compile(
-    r"rows: \d+|[a-z_]+: \d+ (to add|added), \d+ unchanged|line \d+: [a-z_]+( \([a-z_]+\))?"
+    r"rows: \d+|rates: \d+\.\d\d to \d+\.\d\d euros per hour"
+    r"|[a-z_]+: \d+ (to add|added), \d+ unchanged|line \d+: [a-z_]+( \([a-z_]+\))?"
     r"|dry run: nothing written; pass --apply to write|written in one transaction"
 )
 
@@ -203,6 +205,7 @@ async def test_a_dry_run_prints_what_it_would_do_and_writes_and_commits_nothing(
     assert run.code is None
     assert run.lines == [
         "rows: 2",
+        RATES,
         "pays_for: 1 to add, 1 unchanged",
         "sevdesk_contact: 1 to add, 0 unchanged",
         "manual_billing: 1 to add, 0 unchanged",
@@ -223,6 +226,7 @@ async def test_apply_writes_the_file_and_a_second_run_changes_no_row(
 
     assert first.code is None
     assert first.lines[1:] == [
+        RATES,
         "pays_for: 1 added, 1 unchanged",
         "sevdesk_contact: 1 added, 0 unchanged",
         "manual_billing: 1 added, 0 unchanged",
@@ -239,7 +243,7 @@ async def test_apply_writes_the_file_and_a_second_run_changes_no_row(
     assert await _snapshot(session) == after_first
     assert opened == [(True, "SERIALIZABLE")] * 2
     assert second.code is None
-    assert second.lines[1:5] == [
+    assert second.lines[2:6] == [
         "pays_for: 0 added, 2 unchanged",
         "sevdesk_contact: 0 added, 1 unchanged",
         "manual_billing: 0 added, 1 unchanged",
@@ -266,7 +270,7 @@ async def test_rows_already_as_the_database_holds_them_are_unchanged(session: As
     )
 
     assert run.code is None
-    assert run.lines[1:5] == [
+    assert run.lines[2:6] == [
         "pays_for: 1 to add, 2 unchanged",
         "sevdesk_contact: 1 to add, 1 unchanged",
         "manual_billing: 1 to add, 1 unchanged",
@@ -398,7 +402,7 @@ async def test_one_bad_row_after_good_ones_refuses_the_whole_file(
     run = await backfill(*family.rows, *bad_rows, apply=True)
 
     assert isinstance(run.code, str) and REFUSED.fullmatch(run.code)
-    assert run.lines == [f"rows: {2 + len(bad_rows)}", *problems]
+    assert [line for line in run.lines if not line.startswith("rates: ")] == [f"rows: {2 + len(bad_rows)}", *problems]
     assert await _snapshot(session) == before
 
 
@@ -414,6 +418,7 @@ async def test_every_problem_is_reported_at_once(session: AsyncSession, family: 
     assert run.code == "billing-backfill refused: 3 problems; nothing written"
     assert run.lines == [
         "rows: 5",
+        "rates: 30.01 to 31.32 euros per hour",
         "line 2: unknown_party (student_party_id)",
         "line 5: rate_not_quarter_hour",
         "line 6: needs_payer",
@@ -451,7 +456,7 @@ async def test_the_output_holds_counts_and_line_numbers_only(
     session: AsyncSession, family: Family, backfill, tmp_path: Path, monkeypatch
 ):
     """Runs whose file holds recognisable values - a dry run, an apply, a refused file, a failure midway - print
-    no party id, no contact id, no cell, no path and no part of the database URL."""
+    no party id, no contact id, no cell but the rates' span in euros, no path and no part of the database URL."""
     unknown = uuid.uuid4()
     runs = [
         await backfill(*family.rows, apply=False),

@@ -1,6 +1,8 @@
+import re
 from functools import lru_cache
+from typing import Annotated
 
-from pydantic import Field
+from pydantic import BeforeValidator, Field, StrictInt
 from pydantic_settings import SettingsConfigDict
 from skillcore.config import CoreSettings
 
@@ -11,11 +13,22 @@ from .auth.config import AuthSettings
 from .db.config import DatabaseSettings
 from .logging import LoggingSettings
 
+_WHOLE_NUMBER = re.compile(r"-?[0-9]+", re.ASCII)
+
+
+def _whole_number(value: object) -> object:
+    """A whole number written as digits - as a variable holds it - as an ``int``; anything else as it is, for
+    ``StrictInt`` to refuse: lax parsing would take ``32.00`` or ``32.0`` as 32."""
+    return int(value) if isinstance(value, str) and _WHOLE_NUMBER.fullmatch(value) else value
+
+
+type WholeNumber = Annotated[StrictInt, BeforeValidator(_whole_number)]
+
 
 class BillingSettings(CoreSettings):
     """Billing settings (``BILLING__*``); every one has a default."""
 
-    default_rate_cents_per_hour: int = Field(default=3000, ge=0, multiple_of=4)
+    default_rate_cents_per_hour: WholeNumber = Field(default=3000, ge=0, multiple_of=4)
     """The rate of a lesson without its own rate and of a student without one (billing spec, decision E). Rule G holds
     here as in the database: cents per hour divisible by 4, so every quarter hour is a whole cent."""
 
