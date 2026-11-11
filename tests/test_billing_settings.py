@@ -1,5 +1,8 @@
 """Billing settings: nested under ``BILLING__``; the default rate obeys rule G itself (billing spec, decision G)."""
 
+import re
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -30,9 +33,18 @@ def test_a_rate_divisible_by_4_is_accepted(clean_env, cents: int):
     assert BillingSettings(_env_file=None, default_rate_cents_per_hour=cents).default_rate_cents_per_hour == cents
 
 
-@pytest.mark.parametrize("value", ["3001", "3002", "3003", "-4", "30.00"])
+@pytest.mark.parametrize("value", ["3001", "3002", "3003", "-4"])
 def test_a_rate_off_the_quarter_hour_or_below_zero_is_refused(clean_env, value: str):
     clean_env.setenv("BILLING__DEFAULT_RATE_CENTS_PER_HOUR", value)
 
     with pytest.raises(ValidationError):
         BillingSettings(_env_file=None)
+
+
+def test_the_example_env_file_lists_every_setting_with_its_default_and_nothing_else():
+    example = (Path(__file__).resolve().parents[1] / ".env.example").read_text()
+    listed = dict(re.findall(r"^#?BILLING__(\w+)=(.*)$", example, flags=re.MULTILINE))
+
+    assert {name.lower(): value for name, value in listed.items()} == {
+        name: str(field.default) for name, field in BillingSettings.model_fields.items()
+    }

@@ -6275,7 +6275,7 @@
     },
     "/api/v1/crm/parties/{party_id}": {
       "delete": {
-        "description": "Delete a party together with its roles, contact infos and relations.\n\nRefused while an active Discord link, an external system (sevDesk, Clockodo, Microsoft) or billing (a lesson or\na rate) holds the party: remove those links first, in the system that owns them; a lesson keeps its party. A\ndeactivated Discord link goes with the party.",
+        "description": "Delete a party together with its roles, contact infos and relations.\n\nRefused while an active Discord link, an external system (sevDesk, Clockodo, Microsoft) or a billing lesson or\nrate holds the party. Remove external links first, in the system that owns them; a party with a lesson stays,\nsince a lesson is never removed. A deactivated Discord link goes with the party.",
         "operationId": "crm_delete_party",
         "parameters": [
           {

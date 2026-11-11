@@ -22,6 +22,8 @@ from urllib.parse import urlparse, urlunparse
 import asyncpg
 import pytest
 
+from app.core.db.models import LessonStatus
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 pytestmark = pytest.mark.db
@@ -476,43 +478,82 @@ def test_the_link_code_purpose_migration_is_reversible(migration_db_url: str) ->
 # --- 0015_billing_lesson_rate (billing spec, SF2-1) ---
 
 _REVISION_0015 = "0015_billing_lesson_rate"
+_RATE_PARTY_ID = "77777777-7777-7777-7777-777777777777"
 _BILLING_RELATIONS = """
 SELECT c.relname FROM pg_class c WHERE c.relnamespace = 'billing'::regnamespace ORDER BY 1
 """
-_BILLING_CHECKS = """
-SELECT t.relname, k.conname FROM pg_constraint k JOIN pg_class t ON t.oid = k.conrelid
+# `alembic check` compares neither a check's expression nor every foreign-key option: pin each constraint's definition.
+_BILLING_CONSTRAINTS = """
+SELECT t.relname, k.conname, pg_get_constraintdef(k.oid) FROM pg_constraint k JOIN pg_class t ON t.oid = k.conrelid
 WHERE k.connamespace = 'billing'::regnamespace AND k.contype IN ('c', 'f', 'u')
 ORDER BY 1, 2
 """
+_BILLING_CONSTRAINTS_AT_0015 = [
+    (
+        "lesson",
+        "ck_lesson_billable_status",
+        "CHECK (((NOT billable) OR "
+        "(status = ANY (ARRAY['held'::billing.lesson_status, 'cancelled'::billing.lesson_status]))))",
+    ),
+    (
+        "lesson",
+        "ck_lesson_quarter_hour_cents",
+        "CHECK (((rate_cents_per_hour >= 0) AND ((rate_cents_per_hour % 4) = 0)))",
+    ),
+    ("lesson", "ck_lesson_quarter_hour_minutes", "CHECK (((minutes > 0) AND ((minutes % 15) = 0)))"),
+    (
+        "lesson",
+        "lesson_student_party_id_fkey",
+        "FOREIGN KEY (student_party_id) REFERENCES core.party(id) ON DELETE RESTRICT",
+    ),
+    ("lesson", "uq_lesson_student_start", "UNIQUE (student_party_id, starts_at)"),
+    ("rate", "ck_rate_quarter_hour_cents", "CHECK (((cents_per_hour >= 0) AND ((cents_per_hour % 4) = 0)))"),
+    (
+        "rate",
+        "rate_student_party_id_fkey",
+        "FOREIGN KEY (student_party_id) REFERENCES core.party(id) ON DELETE RESTRICT",
+    ),
+    ("rate", "uq_rate_student_valid_from", "UNIQUE (student_party_id, valid_from)"),
+]
+# What rule G accepts, at its edges: a 15-minute lesson (SP-CAL recorded them), an own rate of 0 (PD3), no own rate,
+# and rates of 0 and 4. One party holds only lessons, the other only rates, so each foreign key refuses on its own.
 _BILLING_SEED = f"""
-INSERT INTO core.party (id, type) VALUES ('{_PARTY_ID}', 'PERSON');
-INSERT INTO billing.rate (id, student_party_id, cents_per_hour, valid_from)
-    VALUES (gen_random_uuid(), '{_PARTY_ID}', 3200, '2026-11-01');
-INSERT INTO billing.lesson (id, student_party_id, subject, starts_at, minutes)
-    VALUES (gen_random_uuid(), '{_PARTY_ID}', 'Mathe', '2026-11-02 15:00+00', 45);
+INSERT INTO core.party (id, type) VALUES ('{_PARTY_ID}', 'PERSON'), ('{_RATE_PARTY_ID}', 'PERSON');
+INSERT INTO billing.lesson (id, student_party_id, subject, starts_at, minutes, rate_cents_per_hour) VALUES
+    (gen_random_uuid(), '{_PARTY_ID}', 'Mathe', '2026-11-02 15:00+00', 15, 0),
+    (gen_random_uuid(), '{_PARTY_ID}', 'Mathe', '2026-11-03 15:00+00', 45, NULL),
+    (gen_random_uuid(), '{_PARTY_ID}', 'Mathe', '2026-11-04 15:00+00', 120, 3204);
+INSERT INTO billing.rate (id, student_party_id, cents_per_hour, valid_from) VALUES
+    (gen_random_uuid(), '{_RATE_PARTY_ID}', 0, '2026-11-01'),
+    (gen_random_uuid(), '{_RATE_PARTY_ID}', 4, '2026-12-01');
 """
+_SEEDED_LESSONS = "SELECT minutes, rate_cents_per_hour, status::text, billable FROM billing.lesson ORDER BY starts_at"
+_SEEDED_RATES = "SELECT cents_per_hour FROM billing.rate ORDER BY valid_from"
 # Each statement is refused by exactly the constraint named beside it.
 _BILLING_REFUSALS = [
     (
         f"INSERT INTO billing.rate (id, student_party_id, cents_per_hour, valid_from) "
-        f"VALUES (gen_random_uuid(), '{_PARTY_ID}', 3001, '2026-12-01')",
+        f"VALUES (gen_random_uuid(), '{_RATE_PARTY_ID}', 3001, '2027-01-01')",
         "ck_rate_quarter_hour_cents",
     ),
     (
         f"INSERT INTO billing.lesson (id, student_party_id, subject, starts_at, minutes) "
-        f"VALUES (gen_random_uuid(), '{_PARTY_ID}', 'Mathe', '2026-11-03 15:00+00', 50)",
+        f"VALUES (gen_random_uuid(), '{_PARTY_ID}', 'Mathe', '2026-11-05 15:00+00', 50)",
         "ck_lesson_quarter_hour_minutes",
     ),
     (
         f"INSERT INTO billing.lesson (id, student_party_id, subject, starts_at, minutes, rate_cents_per_hour) "
-        f"VALUES (gen_random_uuid(), '{_PARTY_ID}', 'Mathe', '2026-11-03 15:00+00', 60, 3002)",
+        f"VALUES (gen_random_uuid(), '{_PARTY_ID}', 'Mathe', '2026-11-05 15:00+00', 60, 3002)",
         "ck_lesson_quarter_hour_cents",
     ),
     (
         f"INSERT INTO billing.lesson (id, student_party_id, subject, starts_at, minutes, billable) "
-        f"VALUES (gen_random_uuid(), '{_PARTY_ID}', 'Mathe', '2026-11-03 15:00+00', 60, true)",
+        f"VALUES (gen_random_uuid(), '{_PARTY_ID}', 'Mathe', '2026-11-05 15:00+00', 60, true)",
         "ck_lesson_billable_status",
     ),
+    # RESTRICT: a party keeps its lessons and its rates.
+    (f"DELETE FROM core.party WHERE id = '{_PARTY_ID}'", "lesson_student_party_id_fkey"),
+    (f"DELETE FROM core.party WHERE id = '{_RATE_PARTY_ID}'", "rate_student_party_id_fkey"),
 ]
 
 
@@ -523,37 +564,23 @@ async def _refusing_constraint(url: str, statement: str) -> str | None:
 
 
 def test_the_billing_revision_is_reversible_and_holds_the_quarter_hour_rule(migration_db_url: str) -> None:
-    # `alembic check` is blind to check constraints and enum labels, so assert them on the migrated database; the
-    # downgrade by one drops both tables and the enum type and leaves the schema to env.py, empty.
+    # `alembic check` is blind to check expressions and enum labels, so assert them on the migrated database - the
+    # labels against the model's - and what they accept and refuse; the downgrade by one drops both tables and the
+    # enum type and leaves the schema to env.py, empty.
     _alembic(migration_db_url, "upgrade", _REVISION_0015)
-    assert asyncio.run(_enum_labels(migration_db_url, "billing", "lesson_status")) == [
-        "planned",
-        "held",
-        "cancelled",
-        "not_held",
-    ]
-    constraints_at_0015 = asyncio.run(_rows(migration_db_url, _BILLING_CHECKS))
-    assert constraints_at_0015 == [
-        ("lesson", "ck_lesson_billable_status"),
-        ("lesson", "ck_lesson_quarter_hour_cents"),
-        ("lesson", "ck_lesson_quarter_hour_minutes"),
-        ("lesson", "lesson_student_party_id_fkey"),
-        ("lesson", "uq_lesson_student_start"),
-        ("rate", "ck_rate_quarter_hour_cents"),
-        ("rate", "rate_student_party_id_fkey"),
-        ("rate", "uq_rate_student_valid_from"),
-    ]
+    labels = asyncio.run(_enum_labels(migration_db_url, "billing", "lesson_status"))
+    assert labels == [status.value for status in LessonStatus]
+    assert asyncio.run(_rows(migration_db_url, _BILLING_CONSTRAINTS)) == _BILLING_CONSTRAINTS_AT_0015
+
     asyncio.run(_run_on_server(migration_db_url, _BILLING_SEED))
-    lesson = "SELECT status::text, billable FROM billing.lesson"
-    assert asyncio.run(_rows(migration_db_url, lesson)) == [("planned", False)]
+    assert asyncio.run(_rows(migration_db_url, _SEEDED_LESSONS)) == [
+        (15, 0, "planned", False),
+        (45, None, "planned", False),
+        (120, 3204, "planned", False),
+    ]
+    assert asyncio.run(_rows(migration_db_url, _SEEDED_RATES)) == [(0,), (4,)]
     for statement, constraint in _BILLING_REFUSALS:
         assert asyncio.run(_refusing_constraint(migration_db_url, statement)) == constraint
-    # RESTRICT: the party keeps its lesson and its rate; which of the two refuses first is Postgres' choice.
-    delete_party = f"DELETE FROM core.party WHERE id = '{_PARTY_ID}'"
-    assert asyncio.run(_refusing_constraint(migration_db_url, delete_party)) in {
-        "lesson_student_party_id_fkey",
-        "rate_student_party_id_fkey",
-    }
 
     _alembic(migration_db_url, "downgrade", _REVISION_0014)
     assert asyncio.run(_rows(migration_db_url, _BILLING_RELATIONS)) == []
@@ -561,4 +588,4 @@ def test_the_billing_revision_is_reversible_and_holds_the_quarter_hour_rule(migr
     assert "billing" in asyncio.run(_schemas(migration_db_url))
 
     _alembic(migration_db_url, "upgrade", _REVISION_0015)
-    assert asyncio.run(_rows(migration_db_url, _BILLING_CHECKS)) == constraints_at_0015
+    assert asyncio.run(_rows(migration_db_url, _BILLING_CONSTRAINTS)) == _BILLING_CONSTRAINTS_AT_0015

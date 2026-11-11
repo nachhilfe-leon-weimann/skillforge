@@ -100,6 +100,43 @@ async def test_a_lesson_and_a_rate_store_with_their_defaults(session: AsyncSessi
 
 
 @pytest.mark.db
+@pytest.mark.parametrize(
+    ("minutes", "rate_cents_per_hour"),
+    [(15, 0), (45, None), (60, 4), (120, 3204)],
+    ids=["15-min-own-rate-0", "45-min-no-own-rate", "60-min-own-rate-4", "120-min-own-rate-3204"],
+)
+async def test_the_database_accepts_a_lesson_on_the_quarter_hour(
+    session: AsyncSession, minutes: int, rate_cents_per_hour: int | None
+):
+    """The checks are no stricter than rule G: a 15-minute lesson exists (SP-CAL), and an own rate may be 0 (PD3)."""
+    party_id = await _party(session)
+    lesson = Lesson(
+        student_party_id=party_id,
+        subject="Mathe",
+        starts_at=START,
+        minutes=minutes,
+        rate_cents_per_hour=rate_cents_per_hour,
+    )
+    session.add(lesson)
+
+    await session.flush()
+
+    assert (lesson.minutes, lesson.rate_cents_per_hour) == (minutes, rate_cents_per_hour)
+
+
+@pytest.mark.db
+@pytest.mark.parametrize("cents_per_hour", [0, 4, 3204])
+async def test_the_database_accepts_a_rate_on_the_quarter_hour(session: AsyncSession, cents_per_hour: int):
+    party_id = await _party(session)
+    rate = Rate(student_party_id=party_id, cents_per_hour=cents_per_hour, valid_from=date(2026, 11, 1))
+    session.add(rate)
+
+    await session.flush()
+
+    assert rate.cents_per_hour == cents_per_hour
+
+
+@pytest.mark.db
 @pytest.mark.parametrize("cents_per_hour", [3001, 3002, 3003, -4])
 async def test_the_database_refuses_a_rate_off_the_quarter_hour(session: AsyncSession, cents_per_hour: int):
     party_id = await _party(session)
