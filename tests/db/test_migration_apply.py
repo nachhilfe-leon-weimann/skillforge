@@ -111,16 +111,23 @@ async def _schemas(url: str) -> set[str]:
 
 
 async def _leftovers(url: str) -> list[str]:
-    """Every relation in an application schema and every enum type, `bot` and `public` included."""
+    """Every relation in an application schema and every enum type, `bot` and `public` included.
+
+    The schemas come from `_APPLICATION_SCHEMAS`, which the test checks against the database after the upgrade:
+    a new model package cannot be missed here.
+    """
+    schemas = _APPLICATION_SCHEMAS | {"bot"}
     rows = await _rows(
         url,
         """
         SELECT n.nspname || '.' || c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname IN ('auth', 'billing', 'bot', 'core', 'ext', 'geo', 'system')
+        WHERE n.nspname = ANY($1::text[])
         UNION ALL
         SELECT n.nspname || '.' || t.typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
-        WHERE t.typtype = 'e' AND n.nspname IN ('auth', 'billing', 'bot', 'core', 'ext', 'geo', 'public', 'system')
+        WHERE t.typtype = 'e' AND n.nspname = ANY($2::text[])
         """,
+        sorted(schemas),
+        sorted(schemas | {"public"}),
     )
     return sorted(str(name) for (name,) in rows)
 
