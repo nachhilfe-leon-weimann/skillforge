@@ -1,9 +1,7 @@
 # ADR 0010 - SkillForge calls third-party systems itself, through one guarded transport
 
-Status: Proposed, 2026-11. It becomes `Accepted` when [`billing.md`](../specs/billing.md) is frozen (its slice
-SP-SD): the Exchange restriction to one mailbox ran on the tenant (SP-CAL), the check of the remote account's
-identity is not verified on the real system yet (SP-SD), and the body of an accepted record never changes. Once
-accepted it amends [0006](0006-error-envelope.md) (point 10); 0006's status line changes then, not before.
+Status: Accepted, 2026-11, with the freeze of [`billing.md`](../specs/billing.md) (SP-SD). Amends
+[0006](0006-error-envelope.md) (point 10).
 
 ## Context
 

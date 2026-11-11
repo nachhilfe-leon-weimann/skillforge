@@ -1,8 +1,8 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3, SF3-1, SF3-2, SF4-1 to SF4-3 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD recorded on the trial (2026-11-11, run
-> `run202611112124164167`): every question but Q8 is answered. SP-SD freezes this spec; until then nothing is built
-> on a point marked **open**.
+> Status: Accepted, 2026-11 - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3, SF3-1, SF3-2, SF4-1 to SF4-3 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD done (2026-11-11, run
+> `run202611112124164167`): every question is answered and the spec is frozen; a change needs the maintainer's
+> approval.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
 > [`api-conventions.md`](api-conventions.md), [`crm-api.md`](crm-api.md) and
@@ -1106,12 +1106,12 @@ write (`invoices.py`)._
   - [x] Every row S1 to S25 has a scrubbed fixture, or a written reason why it could not be recorded; the scan is
         green.
   - [x] Every created object carries the run id, and the script's log shows one request per write.
-  - [ ] Q1 to Q8, Q10 to Q15, Q17 and Q18 are answered, each naming its fixture.
-  - [ ] Trial and real account both report bookkeeping system 2.0.
-  - [ ] Every **pending approval** in [Family-visible texts](#family-visible-texts), every row of
+  - [x] Q1 to Q8, Q10 to Q15, Q17 and Q18 are answered, each naming its fixture.
+  - [x] Trial and real account both report bookkeeping system 2.0.
+  - [x] Every **pending approval** in [Family-visible texts](#family-visible-texts), every row of
         [Approved by the maintainer](#approved-by-the-maintainer) and every item of
         [For the maintainer](#for-the-maintainer) is approved, deferred or replaced by the maintainer, in the session.
-  - [ ] The status block says `Accepted`, ADR 0010 says `Accepted`, and no criterion below rests on an open point.
+  - [x] The status block says `Accepted`, ADR 0010 says `Accepted`, and no criterion below rests on an open point.
 
 **SF2-1 - Lesson and rate schema.** _Needs PD3 and PD9._
 
@@ -1535,6 +1535,7 @@ SP-CAL and SP-SD move each answered question here, with the fixture that shows i
 | Q5 | The part per subject; a position with `part` and no `name`. | `GET /Part` gives id, name (`Mathe-Online`), unit and price. A position sent with `part` and without `name` is accepted and shows **no** name - sevDesk does not take the part's. The real ids the maintainer reads in the account; the doctor lists no parts. | `discovery-07`, `invoice-variants-43`, `-44`, `-138`, `-139`, `pdf-107` |
 | Q6 | The ids of the unit `Std` and of the contact person. | `GET /Unity` lists the units (`Std`, `UNITY_HOUR`) and `GET /SevUser` the users, though the description lists neither; `just sevdesk-doctor` checks the configured ids. | `discovery-05`, `discovery-06` |
 | Q7 | Is `GET /SevClient` the identity read? | Yes: it names the account and its company name, and its id equals `sevClient` on `SevUser` and `ContactCustomFieldSetting` - shown by `just sevdesk-doctor trial --discover` and by the identity check passing before every step run. The fixtures show the reads' shape only: the recorder writes every account id as `0`. | `identity-01`, `-02`, `custom-fields-04`, `discovery-06` |
+| Q8 | Does the trial run bookkeeping system 2.0 with the functions of "Buchhaltung Pro", like the real account? | Yes: both report 2.0 - the trial in the run, the real account in the maintainer's `just sevdesk-doctor live` (2026-11-11), which runs "Buchhaltung Pro". | `version-03` |
 | Q9 | The exact name of the Outlook category for a late cancellation, and whether Graph delivers `categories` for the lesson calendar. | `Abgesagt`, for a late cancellation and a no-show alike (decision M); Graph delivers `categories`. The category only presets the status; the maintainer decides in the portal. | G3 |
 | Q10 | The `customerInternalNote` filter; the contact's drafts. | The filter works as `customerInternalNote` (the description spells it `customerIntenalNote`) and matches the whole value: the run's tag lists 21 invoices, not the draft whose note carries a suffix. A cancellation copies the note, so it is listed too. The contact's drafts (`contact[id]`, `status=100`, `countAll`, `limit=1000`) came back complete, `total` equal to the count. | `cut-connection-140`, `-141`, `read-back-155` |
 | Q11 | Does `DELETE` work on a draft? | Yes: `200` with `{"objects": [null]}`; afterwards `404` and gone from the listing. | `delete-147`, `-148`, `deleted-read-149`, `-150` |
@@ -1550,9 +1551,7 @@ SP-CAL and SP-SD move each answered question here, with the fixture that shows i
 
 ### For the spikes
 
-| Id | Question | Decides | Answered by |
-|---|---|---|---|
-| Q8 | Does the trial run bookkeeping system 2.0 with the functions of "Buchhaltung Pro", like the real account? | Whether trial fixtures speak for the real account. | The trial reports 2.0 (`version-03`); the real account waits for the maintainer's `just sevdesk-doctor live`. |
+None: SP-CAL and SP-SD answered every question ([Decided](#decided-formerly-open-questions)).
 
 ### For the maintainer
 
