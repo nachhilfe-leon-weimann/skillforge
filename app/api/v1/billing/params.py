@@ -4,11 +4,13 @@ import uuid
 from datetime import date
 from typing import Annotated
 
-from fastapi import Path, Query
+from fastapi import Depends, Path, Query
 from pydantic import Field
 
 from app.api.v1.common import PageParams
+from app.core.config import get_settings
 from app.core.db.models import LessonStatus
+from app.services.billing.calendar import CalendarReader, graph_calendar
 
 LessonId = Annotated[
     uuid.UUID,
@@ -28,6 +30,11 @@ PartyId = Annotated[
 AliasId = Annotated[
     uuid.UUID,
     Path(description="ID of the calendar alias.", examples=["2a6c8e0f-5b7d-4c9e-8f1a-3b5d7f9e1c2a"]),
+]
+
+EventId = Annotated[
+    uuid.UUID,
+    Path(description="ID of the calendar occurrence.", examples=["4e8a0c2b-6d1f-4b3a-9c5e-7f9a1b3d5e7c"]),
 ]
 
 ValidFrom = Annotated[
@@ -61,3 +68,15 @@ class LessonListParams(PageParams):
 
 
 type LessonListQuery = Annotated[LessonListParams, Query()]
+
+
+def get_calendar_reader() -> CalendarReader:
+    """The one place the calendar import gets its reader: the Graph client built from the settings, per request.
+
+    Building it reads nothing; settings that are missing or incomplete fail the read as `calendar_unavailable`. Tests
+    override this dependency with a reader over a mocked transport.
+    """
+    return graph_calendar(get_settings().graph)
+
+
+type CalendarSource = Annotated[CalendarReader, Depends(get_calendar_reader)]

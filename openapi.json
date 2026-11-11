@@ -530,6 +530,249 @@
         "title": "CalendarAliasResponse",
         "type": "object"
       },
+      "CalendarEventAssignRequest": {
+        "description": "Body of `POST /calendar/events/{event_id}/assign`: the lesson an occurrence without one stands for.",
+        "properties": {
+          "alias": {
+            "anyOf": [
+              {
+                "examples": [
+                  "Erika Mustermann"
+                ],
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A calendar name to store as the student's alias, so the import matches it from now on; usually `title_name`.",
+            "title": "Alias"
+          },
+          "minutes": {
+            "description": "The duration to bill, a multiple of 15: the appointment's, or a correction of it.",
+            "examples": [
+              60
+            ],
+            "exclusiveMinimum": 0,
+            "maximum": 1440,
+            "multipleOf": 15,
+            "title": "Minutes",
+            "type": "integer"
+          },
+          "student_id": {
+            "description": "ID of a party holding the student role.",
+            "format": "uuid",
+            "title": "Student Id",
+            "type": "string"
+          },
+          "subject": {
+            "description": "The subject as a label (`Mathe`). Surrounding whitespace is stripped.",
+            "examples": [
+              "Mathe"
+            ],
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "student_id",
+          "subject",
+          "minutes"
+        ],
+        "title": "CalendarEventAssignRequest",
+        "type": "object"
+      },
+      "CalendarEventResponse": {
+        "description": "An occurrence of the lesson calendar that waits for an assignment, or differs from its lesson.",
+        "properties": {
+          "cancelled": {
+            "description": "Cancelled in the calendar or by the late-cancellation category.",
+            "title": "Cancelled",
+            "type": "boolean"
+          },
+          "changed": {
+            "description": "The maintainer has to look: the title names another student or subject than the lesson's (flagged at every\nimport until the lesson, the title or an alias settles it; a dismiss then clears it); the rules give no lesson;\nthe appointment of a lesson the import does not change moved, was resized, cancelled or vanished; a lesson could\nnot follow; or the occurrence could not get its lesson. Dismissing acknowledges all but another student or\nsubject, until the occurrence changes again.",
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "ends_at": {
+            "description": "When the appointment ends, in UTC, as last seen.",
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "id": {
+            "description": "ID of the occurrence.",
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "description": "When an import last read the occurrence: before the last import of its day, it vanished from the calendar.",
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "lesson_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ID of the occurrence's lesson, if it has one.",
+            "title": "Lesson Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NoLessonReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the rules give no lesson, as last seen - for an occurrence with a lesson too (an assigned one keeps the\nreason it waited for); `null` while the rules give a lesson, or when its student has a lesson at that start\nalready."
+          },
+          "starts_at": {
+            "description": "When the appointment starts, in UTC, as last seen.",
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "title_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The name after ` mit `, as written, while the occurrence waits for an assignment; `null` otherwise.",
+            "title": "Title Name"
+          },
+          "title_subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The text before ` mit ` in the title, if it has one.",
+            "title": "Title Subject"
+          },
+          "vanished": {
+            "description": "Gone from the calendar while its lesson stays.",
+            "title": "Vanished",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "starts_at",
+          "ends_at",
+          "title_subject",
+          "title_name",
+          "cancelled",
+          "reason",
+          "changed",
+          "vanished",
+          "lesson_id",
+          "last_seen_at"
+        ],
+        "title": "CalendarEventResponse",
+        "type": "object"
+      },
+      "CalendarImportRequest": {
+        "description": "Body of `POST /calendar/import`: a range of days in `Europe/Berlin`, both included, at most 92 days.",
+        "properties": {
+          "first_day": {
+            "description": "The first day whose occurrences are imported.",
+            "examples": [
+              "2026-11-02"
+            ],
+            "format": "date",
+            "title": "First Day",
+            "type": "string"
+          },
+          "last_day": {
+            "description": "The last day whose occurrences are imported; not before `first_day`.",
+            "examples": [
+              "2026-11-02"
+            ],
+            "format": "date",
+            "title": "Last Day",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first_day",
+          "last_day"
+        ],
+        "title": "CalendarImportRequest",
+        "type": "object"
+      },
+      "CalendarImportResponse": {
+        "description": "What an import did, in counts only.",
+        "properties": {
+          "changed": {
+            "description": "Occurrences of the range flagged `changed` (see `GET /calendar/events`): listed until dismissed - except one\nwhose title names another student or subject, which is flagged again at every import until it is settled.",
+            "title": "Changed",
+            "type": "integer"
+          },
+          "deleted": {
+            "description": "Occurrences deleted: gone from the calendar without a lesson, or 90 days past their start without one.",
+            "title": "Deleted",
+            "type": "integer"
+          },
+          "lessons_created": {
+            "description": "Lessons the import proposed: `planned`, or `cancelled` for a late cancellation.",
+            "title": "Lessons Created",
+            "type": "integer"
+          },
+          "lessons_removed": {
+            "description": "`planned` lessons whose appointment vanished from the range.",
+            "title": "Lessons Removed",
+            "type": "integer"
+          },
+          "lessons_updated": {
+            "description": "`planned` lessons that followed their appointment: moved, resized or cancelled.",
+            "title": "Lessons Updated",
+            "type": "integer"
+          },
+          "occurrences": {
+            "description": "Occurrences read from the calendar and stored as seen.",
+            "title": "Occurrences",
+            "type": "integer"
+          },
+          "unassigned": {
+            "description": "Occurrences of the range that wait for an assignment.",
+            "title": "Unassigned",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "occurrences",
+          "lessons_created",
+          "lessons_updated",
+          "lessons_removed",
+          "changed",
+          "unassigned",
+          "deleted"
+        ],
+        "title": "CalendarImportResponse",
+        "type": "object"
+      },
       "CompanyCreateRequest": {
         "description": "Body of `POST /companies`.",
         "properties": {
@@ -1462,6 +1705,20 @@
         "title": "MeResponse",
         "type": "object"
       },
+      "NoLessonReason": {
+        "description": "Why an occurrence is no lesson: ``calendar_event.reason``.",
+        "enum": [
+          "all_day",
+          "phone",
+          "first_meeting",
+          "no_title_pattern",
+          "duration",
+          "unmatched",
+          "ambiguous"
+        ],
+        "title": "NoLessonReason",
+        "type": "string"
+      },
       "Page_ApplicationClientResponse_": {
         "properties": {
           "items": {
@@ -1530,6 +1787,41 @@
           "offset"
         ],
         "title": "Page[CalendarAliasResponse]",
+        "type": "object"
+      },
+      "Page_CalendarEventResponse_": {
+        "properties": {
+          "items": {
+            "description": "The items of this page, in the order of the list.",
+            "items": {
+              "$ref": "#/components/schemas/CalendarEventResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "description": "The page size that was applied.",
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "description": "Number of items skipped before this page.",
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Number of items matching the request across all pages.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[CalendarEventResponse]",
         "type": "object"
       },
       "Page_DiscordLink_": {
@@ -6904,6 +7196,557 @@
           }
         ],
         "summary": "Delete Calendar Alias",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/calendar/events": {
+      "get": {
+        "description": "List the occurrences that wait for an assignment or are flagged `changed`, by start.",
+        "operationId": "billing_list_calendar_events",
+        "parameters": [
+          {
+            "description": "Maximum number of items to return.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Maximum number of items to return.",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Number of items to skip before the first returned item.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Number of items to skip before the first returned item.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_CalendarEventResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:read"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:read"
+            ]
+          }
+        ],
+        "summary": "List Calendar Events",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/calendar/events/{event_id}/assign": {
+      "post": {
+        "description": "Create the lesson of an occurrence without one - `cancelled` for a cancelled occurrence - and optionally store\nits name as the student's alias. The `Location` header points to the lesson.",
+        "operationId": "billing_assign_calendar_event",
+        "parameters": [
+          {
+            "description": "ID of the calendar occurrence.",
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "description": "ID of the calendar occurrence.",
+              "examples": [
+                "4e8a0c2b-6d1f-4b3a-9c5e-7f9a1b3d5e7c"
+              ],
+              "format": "uuid",
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalendarEventAssignRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:write"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "calendar_event_not_found": {
+                    "value": {
+                      "code": "calendar_event_not_found",
+                      "detail": "Calendar event not found"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Calendar event not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "calendar_alias_already_exists": {
+                    "value": {
+                      "code": "calendar_alias_already_exists",
+                      "detail": "An alias for this calendar name already exists"
+                    }
+                  },
+                  "calendar_event_already_assigned": {
+                    "value": {
+                      "code": "calendar_event_already_assigned",
+                      "detail": "The calendar event already has a lesson"
+                    }
+                  },
+                  "lesson_already_exists": {
+                    "value": {
+                      "code": "lesson_already_exists",
+                      "detail": "The student already has a lesson at this start"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The calendar event already has a lesson / The student already has a lesson at this start / An alias for this calendar name already exists"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "unknown_student": {
+                    "value": {
+                      "code": "unknown_student",
+                      "detail": "Unknown student"
+                    }
+                  },
+                  "validation_error": {
+                    "value": {
+                      "code": "validation_error",
+                      "detail": "Request validation failed",
+                      "errors": [
+                        {
+                          "loc": [
+                            "query",
+                            "limit"
+                          ],
+                          "message": "Input should be less than or equal to 100",
+                          "type": "less_than_equal"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unknown student"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:write"
+            ]
+          }
+        ],
+        "summary": "Assign Calendar Event",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/calendar/events/{event_id}/dismiss": {
+      "post": {
+        "description": "Take an occurrence off the list. Without a lesson it waits for no assignment and is not proposed again. With\none, the occurrence as last seen is acknowledged: a \"no lesson\" answer of the rules and a change already seen stay\nquiet until it changes again. A title naming another student or subject is never acknowledged - the next import\nflags it again. Idempotent.",
+        "operationId": "billing_dismiss_calendar_event",
+        "parameters": [
+          {
+            "description": "ID of the calendar occurrence.",
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "description": "ID of the calendar occurrence.",
+              "examples": [
+                "4e8a0c2b-6d1f-4b3a-9c5e-7f9a1b3d5e7c"
+              ],
+              "format": "uuid",
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:write"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "calendar_event_not_found": {
+                    "value": {
+                      "code": "calendar_event_not_found",
+                      "detail": "Calendar event not found"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Calendar event not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:write"
+            ]
+          }
+        ],
+        "summary": "Dismiss Calendar Event",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/calendar/import": {
+      "post": {
+        "description": "Import the lesson calendar for a range of Berlin days: the calendar proposes, a person confirms.\n\nA new occurrence becomes a `planned` lesson, a `cancelled` one for a late cancellation, or none: a phone call, an\nall-day entry or a first meeting is kept with its reason and not listed; any other occurrence without a lesson\nwaits for an assignment. An untouched lesson - `planned`, no note, no own rate, at the start and length of its\noccurrence as last seen - goes when its occurrence vanishes, and follows a moved, resized or cancelled appointment\nonly while the title rules still give this student and this subject. Otherwise the lesson never changes and its\noccurrence is flagged `changed`. Importing an unchanged\nrange again changes nothing. Answers with counts only; a calendar that cannot be read is `calendar_unavailable`,\nand nothing is imported.",
+        "operationId": "billing_import_calendar",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalendarImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:write"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "calendar_unavailable": {
+                    "value": {
+                      "code": "calendar_unavailable",
+                      "detail": "The lesson calendar could not be read"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The lesson calendar could not be read"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:write"
+            ]
+          }
+        ],
+        "summary": "Import Calendar",
         "tags": [
           "billing"
         ]

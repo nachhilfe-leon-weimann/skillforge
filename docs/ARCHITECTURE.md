@@ -21,7 +21,7 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
         app/api/v1        endpoints, request/response schemas, scope checks
         app/services/auth identity: accounts, clients and grants, tokens, sessions, Discord links
         app/services/crm  system of record: parties, roles, contact infos, relations, subjects
-        app/services/billing  lessons and their life cycle, students' rates, payers, calendar rules
+        app/services/billing  lessons and their life cycle, students' rates, payers, the calendar import
         app/services/system  health aggregation + worker heartbeats
         app/integrations  the only way out to other systems (guarded HTTP transport)
         app/core          cross-cutting: auth, db, logging, config
@@ -44,7 +44,8 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
     `subjects.py`. `params.py` holds the path and query vocabulary, `schemas.py` the read and write
     models with their `from_model` mappers (see [CRM](#crm)).
   - `billing/` - `lessons.py` (the lesson routes), `rates.py` (a student's rates), `payers.py` (payers, sevDesk
-    contact links, manual billing), `calendar.py` (calendar aliases), `params.py`, `schemas.py` (see
+    contact links, manual billing), `calendar.py` (the calendar import, its occurrences and the aliases),
+    `params.py`, `schemas.py` (see
     [Billing](#billing)).
 - **`app/services/auth/`** - the auth services, same shape as the CRM's: `clients.py`, `scopes.py` (grants
   per mode, `resolve_token_scopes`), `secrets.py` (client secrets), `tokens.py` (the four grants),
@@ -60,8 +61,8 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
 - **`app/services/billing/`** - the billing services, in the CRM's shape: `lessons.py`, `rates.py`, `payers.py` (the
   payer of a lesson, the one writer of `ext.sevdesk_contact` and of `billing.manual_payer`), `students.py` (the
   student check), `locks.py` (`hold_party`, the party lock every write takes before a row names a party),
-  `calendar_rules.py` (what a calendar occurrence is; pure), `calendar_aliases.py`, `errors.py` (the error
-  catalog). Imports only `app.core`, `app.integrations`, the CRM services and itself.
+  `calendar_rules.py` (what a calendar occurrence is; pure), `calendar.py` (the import), `calendar_aliases.py`,
+  `errors.py` (the error catalog). Imports only `app.core`, `app.integrations`, the CRM services and itself.
 - **`app/services/system/`** - health aggregation (`health_service.py`) and worker liveness
   (`heartbeat_service.py`), backing the `/health` tree.
 - **`app/core/`** - `auth/` (what validates a request: OAuth2 scheme, JWT, principals, scopes, roles, reach,
@@ -262,6 +263,32 @@ writes `billing:write`.
   `calendar_alias_already_exists` - one `INSERT ... ON CONFLICT DO NOTHING` decides, racing requests included. A
   name with nothing left once normalised is a `422`; the student is held `FOR KEY SHARE` first
   (`require_named_student`).
+- **Calendar import.** `POST /billing/calendar/import` (`import_calendar` in `calendar.py`) reads a range of at most
+  92 Berlin days (`MAX_IMPORT_DAYS`, a bound of the import, not of the spec) through the Graph client and answers with
+  counts only. The read comes first, outside any lock and before any statement: every integration error of it is
+  logged by its class and status and becomes `calendar_unavailable` (`502`), with no row written - the endpoint names
+  no integration error (architecture test). Then a transaction-level advisory lock serializes the import with assign
+  and dismiss, so overlapping imports wait for each other. Each occurrence is upserted by Graph's `id` into
+  `billing.calendar_event`, a snapshot of start, end, cancellation and subject; one without a lesson gets
+  `propose`'s result - a lesson linked by `lesson.calendar_event_id`, or its reason. When in doubt the import flags
+  `changed` and changes nothing: an occurrence with a lesson is judged by `propose` again at every import, and only
+  while it still gives this student and this subject does an untouched lesson - `planned`, no note, no own rate, at
+  the start and length of its occurrence as last seen - follow a change; an untouched lesson goes with its vanished
+  occurrence, whatever the title said. Any other difference is flagged, a vanishing once (`vanished`). A dismiss or an
+  assignment acknowledges a "no lesson" answer of the rules and a change already seen, until start, end, cancellation,
+  subject, the no-lesson reason (`reason`, kept for an occurrence with a lesson too) or presence changes again. A title
+  naming another student or subject - by the rules' answer, or by its name where the rules stop before it (`_named`; the
+  subject only of a lesson title, not of a phone call, an all-day entry or a first meeting) - is never acknowledged:
+  flagged at every import until the lesson, the title or an alias settles it, then cleared by a dismiss. A name that
+  matches nobody or several cannot be compared, as no name is kept.
+  An occurrence that could not get its lesson - its student has one at that start - stays flagged and is not
+  proposed again; a student who lost the role is `unmatched`. A title with a NUL
+  character is read as no title. The roster is read through the CRM's `list_parties`.
+  `GET /billing/calendar/events` lists the occurrences that wait or are flagged; `.../{event_id}/assign` creates the
+  lesson (optionally storing an alias) and `.../{event_id}/dismiss` takes an occurrence off the list. PD13:
+  `title_name` is kept only for the reasons that wait for an assignment (`ck_calendar_event_title_name`) and is
+  cleared on assign and dismiss; occurrences without a lesson are deleted 90 Berlin days after their start, with the
+  next import. No log line holds a title or a name.
 - **Demo data.** `just seed-demo` ([`app/cli/seed_demo.py`](../app/cli/seed_demo.py)) writes a synthetic family
   with two siblings at different rates, a student who pays for themselves, and lessons in every status, through the
   CRM and billing services. The lessons fall in the current Berlin month and the one before: a second run in the
@@ -301,7 +328,7 @@ One Postgres DB, six schemas by domain - details in
 | `ext`  | Links from external system ids (Discord, sevDesk, Clockodo, Microsoft) to a `core.party` |
 | `auth` | OAuth2 clients, secrets, scope grants, user accounts, roles, sessions, one-time tokens, audit |
 | `system` | Runtime/operational state: background-worker liveness heartbeats |
-| `billing` | Lessons, students' rates, payers billed by hand and calendar aliases ([billing spec](specs/billing.md)) |
+| `billing` | Lessons, students' rates, payers billed by hand, calendar aliases and occurrences ([billing spec](specs/billing.md)) |
 
 - **Async SQLAlchemy 2** over `asyncpg`; models under `app/core/db/models/<schema>/`, one
   `*Base` class per schema with `{"schema": ...}`.
@@ -385,9 +412,9 @@ declaration. The full rules, with the *why*, are in the
   principal is needed. `customize_openapi` derives the `401`/`403` docs from the declaration.
 - **Errors**: every non-2xx body is `ErrorResponse{detail, code, errors?}`. Services raise
   subclasses of the taxonomy in `app/core/errors.py` (`NotFoundError`, `ConflictError`,
-  `DomainValidationError`); `STATUS_BY_ERROR` in `errors.py` maps them, the global handlers render
-  them, and `responses=error_responses(...)` documents them - endpoints contain no `try/except`
-  for mapped errors. Errors the API layer owns itself (OAuth2 codes, a local status mapping) are
+  `DomainValidationError`, `UpstreamError` - another system failed, `502`); `STATUS_BY_ERROR` in
+  `errors.py` maps them, the global handlers render them, and `responses=error_responses(...)`
+  documents them - endpoints contain no `try/except` for mapped errors. Errors the API layer owns itself (OAuth2 codes, a local status mapping) are
   `ApiError` declarations. An endpoint whose transaction must commit although the request failed
   *returns* the error (`ApiError.response()`) instead of raising it - the token endpoint does, to
   keep its `TOKEN_DENIED` audit entry.
