@@ -135,6 +135,14 @@ bootstrap-admin *args:
 seed-demo:
     uv run python -m app.cli.seed_demo
 
+# --- Billing data ---
+
+# The maintainer's data step, against the configured database - production included: an agent never runs it.
+# Check a confirmed payer mapping CSV from outside the repository, and write it only with --apply: <file> [--apply]
+[positional-arguments]
+billing-backfill *args:
+    uv run python -m app.cli.billing_backfill "$@"
+
 # --- sevDesk ---
 # These call sevDesk: only the maintainer runs them, never CI. The trial's settings come from its env file, outside
 # the repository (SKILLFORGE_SEVDESK_TRIAL_ENV overrides the path), and never mix with SEVDESK__ variables of the
