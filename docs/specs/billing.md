@@ -285,6 +285,15 @@ principal_id TEXT NOT NULL
 voided_at TIMESTAMPTZ NULL
 void_reason TEXT NULL
 UNIQUE (invoice_id) WHERE voided_at IS NULL
+
+-- billing.topup_position  (SFP-2a) - a top-up's positions as sent; a top-up has no lesson_charge
+invoice_id UUID NOT NULL REFERENCES billing.invoice(id) ON DELETE RESTRICT
+student_party_id UUID NOT NULL                           -- the child
+part_name TEXT NOT NULL                                  -- the position's name as sent (PD4)
+quantity INTEGER NOT NULL CHECK (quantity > 0)           -- N hours
+rate_cents_per_hour INTEGER NOT NULL
+amount_cents INTEGER NOT NULL CHECK (amount_cents >= 0)
+description TEXT NOT NULL                                -- TOPUP_POSITION_DESCRIPTION as sent
 ```
 
 No table stores a balance, a "billed" flag or a link from a lesson to its invoice: all three are derived from
@@ -453,7 +462,8 @@ What happens to an occurrence, first match wins:
   invoice (`sevdesk_contact_id`, never the payer's current link) whole - every status and type, `total` equal to the
   count (Q10, `deleted-read-187`) - and keeps as candidates those of type `RE` that no invoice row of SkillForge
   names and that sevDesk created no earlier than five minutes before the pending row. A candidate matches when its
-  sum equals the snapshot's and its positions equal the charges in quantity, price and description (`text`, which
+  sum equals the snapshot's and its positions equal the charges - for a top-up its `topup_position` rows - in
+  quantity, price and description (`text`, which
   carries the lesson's day and time). Exactly one candidate matches: `created`, with its id. No candidate at all:
   `failed`. Anything else - several matches, candidates that differ - leaves the invoice `unknown`, and the helper
   shows the candidates. A listing that is not complete or cannot be read changes nothing. A `pending` row younger
@@ -1505,14 +1515,17 @@ write (`invoices.py`)._
 
 **SFP-2a - Top-up invoices.**
 
-- _Technique:_ `invoice.kind` and `invoice.prepaid_account_id`; the top-up preview and create on the path of SF5-4
-  and SF6-1; the top-up texts. The top-up scenarios land in their own PR first.
+- _Technique:_ `invoice.kind` and `invoice.prepaid_account_id`; `billing.topup_position`, which freezes a top-up's
+  positions as sent - reconcile and drift compare them as they compare a lessons invoice's charges, and the next
+  top-up's proposal reads them (decided at the freeze); `TopupPosition.student_party_id` joins `EXTERNAL_LINKS`;
+  the top-up preview and create on the path of SF5-4 and SF6-1; the top-up texts. The top-up scenarios land in their own PR first.
 - _Tests that change:_ none - and no scenario or golden file.
 - _Acceptance criteria:_
   - [ ] Positions: one per child and subject, the subject's part, quantity N, the child's rate, no date; the
         proposal is the last top-up's composition.
   - [ ] Creating a top-up draft changes no balance.
-  - [ ] The create is SF6-1's: pending row, one call, `unknown` and reconcile.
+  - [ ] The create is SF6-1's: pending row, one call, `unknown` and reconcile; the top-up's positions are in
+        `topup_position` before the call, and reconcile and drift compare them (one test each).
   - [ ] An empty payment method blocks; the foot text is the payer's variant with the top-up sentence.
 
 **SFP-2b - Credit at issue.**
