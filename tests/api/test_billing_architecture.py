@@ -60,7 +60,15 @@ def test_the_billing_endpoints_carry_no_boilerplate():
     modules = sorted(API_PACKAGE.glob("*.py"))
     endpoints = [endpoint.name for module in modules for endpoint in _endpoints(ast.parse(module.read_text()))]
 
-    assert endpoints == ["list_lessons", "create_lesson", "get_lesson", "update_lesson"]
+    assert endpoints == [
+        "list_lessons",
+        "create_lesson",
+        "get_lesson",
+        "update_lesson",
+        "list_rates",
+        "put_rate",
+        "delete_rate",
+    ]
     for module in modules:
         assert _boilerplate(module.read_text()) == [], module.name
 

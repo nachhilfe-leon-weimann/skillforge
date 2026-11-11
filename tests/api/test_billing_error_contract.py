@@ -27,9 +27,11 @@ from app.services.billing.errors import (
     LessonAlreadyExistsError,
     LessonNotBillableError,
     LessonNotFoundError,
+    RateNotFoundError,
     RateNotQuarterHourError,
     UnknownStudentError,
 )
+from app.services.crm.errors import PartyNotFoundError
 
 ID = "00000000-0000-0000-0000-0000000000aa"
 INTERNAL = "internal: row 7f3a"
@@ -52,6 +54,9 @@ ENDPOINTS = {
     "create_lesson": Endpoint("POST", "/lessons", "lessons.create_lesson", json=LESSON),
     "get_lesson": Endpoint("GET", f"/lessons/{ID}", "lessons.get_lesson"),
     "update_lesson": Endpoint("PATCH", f"/lessons/{ID}", "lessons.update_lesson", json={"status": "held"}),
+    "list_rates": Endpoint("GET", f"/students/{ID}/rates", "rates.list_rates"),
+    "put_rate": Endpoint("PUT", f"/students/{ID}/rates/2026-09-01", "rates.put_rate", json={"cents_per_hour": 3000}),
+    "delete_rate": Endpoint("DELETE", f"/students/{ID}/rates/2026-09-01", "rates.delete_rate"),
 }
 
 # (endpoint, raised error, status, detail) - one row per error a route documents.
@@ -67,11 +72,24 @@ EXPECTATIONS: list[Expectation] = [
     ("update_lesson", RateNotQuarterHourError(INTERNAL), 422, NOT_QUARTER_HOUR),
     ("update_lesson", LessonNotBillableError(INTERNAL), 422, NOT_BILLABLE),
     ("update_lesson", LessonAlreadyExistsError(INTERNAL), 409, ALREADY_EXISTS),
+    ("put_rate", UnknownStudentError(INTERNAL), 422, "Unknown student"),
+    ("put_rate", RateNotQuarterHourError(INTERNAL), 422, NOT_QUARTER_HOUR),
+    ("delete_rate", RateNotFoundError(INTERNAL), 404, "Rate not found"),
 ]
+
+# The CRM's errors a billing route answers with (billing spec, "Route map": a party in a path that does not exist),
+# pinned here too; their classes are the CRM's, pinned by its own error contract. (endpoint, error, status, detail)
+CRM_EXPECTATIONS: list[Expectation] = [
+    ("list_rates", PartyNotFoundError(INTERNAL), 404, "Party not found"),
+    ("put_rate", PartyNotFoundError(INTERNAL), 404, "Party not found"),
+    ("delete_rate", PartyNotFoundError(INTERNAL), 404, "Party not found"),
+]
+CRM_CODES: dict[type[DomainError], str] = {PartyNotFoundError: "party_not_found"}
 
 # class -> (code, status, public message, expose_message): the classes of the catalog that exist so far.
 CATALOG: dict[type[DomainError], tuple[str, int, str, bool]] = {
     LessonNotFoundError: ("lesson_not_found", 404, "Lesson not found", False),
+    RateNotFoundError: ("rate_not_found", 404, "Rate not found", False),
     LessonAlreadyExistsError: ("lesson_already_exists", 409, ALREADY_EXISTS, False),
     UnknownStudentError: ("unknown_student", 422, "Unknown student", False),
     RateNotQuarterHourError: ("rate_not_quarter_hour", 422, NOT_QUARTER_HOUR, False),
@@ -115,6 +133,22 @@ async def test_billing_domain_error_status_code_and_detail(expectation: Expectat
     assert INTERNAL not in response.text
 
 
+@pytest.mark.parametrize("expectation", CRM_EXPECTATIONS, ids=_expectation_id)
+async def test_crm_error_on_a_billing_route_status_code_and_detail(expectation: Expectation, monkeypatch):
+    name, error, status, detail = expectation
+    endpoint = ENDPOINTS[name]
+    monkeypatch.setattr(f"app.services.billing.{endpoint.stub}", _raises(error))
+
+    async with _client() as client:
+        response = await client.request(
+            endpoint.method, f"/api/v1/billing{endpoint.path}", json=endpoint.json, headers=_auth_headers()
+        )
+
+    assert response.status_code == status
+    assert response.json() == {"detail": detail, "code": CRM_CODES[type(error)]}
+    assert INTERNAL not in response.text
+
+
 @pytest.mark.parametrize("error_type", CATALOG, ids=lambda error_type: error_type.__name__)
 def test_catalog_class_carries_its_code_message_and_exposure(error_type: type[DomainError]):
     code, status, message, expose_message = CATALOG[error_type]
@@ -145,7 +179,7 @@ def test_every_billing_error_is_pinned_and_in_the_closed_catalog():
 
 
 def test_every_pinned_error_is_documented_on_its_route():
-    for name, error, status, _ in EXPECTATIONS:
+    for name, error, status, _ in EXPECTATIONS + CRM_EXPECTATIONS:
         responses = _operation(ENDPOINTS[name])["responses"]
         examples = responses[str(status)]["content"]["application/json"]["examples"]
         assert type(error).code in examples, f"{name}: {type(error).__name__}"
@@ -161,7 +195,7 @@ def _documented_codes(operation: dict[str, Any]) -> set[str]:
 
 
 def test_no_route_documents_a_domain_error_that_is_not_pinned():
-    pinned = {(name, type(error).code) for name, error, _, _ in EXPECTATIONS}
+    pinned = {(name, type(error).code) for name, error, _, _ in EXPECTATIONS + CRM_EXPECTATIONS}
 
     for name, endpoint in ENDPOINTS.items():
         for code in _documented_codes(_operation(endpoint)):

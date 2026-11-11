@@ -1432,6 +1432,41 @@
         "title": "Page[PartyListItem]",
         "type": "object"
       },
+      "Page_RateResponse_": {
+        "properties": {
+          "items": {
+            "description": "The items of this page, in the order of the list.",
+            "items": {
+              "$ref": "#/components/schemas/RateResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "description": "The page size that was applied.",
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "description": "Number of items skipped before this page.",
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Number of items matching the request across all pages.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[RateResponse]",
+        "type": "object"
+      },
       "Page_RelationResponse_": {
         "properties": {
           "items": {
@@ -1850,6 +1885,96 @@
         ],
         "title": "PreferredMeetingTool",
         "type": "string"
+      },
+      "RatePutRequest": {
+        "description": "Body of `PUT /students/{party_id}/rates/{valid_from}`: the whole rate of that day.\n\nIt replaces amount and note of a rate already set for the day; the same values again change nothing.",
+        "properties": {
+          "cents_per_hour": {
+            "description": "The rate in cents per hour: 0 or more, divisible by 4.",
+            "examples": [
+              3000
+            ],
+            "maximum": 2147483647,
+            "minimum": 0,
+            "title": "Cents Per Hour",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Free-text note; leaving it out clears it.",
+            "title": "Note"
+          }
+        },
+        "required": [
+          "cents_per_hour"
+        ],
+        "title": "RatePutRequest",
+        "type": "object"
+      },
+      "RateResponse": {
+        "description": "A student's own rate from a day on; it holds until the day of the next one.",
+        "properties": {
+          "cents_per_hour": {
+            "description": "The rate in cents per hour, divisible by 4. 45 and 90 minutes are priced linearly.",
+            "title": "Cents Per Hour",
+            "type": "integer"
+          },
+          "created_at": {
+            "description": "When the rate was first set.",
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Free-text note.",
+            "title": "Note"
+          },
+          "student_id": {
+            "description": "ID of the student's party.",
+            "format": "uuid",
+            "title": "Student Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When amount or note last changed.",
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "valid_from": {
+            "description": "The day the rate takes effect.",
+            "format": "date",
+            "title": "Valid From",
+            "type": "string"
+          }
+        },
+        "required": [
+          "student_id",
+          "valid_from",
+          "cents_per_hour",
+          "note",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RateResponse",
+        "type": "object"
       },
       "RefreshTokenRevokeRequest": {
         "description": "Body of `POST /revoke`: the refresh token of the session to end.",
@@ -6742,6 +6867,477 @@
           }
         ],
         "summary": "Update Lesson",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/students/{party_id}/rates": {
+      "get": {
+        "description": "List a student's own rates, newest day first. Each holds from its day until the next one's.",
+        "operationId": "billing_list_rates",
+        "parameters": [
+          {
+            "description": "ID of the student's party.",
+            "in": "path",
+            "name": "party_id",
+            "required": true,
+            "schema": {
+              "description": "ID of the student's party.",
+              "examples": [
+                "7d9f4f3e-1c2b-4a5d-9e8f-0a1b2c3d4e5f"
+              ],
+              "format": "uuid",
+              "title": "Party Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum number of items to return.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Maximum number of items to return.",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Number of items to skip before the first returned item.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Number of items to skip before the first returned item.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_RateResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:read"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "party_not_found": {
+                    "value": {
+                      "code": "party_not_found",
+                      "detail": "Party not found"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Party not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:read"
+            ]
+          }
+        ],
+        "summary": "List Rates",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/students/{party_id}/rates/{valid_from}": {
+      "delete": {
+        "description": "Remove the rate of that day; the rate before it then holds on. A charge keeps the rate it was priced with.",
+        "operationId": "billing_delete_rate",
+        "parameters": [
+          {
+            "description": "ID of the student's party.",
+            "in": "path",
+            "name": "party_id",
+            "required": true,
+            "schema": {
+              "description": "ID of the student's party.",
+              "examples": [
+                "7d9f4f3e-1c2b-4a5d-9e8f-0a1b2c3d4e5f"
+              ],
+              "format": "uuid",
+              "title": "Party Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The day the rate takes effect; it holds until the next rate's day.",
+            "in": "path",
+            "name": "valid_from",
+            "required": true,
+            "schema": {
+              "description": "The day the rate takes effect; it holds until the next rate's day.",
+              "examples": [
+                "2026-09-01"
+              ],
+              "format": "date",
+              "title": "Valid From",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:write"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "party_not_found": {
+                    "value": {
+                      "code": "party_not_found",
+                      "detail": "Party not found"
+                    }
+                  },
+                  "rate_not_found": {
+                    "value": {
+                      "code": "rate_not_found",
+                      "detail": "Rate not found"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Party not found / Rate not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:write"
+            ]
+          }
+        ],
+        "summary": "Delete Rate",
+        "tags": [
+          "billing"
+        ]
+      },
+      "put": {
+        "description": "Set the student's rate from that day on. Idempotent; a rate already set for the day is replaced.\n\nA charge keeps the rate it was priced with: a new rate changes no invoice position.",
+        "operationId": "billing_put_rate",
+        "parameters": [
+          {
+            "description": "ID of the student's party.",
+            "in": "path",
+            "name": "party_id",
+            "required": true,
+            "schema": {
+              "description": "ID of the student's party.",
+              "examples": [
+                "7d9f4f3e-1c2b-4a5d-9e8f-0a1b2c3d4e5f"
+              ],
+              "format": "uuid",
+              "title": "Party Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The day the rate takes effect; it holds until the next rate's day.",
+            "in": "path",
+            "name": "valid_from",
+            "required": true,
+            "schema": {
+              "description": "The day the rate takes effect; it holds until the next rate's day.",
+              "examples": [
+                "2026-09-01"
+              ],
+              "format": "date",
+              "title": "Valid From",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RatePutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:write"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "party_not_found": {
+                    "value": {
+                      "code": "party_not_found",
+                      "detail": "Party not found"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Party not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "rate_not_quarter_hour": {
+                    "value": {
+                      "code": "rate_not_quarter_hour",
+                      "detail": "A rate must be at least 0 cents per hour and divisible by 4"
+                    }
+                  },
+                  "unknown_student": {
+                    "value": {
+                      "code": "unknown_student",
+                      "detail": "Unknown student"
+                    }
+                  },
+                  "validation_error": {
+                    "value": {
+                      "code": "validation_error",
+                      "detail": "Request validation failed",
+                      "errors": [
+                        {
+                          "loc": [
+                            "query",
+                            "limit"
+                          ],
+                          "message": "Input should be less than or equal to 100",
+                          "type": "less_than_equal"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unknown student / A rate must be at least 0 cents per hour and divisible by 4"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:write"
+            ]
+          }
+        ],
+        "summary": "Put Rate",
         "tags": [
           "billing"
         ]

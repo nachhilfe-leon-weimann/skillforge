@@ -21,7 +21,7 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
         app/api/v1        endpoints, request/response schemas, scope checks
         app/services/auth identity: accounts, clients and grants, tokens, sessions, Discord links
         app/services/crm  system of record: parties, roles, contact infos, relations, subjects
-        app/services/billing  lessons and their life cycle
+        app/services/billing  lessons and their life cycle, students' rates
         app/services/system  health aggregation + worker heartbeats
         app/integrations  the only way out to other systems (guarded HTTP transport)
         app/core          cross-cutting: auth, db, logging, config
@@ -43,7 +43,8 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
     `companies.py` (typed create and update), `roles.py`, `contact_infos.py`, `relations.py`,
     `subjects.py`. `params.py` holds the path and query vocabulary, `schemas.py` the read and write
     models with their `from_model` mappers (see [CRM](#crm)).
-  - `billing/` - `lessons.py` (the lesson routes), `params.py`, `schemas.py` (see [Billing](#billing)).
+  - `billing/` - `lessons.py` (the lesson routes), `rates.py` (a student's rates), `params.py`, `schemas.py` (see
+    [Billing](#billing)).
 - **`app/services/auth/`** - the auth services, same shape as the CRM's: `clients.py`, `scopes.py` (grants
   per mode, `resolve_token_scopes`), `secrets.py` (client secrets), `tokens.py` (the four grants),
   `sessions.py`, `accounts.py`, `users.py`, `action_tokens.py` (invitations, resets and Discord link codes),
@@ -55,8 +56,9 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
   `companies.py`, `roles.py`, `contact_infos.py`, `relations.py`, `subjects.py`, `inputs.py` (enums,
   input dataclasses and `normalize_contact_value`, shared with the API), `errors.py` (the error
   catalog). Imports no other domain.
-- **`app/services/billing/`** - the billing services, in the CRM's shape: `lessons.py`, `errors.py` (the error
-  catalog). Imports only `app.core`, `app.integrations`, the CRM services and itself.
+- **`app/services/billing/`** - the billing services, in the CRM's shape: `lessons.py`, `rates.py`, `students.py`
+  (the student check), `errors.py` (the error catalog). Imports only `app.core`, `app.integrations`, the CRM
+  services and itself.
 - **`app/services/system/`** - health aggregation (`health_service.py`) and worker liveness
   (`heartbeat_service.py`), backing the `/health` tree.
 - **`app/core/`** - `auth/` (what validates a request: OAuth2 scheme, JWT, principals, scopes, roles, reach,
@@ -193,8 +195,21 @@ writes `billing:write`.
   `from` and `to` of `GET /billing/lessons` are Berlin days, both included.
 - **Uniqueness by constraint.** One lesson per student and start (`uq_lesson_student_start`), translated to
   `lesson_already_exists` inside a SAVEPOINT (`_unique_start`), as the CRM does.
-- **Reading the CRM.** Whether a party is a student is read through the CRM's `load_party`; a body naming a party
-  without the student role is `unknown_student`.
+- **Rates.** A student's own rate holds from its day (`valid_from`) until the next one's
+  (`/billing/students/{party_id}/rates`). `PUT` on a day is an upsert in one statement (`put_rate` in `rates.py`):
+  the same amount and note write nothing, another amount replaces it. Rule G lives in `require_quarter_hour_rate`,
+  for a student's rate and a lesson's own alike, so `rate_not_quarter_hour` answers before the database's CHECK.
+  Listing and removing need only the party, so a former student's rates stay readable and removable; setting one
+  needs the student role.
+- **Reading the CRM.** Whether a party is a student is read through the CRM's `load_party` (`require_student` in
+  `students.py`): a party without the student role is `unknown_student`; a party in a path that does not exist is the
+  CRM's `party_not_found`, one named in a body `unknown_student`.
+- **Demo data.** `just seed-demo` ([`app/cli/seed_demo.py`](../app/cli/seed_demo.py)) writes a synthetic family
+  with two siblings at different rates, a student who pays for themselves, and lessons in every status, through the
+  CRM and billing services. The lessons fall in the current Berlin month and the one before: a second run in the
+  same month changes no row, a run in a later month adds that month's lessons. It checks the configured database URL
+  before it connects (`local_host_class`): only `postgresql+asyncpg` without query parameters, and only `localhost`,
+  a loopback address or a single-label host name (a compose service) pass.
 - **Errors.** The catalog is closed (the spec's "Error catalog"); its classes live in `app/services/billing/errors.py`
   and are pinned per route by `tests/api/test_billing_error_contract.py`.
 
