@@ -1,0 +1,37 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/ContactCustomFieldSetting/19398",
+    "params": {},
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "objects": [
+        {
+          "id": "19398",
+          "objectName": "ContactCustomFieldSetting",
+          "additionalInformation": null,
+          "create": "2026-11-11T00:06:20+01:00",
+          "update": "2026-11-11T00:06:20+01:00",
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "name": "Zahlungsverfahren",
+          "identifier": "zahlungsverfahren",
+          "description": null,
+          "placeholder": "ZAHLUNGSVERFAHREN"
+        }
+      ]
+    }
+  }
+}

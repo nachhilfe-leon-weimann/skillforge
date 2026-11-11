@@ -1,7 +1,8 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Draft - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3, SF3-1, SF3-2, SF4-1 to SF4-3 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD freezes this spec after both spikes; until
-> then nothing is built on a point marked **open**.
+> Status: Draft - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3, SF3-1, SF3-2, SF4-1 to SF4-3 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD recorded on the trial (2026-11-11, run
+> `run202611112124164167`): every question but Q8 is answered. SP-SD freezes this spec; until then nothing is built
+> on a point marked **open**.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
 > [`api-conventions.md`](api-conventions.md), [`crm-api.md`](crm-api.md) and
@@ -124,24 +125,26 @@ them.
 
 ## Verified behavior
 
-"Run" means the maintainer ran it on the Microsoft 365 tenant in SP-CAL (2026-11); nothing was probed against
-sevDesk yet. "Documented" means read in the vendor's published description; the spikes turn the open rows into
-fixtures ([Fixture manifest](#fixture-manifest)).
+"Run" means the maintainer ran it on the Microsoft 365 tenant in SP-CAL (2026-11). "Recorded" means SP-SD's run on
+the sevDesk trial (2026-11-11); a name like `read-back-28` is the fixture under
+`tests/fixtures/sevdesk/run202611112124164167/` ([Fixture manifest](#fixture-manifest)). "Documented" means read in
+the vendor's published description.
 
 | Question | Result |
 |---|---|
 | How does sevDesk authenticate? | Documented: base URL `https://my.sevdesk.de/api/v1`, the raw token in the `Authorization` header, no `Bearer` (OpenAPI description at `https://api.sevdesk.de/openapi.yaml`, read 2026-11). A token belongs to one user. |
 | Is there a sandbox? | Documented: none, and no webhooks. Secondary sources: a 14-day trial with API access. Trial and real account share the host. |
-| Which read identifies the account? | Not documented. The client is built on `GET /SevClient`, which the published description does not list: **open** (Q7, S2). |
-| What can `POST /Invoice/Factory/saveInvoice` create? | Documented: on bookkeeping system 2.0 only drafts (status 100). The positions key is `invoicePosSave`. |
-| Can a draft be deleted? | Documented: no `DELETE` for invoices. Whether one works anyway: **open** (S18). |
-| Which tax rule is § 19 UStG? | Documented: `taxRule` 11. |
-| Does a draft carry a number? | The maintainer observed: every open draft shows the next free number in the UI, and the final number is set when the invoice is issued. What the API returns: **open** (Q1). |
-| Can text templates be read? | Documented: no. `headText` and `footText` are set by the caller and may hold HTML; a dictionary endpoint lists placeholders. Whether placeholders resolve in a text set through the API, and which tags survive: **open** (Q2). |
-| How is a contact's custom field read? | Documented: `ContactCustomFieldSetting` (the definition), `ContactCustomField` (the value per contact), `Contact/Factory/findContactsByCustomFieldValue`. |
-| Where do unit and contact-person ids come from? | Documented: no list endpoint for either; they are read from an existing object. The ids: **open** (Q6). |
-| Which statuses exist? | Documented: 100 draft, 200 open, 750 partly paid, 1000 paid. |
-| How are values typed? | Secondary sources: numbers and booleans arrive as strings; a validation error can arrive as HTTP 500 with a JSON body. **Open** until recorded (S21). |
+| Which read identifies the account? | Not documented. Recorded: `GET /SevClient` names the account and its company name, and its id is the `sevClient` of `SevUser` and `ContactCustomFieldSetting` (Q7). |
+| What can `POST /Invoice/Factory/saveInvoice` create? | Documented: on bookkeeping system 2.0 only drafts (status 100). The positions key is `invoicePosSave`. Recorded: the invoice's own `taxRate` and `discount` must be sent - a `NULL` is refused with `400` (`invoice-24`); `taxType` and `addressCountry` may be left out (`invoice-27`). |
+| Can a draft be deleted? | Documented: no `DELETE` for invoices. Recorded: it works on a draft (Q11). |
+| Which tax rule is § 19 UStG? | Documented: `taxRule` 11. Recorded: sevDesk prints its own § 19 line for it, not the `taxText` sent (S14). |
+| Does a draft carry a number? | Recorded: a draft created through the API has none; the number comes with the editor or at issue (Q1). |
+| Can text templates be read? | Documented: no. `headText` and `footText` are set by the caller and may hold HTML; a dictionary endpoint lists placeholders. Recorded: placeholders resolve in texts set through the API, link targets and `header` included (Q2). |
+| How is a contact's custom field read? | Documented: `ContactCustomFieldSetting` (the definition), `ContactCustomField` (the value per contact), `Contact/Factory/findContactsByCustomFieldValue`. Recorded: all three as documented (`payment-methods-14` to `-23`). |
+| Where do unit and contact-person ids come from? | Recorded: `GET /Unity` lists the units and `GET /SevUser` the users, though the description lists neither (Q6). |
+| Which statuses exist? | Documented: 100 draft, 200 open, 750 partly paid, 1000 paid. Recorded: all four; a cancellation is an own invoice of type `SR` (Q12, Q13). |
+| How are values typed? | Recorded: sums, prices, quantities, rates and statuses arrive as strings (`"97.5"`, `"1.5"`, `"1000"`), `paidAmount` as a JSON number; no `5xx` was met (Q14). |
+| What does sevDesk's UI do to a draft from the API? | Recorded: the new invoice editor rewrites it when the maintainer opens it - the account's text templates replace head and foot text, `customerInternalNote` is emptied, an empty position is added, the delivery range becomes one day, `timeToPay` becomes 14 and a number is assigned (`read-back-61`, `-62`). The old editor ("Alte Version") keeps it; when the maintainer saves there it drops `<em>` (`<i>` stays), wraps the text in `<p>` and stores it HTML-escaped, and the PDF looks the same (the read-back's log of 139163231 and 139163755; `pdf-224`). Issuing needs an address on the contact and a number. |
 | What do today's invoices look like? | Observed on two redacted invoices, one per payment method: number `RE-<n>`; one position per lesson (name `<Fach>-Online`, the description of [Family-visible texts](#family-visible-texts), quantity `1,00`, unit `Std`); the § 19 line; a GiroCode and the bank block on both variants; the PayPal link rendered as `…/zahlung?re=<number>&betrag=<d,dd>%20EUR`. |
 | What does `/zahlung` accept? | Read in skillsite's code (`parsePaymentRequest` in `invoice-link.ts`): `re` matches `INVOICE_PATTERN` (letters, digits, `. _ - /`, at most 32 characters); `betrag` is an unambiguous euro figure (`90,00`, `90,00 EUR`, `1.234,56`, `90.00`; a bare `1.234` is refused) within `AMOUNT_LIMITS`. |
 | How is one mailbox opened to an app? | Documented (Microsoft Learn, "Role Based Access Control for Applications in Exchange Online"): it replaces Application Access Policies; Entra grants and Exchange grants are a union; a change takes 30 minutes to 2 hours to apply. Run: `exchange-rbac-calendar.ps1` set it up; the service principal pointer takes the object id of the enterprise application, not of the app registration (`AADServicePrincipalNotFound` otherwise). `Test-ServicePrincipalAuthorization` answers `InScope` true for the lesson mailbox and false for the other; the recorder's read of the other mailbox got `403` (G6). The app holds no application permission in Entra (the maintainer's statement). |
@@ -829,6 +832,39 @@ the script then only reads.
 | G6 | The answer for a mailbox outside the restriction | The maintainer | SF4-1 | |
 | G7 | The token response and an error response, in the documented shape | An agent | SF4-1 | |
 
+SP-SD recorded every S row in one run, `run202611112124164167` (2026-11-11). Each step run starts with the
+identity reads (`identity-*`); the rows' fixtures:
+
+| Id | Fixtures | Note |
+|---|---|---|
+| S1 | `version-03` | |
+| S2 | `identity-01`, `-02`, `custom-fields-04`, `discovery-06` | The recorder writes every `sevClient` id as `0`. |
+| S3 | `contact-11`, `contact-reads-12`, `-13` | |
+| S4 | `custom-fields-04`, `payment-methods-14` | |
+| S5 | `payment-methods-15` to `-23` | |
+| S6, S7 | `discovery-05`, `-06` | |
+| S8 | `numbers-48`, `-127`, `sequence-144` | |
+| S9 | `discovery-07` | |
+| S10 | `discovery-08` | |
+| S11 | `invoice-24` (refused, before the fix), `invoice-27`, `invoice-variants-37` to `-44`, `-132` to `-139` | |
+| S12 | `read-back-28` to `-30` | |
+| S13 | `read-back-153` to `-165`, `-195` to `-197` | Sent and paid by the maintainer in the UI. |
+| S14, S15 | `pdf-*` (render and download), `read-back-213`, `-218` | The PDFs stay outside the repository; the render's fixture keeps their size, not their content. |
+| S16 | `read-back-173`, `-174`, `-200`, `-201` | Edited by the maintainer in the old editor. |
+| S17 | `read-back-168`, `-169`, `-190`, `-191`, `deleted-read-186`, `-187` | Cancelled by the maintainer in the UI. |
+| S18 | `delete-147`, `-148`, `deleted-read-149`, `-150` | |
+| S19 | `rounding-45` to `-47` | |
+| S20 | `cut-connection-140`, `-141` | The cut write itself is unrecorded by design; its draft is found by the lookups. |
+| S21 | `error-bodies-142`, `-143`, `invoice-24` | |
+| S22 | `read-back-28`, `-61`, `numbers-129`, `-131`, `read-back-153`, `-158` | |
+| S23 | `numbers-127` to `-131`, `read-back-153`, `-158`, `-173`, `-200` | Issued by the maintainer in reverse order. |
+| S24 | `delivery-dates-53` to `-58` | |
+| S25 | `deleted-read-125`, `-126` | Deleted by the maintainer in the UI. |
+
+The recorder keeps `header`, `headText` and `footText` only while they are exactly what the run sent; a text that
+sevDesk's editor rewrote is scrubbed whole. The texts after the maintainer's UI steps are therefore in the run's
+log, not in a fixture.
+
 The trial lasts 14 days. A second trial is not established: do not plan on one, and ask sevDesk's support on the
 first day whether it can be extended. SF6 and SFP-2 are built on the recorded fixtures and on fault injection, not
 on a live trial.
@@ -1050,9 +1086,9 @@ write (`invoices.py`)._
   decision or is replaced, the status becomes `Accepted`, and so does ADR 0010's status line - with ADR 0006's
   status line gaining "amended by 0010".
 - _Acceptance criteria:_
-  - [ ] Every row S1 to S25 has a scrubbed fixture, or a written reason why it could not be recorded; the scan is
+  - [x] Every row S1 to S25 has a scrubbed fixture, or a written reason why it could not be recorded; the scan is
         green.
-  - [ ] Every created object carries the run id, and the script's log shows one request per write.
+  - [x] Every created object carries the run id, and the script's log shows one request per write.
   - [ ] Q1 to Q8, Q10 to Q15, Q17 and Q18 are answered, each naming its fixture.
   - [ ] Trial and real account both report bookkeeping system 2.0.
   - [ ] Every **pending approval** in [Family-visible texts](#family-visible-texts), every row of
@@ -1471,6 +1507,21 @@ SP-CAL and SP-SD move each answered question here, with the fixture that shows i
 |---|---|---|---|
 | Q9 | The exact name of the Outlook category for a late cancellation, and whether Graph delivers `categories` for the lesson calendar. | `Abgesagt`, for a late cancellation and a no-show alike (decision M); Graph delivers `categories`. The category only presets the status; the maintainer decides in the portal. | G3 |
 | Q16 | Which Graph id stays the same when an occurrence of a series moves? | All three: `id`, `iCalUId` and `seriesMasterId`; the occurrence becomes an `exception`. `calendar_event.external_id` is the event `id`, the one `calendarView` addresses. | G2 |
+| Q1 | Which `invoiceNumber` does the API return for a draft, for a second draft, and after issue? | A draft created through the API reads `null`, the second one too. A draft the maintainer opens in the new editor gets the next number at once; in the old editor a draft needs a number before preview, PDF or sending, and sevDesk proposes the next one. After issue the number is final. The sequence's `nextSequence` does not move with numbered drafts. | `read-back-28`, `-80`, `numbers-129`, `-131`, `read-back-61`, `read-back-158`, `read-back-163`, `sequence-144` |
+| Q2 | Placeholders, markup and title in texts set through the API. | The dictionary holds `[%VOLLEANREDE%]`, `[%ZAHLUNGSZIEL%]`, `[%KONTAKTPERSON%]`, `[%RECHNUNGSNUMMER%]`, `[%DOKUMENTENNUMMER%]` and `[%BETRAG%]`. Each resolves when sevDesk renders - in head and foot text, inside a link target (`re=` empty on a draft, the number once issued; `betrag=97,50%20EUR`), and in `header` (`Rechnung Nr. RE-1007` once issued). Without a salutation on the contact `[%VOLLEANREDE%]` reads `Sehr geehrte Damen und Herren`; `[%ZAHLUNGSZIEL%]` is the invoice date plus `timeToPay`. `<strong>`, `<i>`, `<a href>` and `<br>` render; `<em>` renders too but the old editor drops it on save (Verified behavior). A draft's PDF is titled as a draft; an issued one prints `header`. | `discovery-08`, `pdf-79`, `pdf-179`, `pdf-228` |
+| Q3 | Does sevDesk keep a draft number set from its sequence? | Yes: `RE-1000` and `RE-1001`, set back to back, were issued in reverse order and kept. sevDesk's next proposal follows the highest number (`RE-1002`). A number already taken is replaced at issue (`RE-1003` became `RE-1005`). The format is `RE-%NUMBER`. | `numbers-127` to `-131`, `read-back-153`, `-158`, `-173`, `-200` |
+| Q4 | GiroCode and bank block under an own foot text; the GiroCode per invoice. | The bank block (bank, IBAN) is printed in the footer under an own foot text. No trial PDF carried a GiroCode - draft or issued, transfer or PayPal - not even with the document's switch "EPC-QR-Code (GiroCode)" on and IBAN and BIC entered. The render names a per-document parameter `epcQrCode` (yes or no), but `PUT /Invoice/{id}/changeParameter` documents only `language`, `template`, `letterpaper` and `payPal`: the API has no documented switch per invoice. Whether the real account still prints its GiroCode under an own foot text, the maintainer sees on the first real draft (SF6). | `pdf-209`, `pdf-224`, `pdf-228` |
+| Q5 | The part per subject; a position with `part` and no `name`. | `GET /Part` gives id, name (`Mathe-Online`), unit and price. A position sent with `part` and without `name` is accepted and shows **no** name - sevDesk does not take the part's. The real ids the maintainer reads in the account; the doctor lists no parts. | `discovery-07`, `invoice-variants-43`, `-44`, `-138`, `-139`, `pdf-107` |
+| Q6 | The ids of the unit `Std` and of the contact person. | `GET /Unity` lists the units (`Std`, `UNITY_HOUR`) and `GET /SevUser` the users, though the description lists neither; `just sevdesk-doctor` prints both ids. | `discovery-05`, `discovery-06` |
+| Q7 | Is `GET /SevClient` the identity read? | Yes: it names the account and its company name, and its id equals `sevClient` on `SevUser` and `ContactCustomFieldSetting`. | `identity-01`, `-02`, `custom-fields-04`, `discovery-06` |
+| Q10 | The `customerInternalNote` filter; the contact's drafts. | The filter works as `customerInternalNote` (the description spells it `customerIntenalNote`) and matches the whole value: the run's tag lists 21 invoices, not the draft whose note carries a suffix. A cancellation copies the note, so it is listed too. The contact's drafts (`contact[id]`, `status=100`, `countAll`, `limit=1000`) came back complete, `total` equal to the count. | `cut-connection-140`, `-141`, `read-back-155` |
+| Q11 | Does `DELETE` work on a draft? | Yes: `200` with `{"objects": [null]}`; afterwards `404` and gone from the listing. | `delete-147`, `-148`, `deleted-read-149`, `-150` |
+| Q12 | How does a cancelled invoice read? | The original keeps status 1000, with `paidAmount` 0 - like a paid invoice but for the amount. The cancellation is an own invoice: `invoiceType` `SR`, `origin` the original, the next number of the same sequence (`RE-1004`), negative sums and prices, status 1000. | `read-back-168`, `-169`, `read-back-190`, `-191` |
+| Q13 | Does the maintainer's way of sending move an invoice to 200? | Yes, both: by mail (`sendType` `VM`) and as a downloaded PDF (`VPDF`); `enshrined` is set at once. A partial payment reads 750, a full one 1000 with `paidAmount` and `payDate`. | `read-back-158`, `-163`, `-195` |
+| Q14 | Types in responses; error bodies. | Sums, prices, quantities, rates and statuses are strings (`"97.5"`), `paidAmount` is a JSON number. sevDesk's sums equal the local cents. Errors met: a missing NOT NULL column `400`, a validation error `422`, both `{"error": {"message": ...}}`; a wrong token `401` with `{"status", "message"}`. No `5xx` was met, so none is proven to be a rejection. | `rounding-45` to `-47`, `invoice-24`, `error-bodies-142`, `-143` |
+| Q15 | The time zone of `deliveryDate`; a top-up's delivery date. | sevDesk keeps calendar days and returns them at midnight Berlin time with that day's offset: `2025-03-30` `+01:00`, `2025-10-25` to `-26` `+02:00`, `2025-12-31`. A top-up of today carries the invoice date as delivery date (the maintainer): `delivery_from` on a top-up is the draft's day. | `delivery-dates-53` to `-58` |
+| Q17 | A draft deleted in the UI. | `GET /Invoice/{id}` answers `404`, and it is gone from the contact's list. | `deleted-read-125`, `-126` |
+| Q18 | Which listings answer `countAll=true` with `total`? | `/Part`, `/ContactCustomField` and `/Invoice` do; `/Invoice/{id}/getPositions` does not (`total` null). | `discovery-07`, `payment-methods-19` to `-21`, `read-back-29`, `-30` |
 
 ## Open questions
 
@@ -1478,22 +1529,7 @@ SP-CAL and SP-SD move each answered question here, with the fixture that shows i
 
 | Id | Question | Decides | Answered by |
 |---|---|---|---|
-| Q1 | Which `invoiceNumber` does the API return for a draft, for a second draft, and after issue? In the UI every open draft shows the next free number. | How the PayPal link gets its number. | SP-SD (S8, S22) |
-| Q2 | Which placeholders do today's templates use - for the salutation, the due date, the contact person, and in the PayPal link's target for number and amount? Do they resolve in a head or foot text set through the API, inside a link target too? Which markup survives? What stands in the title (`header`), and does a placeholder resolve there? | Whether texts carry placeholders or filled-in values; the markup; the head text; the title. | SP-SD (S10, S14, S15); the raw templates from the maintainer |
-| Q3 | If SkillForge sets a draft's number from sevDesk's sequence (decision R), does sevDesk keep it - also for two drafts created back to back and issued in either order? | Whether the fallback works at all. | SP-SD (S23) |
-| Q4 | Do GiroCode and bank block render under an own foot text? Can the GiroCode be switched off per invoice through the API? | SF8. | SP-SD (S14) |
-| Q5 | The part per subject: ids and fields (name, unit, price). Does a position created with `part` and no `name` show the part's name? | `SEVDESK__PART_IDS`; the request. | SP-SD (S9, S11); the real ids from the doctor |
-| Q6 | The ids of the unit `Std` and of the contact person, and where they are read. | Configuration. | SP-SD (S6, S7) |
-| Q7 | Is `GET /SevClient` the read that yields the account's identity and company name, and does its id equal the client id on `SevUser` and `ContactCustomFieldSetting`? | The identity check of SF1-2, which is built on it. | SP-SD (S2) |
-| Q8 | Does the trial run bookkeeping system 2.0 with the functions of "Buchhaltung Pro", like the real account? | Whether trial fixtures speak for the real account. | SP-SD (S1), the doctor on both accounts |
-| Q10 | The real name and matching of the `customerInternalNote` filter; otherwise the list of a contact's drafts by creation time. Is that listing complete - paging, limits, drafts included? | Reconcile: "finds nothing" may only mean `failed` if the listing is complete. | SP-SD (S20) |
-| Q11 | Does `DELETE` work on a draft although it is not documented? | Whether a draft could ever be cleaned up through the API; v1 does not rely on it. | SP-SD (S18) |
-| Q12 | How does a cancelled invoice read: the original's status, the cancellation invoice's shape? | What `mark-cancelled` must read before it voids; v1.1 detection. | SP-SD (S17) |
-| Q13 | Does the maintainer's way of sending move an invoice to status 200? | Credit at issue; SFP-3. | SP-SD (S13) |
-| Q14 | How are amounts typed in responses, and what do error bodies look like - is a validation error a `5xx` with a recognisable body? | The client's parsing; which `5xx` proves a rejection. | SP-SD (S19, S21) |
-| Q15 | How does sevDesk read the time zone of `deliveryDate`? Which delivery date does a top-up carry today? | The request's dates; `delivery_from` on a top-up. | SP-SD (S24); a top-up invoice of today, read by the maintainer |
-| Q17 | How does a draft read after the maintainer deleted it in the UI: the answer of `GET /Invoice/{id}`, and is it gone from the contact's list? | What `discard` must read before it voids. | SP-SD (S25) |
-| Q18 | Does every listing the client reads whole - `/Part`, `/ContactCustomField`, `/Invoice/{id}/getPositions`, `/Invoice` - answer `countAll=true` with `total`? | The client refuses a listing without `total` ("listing without countAll total"): a listing that lacks it needs another way to be read whole. | SP-SD (S5, S9, S12, S20) |
+| Q8 | Does the trial run bookkeeping system 2.0 with the functions of "Buchhaltung Pro", like the real account? | Whether trial fixtures speak for the real account. | The trial reports 2.0 (`version-03`); the real account waits for the maintainer's `just sevdesk-doctor live`. |
 
 ### For the maintainer
 

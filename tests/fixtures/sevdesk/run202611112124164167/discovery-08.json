@@ -1,0 +1,315 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/Textparser/fetchDictionaryEntriesByType",
+    "params": {
+      "objectName": "Invoice"
+    },
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "objects": [
+        {
+          "key": "CONTACT",
+          "value": [
+            {
+              "key": "BANK_NUMBER",
+              "value": "[%BIC%]"
+            },
+            {
+              "key": "BANK_ACCOUNT",
+              "value": "[%IBAN%]"
+            },
+            {
+              "key": "CUSTOMER_NAME",
+              "value": "[%KUNDENNAME%]"
+            },
+            {
+              "key": "CUSTOMER_NAME2",
+              "value": "[%NAMENSZUSATZ%]"
+            },
+            {
+              "key": "CUSTOMER_NUMBER",
+              "value": "[%KUNDENNUMMER%]"
+            },
+            {
+              "key": "SURENAME",
+              "value": "[%NACHNAME%]"
+            },
+            {
+              "key": "TITLE",
+              "value": "[%TITEL%]"
+            },
+            {
+              "key": "FORENAME",
+              "value": "[%VORNAME%]"
+            },
+            {
+              "key": "ADDRESS",
+              "value": [
+                {
+                  "key": "ADDRESS_WORK",
+                  "value": "[%ADRESSE.ARBEIT%]"
+                },
+                {
+                  "key": "ADDRESS_PRIVATE",
+                  "value": "[%ADRESSE.PRIVAT%]"
+                },
+                {
+                  "key": "ADDRESS_INVOICE",
+                  "value": "[%ADRESSE.RECHNUNG%]"
+                },
+                {
+                  "key": "ADDRESS_DELIVERY",
+                  "value": "[%ADRESSE.LIEFERUNG%]"
+                },
+                {
+                  "key": "ADDRESS_PICKUP",
+                  "value": "[%ADRESSE.ABHOLUNG%]"
+                }
+              ]
+            },
+            {
+              "key": "PHONE",
+              "value": [
+                {
+                  "key": "PHONE_WORK",
+                  "value": "[%TELEFON.ARBEIT%]"
+                },
+                {
+                  "key": "PHONE_PRIVATE",
+                  "value": "[%TELEFON.PRIVAT%]"
+                },
+                {
+                  "key": "PHONE_MOBILE",
+                  "value": "[%TELEFON.MOBIL%]"
+                }
+              ]
+            },
+            {
+              "key": "CUSTOM_FIELDS",
+              "value": [
+                {
+                  "key": "Zahlungsverfahren",
+                  "value": "[%KONTAKT.ZAHLUNGSVERFAHREN%]"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "key": "MORE",
+          "value": [
+            {
+              "key": "SALUTATION",
+              "value": "[%ANREDE%]"
+            },
+            {
+              "key": "FULL_SALUTATION",
+              "value": "[%VOLLEANREDE%]"
+            },
+            {
+              "key": "CONTACT_PERSON",
+              "value": "[%KONTAKTPERSON%]"
+            },
+            {
+              "key": "PAGE_BREAK",
+              "value": "[%SEITENUMBRUCH%]"
+            },
+            {
+              "key": "PAYMENT_METHOD",
+              "value": "[%ZAHLUNGSART%]"
+            },
+            {
+              "key": "PAYMENT_DESCRIPTION",
+              "value": "[%ZAHLUNGSARTBESCHREIBUNG%]"
+            }
+          ]
+        },
+        {
+          "key": "INVOICE",
+          "value": [
+            {
+              "key": "TOTAL_AMOUNT",
+              "value": "[%BETRAG%]"
+            },
+            {
+              "key": "PAY_DATE",
+              "value": "[%ZAHLDATUM%]"
+            },
+            {
+              "key": "PAY_DAY",
+              "value": "[%ZAHLTAG%]"
+            },
+            {
+              "key": "DELIVERY_DATE_UNTIL",
+              "value": "[%LEISTUNGSZEITRAUM%]"
+            },
+            {
+              "key": "DELIVERY_DATE",
+              "value": "[%LIEFERDATUM%]"
+            },
+            {
+              "key": "DUNNING_DATE",
+              "value": "[%MAHNUNGSDATUM%]"
+            },
+            {
+              "key": "INVOICE_DATE",
+              "value": "[%RECHNUNGSDATUM%]"
+            },
+            {
+              "key": "INVOICE_NUMBER",
+              "value": "[%RECHNUNGSNUMMER%]"
+            },
+            {
+              "key": "CUSTOMER_INTERNAL_NOTE",
+              "value": "[%REFNUMMER%]"
+            },
+            {
+              "key": "PAYMENT_DEADLINE",
+              "value": "[%ZAHLUNGSZIEL%]"
+            },
+            {
+              "key": "CASH_DISCOUNT_DATE",
+              "value": "[%SKONTODATUM%]"
+            },
+            {
+              "key": "CASH_DISCOUNT_DAY",
+              "value": "[%SKONTOTAG%]"
+            },
+            {
+              "key": "SEPA_CREDITOR_ID",
+              "value": "[SCRUBBED]"
+            },
+            {
+              "key": "SEPA_MANDATE_REF",
+              "value": "[%MANDATSREFERENZ%]"
+            },
+            {
+              "key": "ORIGINAL_INVOICE_DATE",
+              "value": "[%ORIGINALRECHNUNGSDATUM%]"
+            },
+            {
+              "key": "PREVIOUS_DUNNING_DATE",
+              "value": "[%VORHERIGESMAHNUNGSDATUM%]"
+            }
+          ]
+        },
+        {
+          "key": "DATE_AND_TIME",
+          "value": [
+            {
+              "key": "MONTH",
+              "value": "[%MONAT%]"
+            },
+            {
+              "key": "MONTH_NUMBER",
+              "value": "[%MONAT.ZAHL%]"
+            },
+            {
+              "key": "MONTH_SHORT",
+              "value": "[%MONAT.KURZ%]"
+            },
+            {
+              "key": "MONTH_PREVIOUS",
+              "value": "[%VORMONAT%]"
+            },
+            {
+              "key": "MONTH_PREVIOUS_NUMBER",
+              "value": "[%VORMONAT.ZAHL%]"
+            },
+            {
+              "key": "MONTH_PREVIOUS_SHORT",
+              "value": "[%VORMONAT.KURZ%]"
+            },
+            {
+              "key": "MONTH_NEXT",
+              "value": "[%FOLGEMONAT%]"
+            },
+            {
+              "key": "MONTH_NEXT_NUMBER",
+              "value": "[%FOLGEMONAT.ZAHL%]"
+            },
+            {
+              "key": "MONTH_NEXT_SHORT",
+              "value": "[%FOLGEMONAT.KURZ%]"
+            },
+            {
+              "key": "DATE",
+              "value": "[%DATUM%]"
+            },
+            {
+              "key": "DATE_PREVIOUS",
+              "value": "[%DATUM.VORTAG%]"
+            },
+            {
+              "key": "WEEKDAY",
+              "value": "[%WOCHENTAG%]"
+            },
+            {
+              "key": "WEEKDAY_PREVIOUS",
+              "value": "[%WOCHENTAG.VORTAG%]"
+            },
+            {
+              "key": "WEEKDAY_NUMBER",
+              "value": "[%TAG%]"
+            },
+            {
+              "key": "CALENDER_WEEK",
+              "value": "[%KALENDERWOCHE%]"
+            },
+            {
+              "key": "NUMBER_OF_DAYS",
+              "value": "[%ANZAHL.TAGE.MONAT%]"
+            },
+            {
+              "key": "YEAR",
+              "value": "[%JAHR%]"
+            },
+            {
+              "key": "YEAR_SHORT",
+              "value": "[%JAHR.KURZ%]"
+            },
+            {
+              "key": "YEAR_PREVIOUS",
+              "value": "[%VORJAHR%]"
+            },
+            {
+              "key": "YEAR_PREVIOUS_SHORT",
+              "value": "[%VORJAHR.KURZ%]"
+            },
+            {
+              "key": "YEAR_NEXT",
+              "value": "[%FOLGEJAHR%]"
+            },
+            {
+              "key": "YEAR_NEXT_SHORT",
+              "value": "[%FOLGEJAHR.KURZ%]"
+            },
+            {
+              "key": "QUARTER",
+              "value": "[%QUARTAL%]"
+            },
+            {
+              "key": "QUARTER_PREVIOUS",
+              "value": "[%VORQUARTAL%]"
+            },
+            {
+              "key": "QUARTER_NEXT",
+              "value": "[%FOLGEQUARTAL%]"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

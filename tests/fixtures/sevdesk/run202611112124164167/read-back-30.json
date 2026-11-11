@@ -1,0 +1,117 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/Invoice",
+    "params": {
+      "customerInternalNote": "skillforge-spike:run202611112124164167",
+      "countAll": "true",
+      "limit": "1000"
+    },
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "total": 1,
+      "objects": [
+        {
+          "id": "139163120",
+          "objectName": "Invoice",
+          "additionalInformation": null,
+          "invoiceNumber": null,
+          "contact": {
+            "id": "140992441",
+            "objectName": "Contact"
+          },
+          "create": "2026-11-11T22:47:34+01:00",
+          "update": "2026-11-11T22:47:34+01:00",
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "invoiceDate": "2026-11-11T00:00:00+01:00",
+          "header": "Spike run202611112124164167",
+          "headText": "Spike run202611112124164167: [%VOLLEANREDE%],<br>\n<br>\nvielen Dank für Ihren Auftrag und das damit verbundene Vertrauen!<br>\nNachfolgend finden Sie die Abrechnung der vereinbarten Leistungen im oben genannten Zeitraum:",
+          "footText": "Spike run202611112124164167: <strong>Zahlungsverfahren:</strong> <em>PayPal (<a href=\"https://pay.example.org/zahlung?re=[%RECHNUNGSNUMMER%]&betrag=[%BETRAG%]\">Weiter mit PayPal</a>)</em><br>\nBitte begleichen Sie den Rechnungsbetrag <strong>bis zum [%ZAHLUNGSZIEL%]</strong> unter Angabe der Rechnungs- oder Kundennummer.<br>\nBei Rückfragen stehe ich Ihnen gerne zur Verfügung.<br>\nMit freundlichen Grüßen<br>\n[%KONTAKTPERSON%]",
+          "timeToPay": null,
+          "discountTime": null,
+          "discount": "0",
+          "addressName": null,
+          "addressStreet": null,
+          "addressZip": null,
+          "addressCity": null,
+          "payDate": null,
+          "createUser": {
+            "id": "1570859",
+            "objectName": "SevUser"
+          },
+          "deliveryDate": "2026-11-01T00:00:00+01:00",
+          "status": "100",
+          "smallSettlement": "0",
+          "contactPerson": {
+            "id": "1570859",
+            "objectName": "SevUser"
+          },
+          "taxRate": "0",
+          "taxText": "Spike run202611112124164167 tax text",
+          "dunningLevel": null,
+          "addressParentName": null,
+          "taxType": null,
+          "sendDate": null,
+          "invoiceType": "RE",
+          "accountIntervall": null,
+          "accountLastInvoice": null,
+          "accountNextInvoice": null,
+          "reminderTotal": null,
+          "reminderDebit": null,
+          "reminderDeadline": null,
+          "reminderCharge": "0",
+          "addressParentName2": null,
+          "addressName2": null,
+          "addressGender": null,
+          "accountStartDate": null,
+          "accountEndDate": null,
+          "address": null,
+          "currency": "[SCRUBBED]",
+          "sumNet": "15",
+          "sumTax": "0",
+          "sumGross": "15",
+          "sumDiscounts": "0",
+          "sumNetForeignCurrency": "0",
+          "sumTaxForeignCurrency": "0",
+          "sumGrossForeignCurrency": "0",
+          "sumDiscountsForeignCurrency": "0",
+          "sumNetAccounting": "15",
+          "sumTaxAccounting": "0",
+          "sumGrossAccounting": "15",
+          "paidAmount": 0,
+          "customerInternalNote": "skillforge-spike:run202611112124164167",
+          "einvoiceReference": null,
+          "sepaMandateReference": null,
+          "sepaCreditorId": null,
+          "sepaPayerIban": null,
+          "showNet": "1",
+          "enshrined": null,
+          "sendType": "0",
+          "deliveryDateUntil": "2026-11-11T00:00:00+01:00",
+          "sendPaymentReceivedNotificationDate": null,
+          "sumDiscountNet": "0",
+          "sumDiscountGross": "0",
+          "sumDiscountNetForeignCurrency": "0",
+          "sumDiscountGrossForeignCurrency": "0",
+          "taxRule": {
+            "id": "11",
+            "objectName": "TaxRule"
+          }
+        }
+      ]
+    }
+  }
+}

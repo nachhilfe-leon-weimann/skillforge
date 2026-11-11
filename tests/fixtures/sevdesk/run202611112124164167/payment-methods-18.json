@@ -1,0 +1,52 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/ContactCustomField",
+    "params": {},
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge",
+      "content-type": "application/json"
+    },
+    "body": {
+      "objectName": "ContactCustomField",
+      "contact": {
+        "id": 140992443,
+        "objectName": "Contact"
+      },
+      "contactCustomFieldSetting": {
+        "id": 19398,
+        "objectName": "ContactCustomFieldSetting"
+      },
+      "value": "Überweisung"
+    }
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "objects": {
+        "id": "1452122",
+        "objectName": "ContactCustomField",
+        "additionalInformation": null,
+        "create": "2026-11-11T22:27:11+01:00",
+        "update": "2026-11-11T22:27:11+01:00",
+        "sevClient": {
+          "id": "0",
+          "objectName": "SevClient"
+        },
+        "contact": {
+          "id": "140992443",
+          "objectName": "Contact"
+        },
+        "contactCustomFieldSetting": {
+          "id": "19398",
+          "objectName": "ContactCustomFieldSetting"
+        },
+        "value": "Überweisung"
+      }
+    }
+  }
+}

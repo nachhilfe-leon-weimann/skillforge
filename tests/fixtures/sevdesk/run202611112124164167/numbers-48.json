@@ -1,0 +1,38 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/SevSequence/Factory/getByType",
+    "params": {
+      "objectType": "Invoice",
+      "type": "RE"
+    },
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "objects": {
+        "id": "13614534",
+        "objectName": "SevSequence",
+        "additionalInformation": null,
+        "create": "2026-11-10T23:56:34+01:00",
+        "update": "2026-11-10T23:56:34+01:00",
+        "forObject": "Invoice",
+        "format": "RE-%NUMBER",
+        "nextSequence": "1000",
+        "sevClient": {
+          "id": "0",
+          "objectName": "SevClient"
+        },
+        "type": "RE"
+      }
+    }
+  }
+}

@@ -1,0 +1,348 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/Invoice/Factory/saveInvoice",
+    "params": {},
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge",
+      "content-type": "application/json"
+    },
+    "body": {
+      "invoice": {
+        "objectName": "Invoice",
+        "mapAll": true,
+        "invoiceDate": "2026-11-11",
+        "deliveryDate": "2026-11-01",
+        "deliveryDateUntil": "2026-11-11",
+        "contact": {
+          "id": 140992441,
+          "objectName": "Contact"
+        },
+        "contactPerson": {
+          "id": 1570859,
+          "objectName": "SevUser"
+        },
+        "status": 100,
+        "invoiceType": "RE",
+        "currency": "[SCRUBBED]",
+        "taxRule": {
+          "id": 11,
+          "objectName": "TaxRule"
+        },
+        "taxRate": 0,
+        "discount": 0,
+        "taxText": "[SCRUBBED]",
+        "header": "[SCRUBBED]",
+        "headText": "[SCRUBBED]",
+        "footText": "[SCRUBBED]: <strong>Zahlungsverfahren:</strong> <i>PayPal (<a href=\"https://pay.example.org/zahlung?re=[%RECHNUNGSNUMMER%]&betrag=[%BETRAG%]\">Weiter mit PayPal</a>)</i><br>\nBitte begleichen Sie den Rechnungsbetrag <strong>bis zum [%ZAHLUNGSZIEL%]</strong> unter Angabe der Rechnungs- oder Kundennummer.<br>\nBei Rückfragen stehe ich Ihnen gerne zur Verfügung.<br>\nMit freundlichen Grüßen<br>\n[%KONTAKTPERSON%]",
+        "customerInternalNote": "[SCRUBBED]"
+      },
+      "invoicePosSave": [
+        {
+          "objectName": "InvoicePos",
+          "mapAll": true,
+          "name": "[SCRUBBED] 5 x Maths",
+          "text": "Vorauszahlung für kommende Unterrichtsstunden",
+          "quantity": "5",
+          "price": "30.00",
+          "taxRate": "0",
+          "unity": {
+            "id": 9,
+            "objectName": "Unity"
+          },
+          "part": {
+            "id": 58956695,
+            "objectName": "Part"
+          }
+        }
+      ],
+      "invoicePosDelete": null,
+      "discountSave": null,
+      "discountDelete": null,
+      "takeDefaultAddress": true
+    }
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "objects": {
+        "invoice": {
+          "id": "139163760",
+          "objectName": "Invoice",
+          "additionalInformation": null,
+          "propertyIsEInvoice": null,
+          "invoiceNumber": null,
+          "contact": {
+            "id": "140992441",
+            "objectName": "Contact"
+          },
+          "create": "2026-11-11T23:07:17+01:00",
+          "update": "2026-11-11T23:07:17+01:00",
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "invoiceDate": "2026-11-11T00:00:00+01:00",
+          "header": "[SCRUBBED]",
+          "headText": "[SCRUBBED]",
+          "footText": "[SCRUBBED]: <strong>Zahlungsverfahren:</strong> <i>PayPal (<a href=\"https://pay.example.org/zahlung?re=[%RECHNUNGSNUMMER%]&betrag=[%BETRAG%]\">Weiter mit PayPal</a>)</i><br>\nBitte begleichen Sie den Rechnungsbetrag <strong>bis zum [%ZAHLUNGSZIEL%]</strong> unter Angabe der Rechnungs- oder Kundennummer.<br>\nBei Rückfragen stehe ich Ihnen gerne zur Verfügung.<br>\nMit freundlichen Grüßen<br>\n[%KONTAKTPERSON%]",
+          "timeToPay": null,
+          "discountTime": null,
+          "discount": "0",
+          "addressName": null,
+          "addressStreet": null,
+          "addressZip": null,
+          "addressCity": null,
+          "addressCountry": {
+            "id": "1",
+            "objectName": "StaticCountry"
+          },
+          "payDate": null,
+          "createUser": {
+            "id": "1570859",
+            "objectName": "SevUser"
+          },
+          "deliveryDate": "2026-11-01T00:00:00+01:00",
+          "status": "100",
+          "smallSettlement": "0",
+          "contactPerson": {
+            "id": "1570859",
+            "objectName": "SevUser"
+          },
+          "taxRate": "0",
+          "taxText": "[SCRUBBED]",
+          "dunningLevel": null,
+          "addressParentName": null,
+          "taxType": null,
+          "sendDate": null,
+          "invoiceType": "RE",
+          "accountIntervall": null,
+          "accountLastInvoice": null,
+          "accountNextInvoice": null,
+          "reminderTotal": null,
+          "reminderDebit": null,
+          "reminderDeadline": null,
+          "reminderCharge": "0",
+          "addressParentName2": null,
+          "addressName2": null,
+          "addressGender": null,
+          "accountStartDate": null,
+          "accountEndDate": null,
+          "address": "[SCRUBBED]",
+          "currency": "[SCRUBBED]",
+          "sumNet": "150",
+          "sumTax": "0",
+          "sumGross": "150",
+          "sumDiscounts": "0",
+          "sumNetForeignCurrency": "0",
+          "sumTaxForeignCurrency": "0",
+          "sumGrossForeignCurrency": "0",
+          "sumDiscountsForeignCurrency": "0",
+          "sumNetAccounting": "150",
+          "sumTaxAccounting": "0",
+          "sumGrossAccounting": "150",
+          "paidAmount": 0,
+          "customerInternalNote": "[SCRUBBED]",
+          "einvoiceReference": null,
+          "sepaMandateReference": null,
+          "sepaCreditorId": null,
+          "sepaPayerIban": null,
+          "showNet": "1",
+          "enshrined": null,
+          "sendType": "0",
+          "deliveryDateUntil": "2026-11-11T00:00:00+01:00",
+          "sendPaymentReceivedNotificationDate": null,
+          "sumDiscountNet": "0",
+          "sumDiscountGross": "0",
+          "sumDiscountNetForeignCurrency": "0",
+          "sumDiscountGrossForeignCurrency": "0",
+          "taxRule": {
+            "id": "11",
+            "objectName": "TaxRule"
+          }
+        },
+        "invoicePos": [
+          {
+            "id": "372803138",
+            "objectName": "InvoicePos",
+            "additionalInformation": null,
+            "create": null,
+            "update": null,
+            "invoice": {
+              "id": "139163760",
+              "objectName": "Invoice",
+              "additionalInformation": null,
+              "propertyIsEInvoice": null,
+              "invoiceNumber": null,
+              "contact": {
+                "id": "140992441",
+                "objectName": "Contact"
+              },
+              "create": "2026-11-11T23:07:17+01:00",
+              "update": "2026-11-11T23:07:17+01:00",
+              "sevClient": {
+                "id": "0",
+                "objectName": "SevClient"
+              },
+              "invoiceDate": "2026-11-11T00:00:00+01:00",
+              "header": "[SCRUBBED]",
+              "headText": "[SCRUBBED]",
+              "footText": "[SCRUBBED]: <strong>Zahlungsverfahren:</strong> <i>PayPal (<a href=\"https://pay.example.org/zahlung?re=[%RECHNUNGSNUMMER%]&betrag=[%BETRAG%]\">Weiter mit PayPal</a>)</i><br>\nBitte begleichen Sie den Rechnungsbetrag <strong>bis zum [%ZAHLUNGSZIEL%]</strong> unter Angabe der Rechnungs- oder Kundennummer.<br>\nBei Rückfragen stehe ich Ihnen gerne zur Verfügung.<br>\nMit freundlichen Grüßen<br>\n[%KONTAKTPERSON%]",
+              "timeToPay": null,
+              "discountTime": null,
+              "discount": "0",
+              "addressName": null,
+              "addressStreet": null,
+              "addressZip": null,
+              "addressCity": null,
+              "addressCountry": {
+                "id": "1",
+                "objectName": "StaticCountry"
+              },
+              "payDate": null,
+              "createUser": {
+                "id": "1570859",
+                "objectName": "SevUser"
+              },
+              "deliveryDate": "2026-11-01T00:00:00+01:00",
+              "status": "100",
+              "smallSettlement": "0",
+              "contactPerson": {
+                "id": "1570859",
+                "objectName": "SevUser"
+              },
+              "taxRate": "0",
+              "taxText": "[SCRUBBED]",
+              "dunningLevel": null,
+              "addressParentName": null,
+              "taxType": null,
+              "sendDate": null,
+              "invoiceType": "RE",
+              "accountIntervall": null,
+              "accountLastInvoice": null,
+              "accountNextInvoice": null,
+              "reminderTotal": null,
+              "reminderDebit": null,
+              "reminderDeadline": null,
+              "reminderCharge": "0",
+              "addressParentName2": null,
+              "addressName2": null,
+              "addressGender": null,
+              "accountStartDate": null,
+              "accountEndDate": null,
+              "address": "[SCRUBBED]",
+              "currency": "[SCRUBBED]",
+              "sumNet": "150",
+              "sumTax": "0",
+              "sumGross": "150",
+              "sumDiscounts": "0",
+              "sumNetForeignCurrency": "0",
+              "sumTaxForeignCurrency": "0",
+              "sumGrossForeignCurrency": "0",
+              "sumDiscountsForeignCurrency": "0",
+              "sumNetAccounting": "150",
+              "sumTaxAccounting": "0",
+              "sumGrossAccounting": "150",
+              "paidAmount": 0,
+              "customerInternalNote": "[SCRUBBED]",
+              "einvoiceReference": null,
+              "sepaMandateReference": null,
+              "sepaCreditorId": null,
+              "sepaPayerIban": null,
+              "showNet": "1",
+              "enshrined": null,
+              "sendType": "0",
+              "deliveryDateUntil": "2026-11-11T00:00:00+01:00",
+              "sendPaymentReceivedNotificationDate": null,
+              "sumDiscountNet": "0",
+              "sumDiscountGross": "0",
+              "sumDiscountNetForeignCurrency": "0",
+              "sumDiscountGrossForeignCurrency": "0",
+              "taxRule": {
+                "id": "11",
+                "objectName": "TaxRule"
+              }
+            },
+            "part": {
+              "id": "58956695",
+              "objectName": "Part",
+              "additionalInformation": null,
+              "create": "2026-11-11T00:05:15+01:00",
+              "update": "2026-11-11T00:05:15+01:00",
+              "name": "Mathe-Online",
+              "partNumber": "1000",
+              "text": null,
+              "category": {
+                "id": "97430",
+                "objectName": "Category"
+              },
+              "stock": "0",
+              "stockEnabled": "1",
+              "unity": {
+                "id": "9",
+                "objectName": "Unity"
+              },
+              "pricePartner": null,
+              "priceCustomer": null,
+              "price": "30",
+              "secondUnityFactor": null,
+              "sevClient": {
+                "id": "0",
+                "objectName": "SevClient"
+              },
+              "pricePurchase": "0",
+              "taxRate": "0",
+              "image": null,
+              "status": "100",
+              "internalComment": null,
+              "priceNet": "30",
+              "priceGross": "30"
+            },
+            "quantity": "5",
+            "price": 30,
+            "name": "[SCRUBBED] 5 x Maths",
+            "priority": 100,
+            "unity": {
+              "id": "9",
+              "objectName": "Unity",
+              "additionalInformation": null,
+              "create": null,
+              "update": "1970-01-01T01:00:01+01:00",
+              "name": "Std",
+              "translationCode": "UNITY_HOUR",
+              "unitySystem": "general",
+              "uneceTradeUnitCode": "HUR"
+            },
+            "positionNumber": 1000,
+            "text": "Vorauszahlung für kommende Unterrichtsstunden",
+            "discount": 0,
+            "isPercentage": true,
+            "discountedValue": null,
+            "taxRate": 0,
+            "temporary": null,
+            "sumNet": 150,
+            "sumGross": 150,
+            "sumDiscount": 0,
+            "sumTax": 0,
+            "sumNetAccounting": 150,
+            "sumTaxAccounting": 0,
+            "sumGrossAccounting": 150,
+            "priceNet": 30,
+            "priceGross": 30,
+            "priceTax": 0,
+            "sumNetForeignCurrency": 0,
+            "sumTaxForeignCurrency": 0,
+            "sumGrossForeignCurrency": 0,
+            "sumDiscountForeignCurrency": 0,
+            "createNextPart": false
+          }
+        ],
+        "vatdrop": "[SCRUBBED]"
+      }
+    }
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/Invoice/139163232",
+    "params": {},
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "objects": [
+        {
+          "id": "139163232",
+          "objectName": "Invoice",
+          "additionalInformation": null,
+          "invoiceNumber": null,
+          "contact": {
+            "id": "140992441",
+            "objectName": "Contact"
+          },
+          "create": "2026-11-11T22:51:08+01:00",
+          "update": "2026-11-11T22:51:08+01:00",
+          "sevClient": {
+            "id": "0",
+            "objectName": "SevClient"
+          },
+          "invoiceDate": "2026-11-11T00:00:00+01:00",
+          "header": "[SCRUBBED]",
+          "headText": "[SCRUBBED]",
+          "footText": "[SCRUBBED]",
+          "timeToPay": null,
+          "discountTime": null,
+          "discount": "0",
+          "addressName": null,
+          "addressStreet": null,
+          "addressZip": null,
+          "addressCity": null,
+          "payDate": null,
+          "createUser": {
+            "id": "1570859",
+            "objectName": "SevUser"
+          },
+          "deliveryDate": "2026-11-01T00:00:00+01:00",
+          "status": "100",
+          "smallSettlement": "0",
+          "contactPerson": {
+            "id": "1570859",
+            "objectName": "SevUser"
+          },
+          "taxRate": "0",
+          "taxText": "[SCRUBBED]",
+          "dunningLevel": null,
+          "addressParentName": null,
+          "taxType": null,
+          "sendDate": null,
+          "invoiceType": "RE",
+          "accountIntervall": null,
+          "accountLastInvoice": null,
+          "accountNextInvoice": null,
+          "reminderTotal": null,
+          "reminderDebit": null,
+          "reminderDeadline": null,
+          "reminderCharge": "0",
+          "addressParentName2": null,
+          "addressName2": null,
+          "addressGender": null,
+          "accountStartDate": null,
+          "accountEndDate": null,
+          "address": null,
+          "currency": "[SCRUBBED]",
+          "sumNet": "75",
+          "sumTax": "0",
+          "sumGross": "75",
+          "sumDiscounts": "0",
+          "sumNetForeignCurrency": "0",
+          "sumTaxForeignCurrency": "0",
+          "sumGrossForeignCurrency": "0",
+          "sumDiscountsForeignCurrency": "0",
+          "sumNetAccounting": "75",
+          "sumTaxAccounting": "0",
+          "sumGrossAccounting": "75",
+          "paidAmount": 0,
+          "customerInternalNote": "[SCRUBBED]",
+          "einvoiceReference": null,
+          "sepaMandateReference": null,
+          "sepaCreditorId": null,
+          "sepaPayerIban": null,
+          "showNet": "1",
+          "enshrined": null,
+          "sendType": "0",
+          "deliveryDateUntil": "2026-11-11T00:00:00+01:00",
+          "sendPaymentReceivedNotificationDate": null,
+          "sumDiscountNet": "0",
+          "sumDiscountGross": "0",
+          "sumDiscountNetForeignCurrency": "0",
+          "sumDiscountGrossForeignCurrency": "0",
+          "taxRule": {
+            "id": "11",
+            "objectName": "TaxRule"
+          }
+        }
+      ]
+    }
+  }
+}

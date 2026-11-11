@@ -1,0 +1,36 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/Invoice/Factory/saveInvoice",
+    "params": {},
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge",
+      "content-type": "application/json"
+    },
+    "body": {
+      "invoice": {
+        "objectName": "Invoice",
+        "mapAll": true,
+        "customerInternalNote": "[SCRUBBED]:S21"
+      }
+    }
+  },
+  "response": {
+    "status": 422,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "error": {
+        "exceptionUUID": "431aa861-3f44-4b6e-ba25-f4a686037a67",
+        "message": "Invalid invoiceType. Must be one of: RE, AR, TR, ER, MA, SR, WKR.",
+        "errorCode": 0,
+        "code": null,
+        "data": [],
+        "responseCode": 422
+      },
+      "objects": null
+    }
+  }
+}

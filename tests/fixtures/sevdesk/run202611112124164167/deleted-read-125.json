@@ -1,0 +1,29 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/Invoice/139163120",
+    "params": {},
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "error": {
+        "exceptionUUID": "d43fbbc2-db65-4191-89eb-5e65767d8c29",
+        "message": "No Model_Invoice with the id 139163120 was found",
+        "errorCode": 0,
+        "code": 151,
+        "data": [],
+        "responseCode": 404
+      },
+      "objects": null
+    }
+  }
+}

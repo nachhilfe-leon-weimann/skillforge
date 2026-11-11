@@ -1,0 +1,22 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/SevClient",
+    "params": {},
+    "headers": {
+      "user-agent": "python-httpx/0.28.1",
+      "accept": "application/json"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "status": 401,
+      "message": "Authentication required"
+    }
+  }
+}

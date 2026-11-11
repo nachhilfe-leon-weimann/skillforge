@@ -1,0 +1,476 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/Invoice/139163238/render",
+    "params": {},
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge",
+      "content-type": "application/json"
+    },
+    "body": {
+      "forceReload": true
+    }
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "objects": {
+        "docId": "[TOKEN]",
+        "pdf": "[165436 characters]",
+        "parameters": [
+          {
+            "key": "language",
+            "name": "[SCRUBBED]",
+            "values": [
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "SEVDOC_LANG_EN_US"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "SEVDOC_LANG_DE_DE"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "SEVDOC_LANG_DE_AT"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "SEVDOC_LANG_DE_CH"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "SEVDOC_LANG_ES_ES"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "SEVDOC_LANG_FR_FR"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "SEVDOC_LANG_IT_IT"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "SEVDOC_LANG_EL_GR"
+              }
+            ],
+            "visible": true,
+            "value": "[SCRUBBED]"
+          },
+          {
+            "key": "template",
+            "name": "[SCRUBBED]",
+            "values": [
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]",
+                "isCustom": false
+              }
+            ],
+            "visible": true,
+            "value": "[SCRUBBED]"
+          },
+          {
+            "key": "letterpaper",
+            "name": "[SCRUBBED]",
+            "values": [
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "SEVDOC_LETTERPAPER_WITHOUT",
+                "isCustom": false
+              }
+            ],
+            "visible": true,
+            "value": "[SCRUBBED]"
+          },
+          {
+            "key": "payPal",
+            "name": "PayPal",
+            "values": [
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "SHOW_LINK"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "SHOW_PAYPAL_ICON"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "HIDE"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "SEVDOC_PARAM_PAYPAL"
+              }
+            ],
+            "visible": true,
+            "value": "[SCRUBBED]"
+          },
+          {
+            "key": "epcQrCode",
+            "name": "[SCRUBBED]",
+            "values": [
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "SEVDOC_EPC_QR_CODE_YES"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "SEVDOC_EPC_QR_CODE_NO"
+              }
+            ],
+            "visible": true,
+            "value": "[SCRUBBED]"
+          },
+          {
+            "key": "printDeliveryReturn",
+            "name": "[SCRUBBED]",
+            "values": [
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              }
+            ],
+            "visible": true,
+            "value": "[SCRUBBED]"
+          },
+          {
+            "key": "printFooter",
+            "name": "[SCRUBBED]",
+            "values": [
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              }
+            ],
+            "visible": true,
+            "value": "[SCRUBBED]"
+          },
+          {
+            "key": "printPageNumbers",
+            "name": "[SCRUBBED]",
+            "values": [
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              }
+            ],
+            "visible": true,
+            "value": "[SCRUBBED]"
+          },
+          {
+            "key": "printCustomerNumber",
+            "name": "[SCRUBBED]",
+            "values": [
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              }
+            ],
+            "visible": true,
+            "value": "[SCRUBBED]"
+          },
+          {
+            "key": "printContactPerson",
+            "name": "[SCRUBBED]",
+            "values": [
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              }
+            ],
+            "visible": true,
+            "value": "[SCRUBBED]"
+          },
+          {
+            "key": "logoSize",
+            "name": "[SCRUBBED]",
+            "values": [
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "10%"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "20%"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "33%"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "50%"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "66%"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "80%"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "100%"
+              }
+            ],
+            "visible": true,
+            "value": "[SCRUBBED]"
+          },
+          {
+            "key": "color",
+            "name": "[SCRUBBED]",
+            "values": [
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              }
+            ],
+            "visible": true,
+            "value": "[SCRUBBED]"
+          },
+          {
+            "key": "printPosTax",
+            "name": "[SCRUBBED]",
+            "values": [
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              }
+            ],
+            "visible": true,
+            "value": "[SCRUBBED]"
+          },
+          {
+            "key": "printPartNumber",
+            "name": "[SCRUBBED]",
+            "values": [
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              }
+            ],
+            "visible": true,
+            "value": "[SCRUBBED]"
+          },
+          {
+            "key": "printFoldLines",
+            "name": "[SCRUBBED]",
+            "values": [
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              },
+              {
+                "name": "[SCRUBBED]",
+                "value": "[SCRUBBED]",
+                "translationCode": "[SCRUBBED]"
+              }
+            ],
+            "visible": true,
+            "value": "[SCRUBBED]"
+          }
+        ]
+      }
+    }
+  }
+}
