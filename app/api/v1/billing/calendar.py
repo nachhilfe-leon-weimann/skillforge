@@ -40,11 +40,12 @@ async def import_calendar(
 ) -> CalendarImportResponse:
     """Import the lesson calendar for a range of Berlin days: the calendar proposes, a person confirms.
 
-    A new occurrence becomes a `planned` lesson, a `cancelled` one for a late cancellation, or waits for an
-    assignment. An occurrence with a lesson is judged by the title rules again: only while they still give this
-    student and this subject, and the lesson is untouched - `planned`, no note, no own rate, at the start and length
-    of its occurrence as last seen - does it follow a moved, resized or cancelled appointment, and go when it
-    vanishes. Otherwise the lesson never changes and its occurrence is flagged `changed`. Importing an unchanged
+    A new occurrence becomes a `planned` lesson, a `cancelled` one for a late cancellation, or none: a phone call, an
+    all-day entry or a first meeting is kept with its reason and not listed; any other occurrence without a lesson
+    waits for an assignment. An untouched lesson - `planned`, no note, no own rate, at the start and length of its
+    occurrence as last seen - goes when its occurrence vanishes, and follows a moved, resized or cancelled appointment
+    only while the title rules still give this student and this subject. Otherwise the lesson never changes and its
+    occurrence is flagged `changed`. Importing an unchanged
     range again changes nothing. Answers with counts only; a calendar that cannot be read is `calendar_unavailable`,
     and nothing is imported.
     """

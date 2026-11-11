@@ -9,12 +9,12 @@ invents, moves, duplicates or drops a lesson a person may have looked at.
   and this subject, and the lesson is untouched - ``planned``, no note, no own rate, at the start and length of its
   occurrence as last seen - does it follow a moved, resized or cancelled appointment, and go with a vanished one.
 - Flagged: the title names another student or subject - by the rules' answer, or by its name where the rules stop
-  before it - at every import, until the lesson, the title or an alias settles it; the rules give no lesson; a
-  touched lesson's appointment changed or vanished; a lesson that cannot follow. ``dismiss`` - and an assignment -
-  acknowledges the occurrence as last seen: a "no lesson" answer and a change already seen stay quiet until start,
-  end, cancellation, subject, a new no-lesson reason or presence changes. Another student or subject is never
-  acknowledged; a name that matches nobody or several cannot be compared (PD13 keeps no name). A vanishing is flagged
-  once (``vanished``).
+  before it (a subject only in a lesson title) - at every import, until the lesson, the title or an alias settles
+  it; the rules give no lesson; a touched lesson's appointment changed or vanished; a lesson that cannot follow.
+  ``dismiss`` - and an assignment - acknowledges the occurrence as last seen: a "no lesson" answer and a change
+  already seen stay quiet until start, end, cancellation, subject, a new no-lesson reason or presence changes.
+  Another student or subject is never acknowledged; a name that matches nobody or several cannot be compared (PD13
+  keeps no name). A vanishing is flagged once (``vanished``).
 - An occurrence without a lesson is proposed at every import until it gets one, unless it was dismissed or flagged
   because it could not get its lesson: then it waits for the maintainer. ``assign`` gives it its lesson through
   ``lessons.py``. Only an occurrence that starts inside the range can vanish.
@@ -429,7 +429,8 @@ def _untouched(lesson: Lesson, event: CalendarEvent) -> bool:
 
 @dataclass(frozen=True)
 class _Named:
-    """The student a title names, and its subject - ``None`` where the title holds none (a first meeting)."""
+    """The student a title names, and its subject - ``None`` where the title holds none (a phone call, an all-day
+    entry, a first meeting)."""
 
     student_id: uuid.UUID
     subject: str | None
@@ -446,8 +447,9 @@ def _named(proposal: Proposal, occurrence: Occurrence, roster: Roster) -> _Named
             title = parse_title(occurrence.title)
             if title is None or not isinstance(student_id := match_name(title.name, roster), uuid.UUID):
                 return None
-            # `Kennenlernen` is never read as a subject (billing spec, "Calendar import").
-            return _Named(student_id, None if reason is NoLessonReason.FIRST_MEETING else title.subject)
+            # Only a lesson title of an odd length has a subject: before a phone call's, an all-day entry's or a first
+            # meeting's ` mit ` stands any word ("Telefonat", "Ferien"; `Kennenlernen` is never read as a subject).
+            return _Named(student_id, title.subject if reason is NoLessonReason.DURATION else None)
 
 
 def _seen(event: CalendarEvent) -> tuple[object, ...]:
