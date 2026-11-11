@@ -10,7 +10,8 @@ too. The layer is described in [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.
   Under pytest real network and `live` are refused, except in the contract run (`SKILLFORGE_CONTRACT_RUN=1`, set
   only by `just contract-sevdesk`) against a `trial` account. Tests use `httpx.MockTransport` and synthetic data.
 - **Never retry a write.** A write that may have reached the remote system is an `OutcomeUnknownError`; the calling
-  service records it for a later reconcile. Calls run synchronously from services - no job queue.
+  service records it for a later reconcile. Calls run synchronously from services - no job queue - so a client that
+  repeats a read bounds it in attempts and in total time (Graph: `MAX_ATTEMPTS`, `READ_DEADLINE_SECONDS`).
 - **Errors stay internal.** Integration errors (`errors.py`) are no `DomainError`; the calling service decides what
   an API client sees. No message, log line or `repr` carries a credential, a header, a query, a body or an id:
   a path is named by its template (`path_template`).

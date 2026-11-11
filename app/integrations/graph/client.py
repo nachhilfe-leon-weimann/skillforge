@@ -9,13 +9,18 @@ by its template (``CALENDAR_VIEW_TEMPLATE``), never the mailbox or a calendar id
 A ``429`` is repeated as its ``Retry-After`` says - by this client, for reads only, at most ``MAX_ATTEMPTS`` times
 and never after a wait above ``MAX_RETRY_AFTER_SECONDS``; a ``Retry-After`` that is missing, no whole number of
 seconds or above the cap ends the read as ``IntegrationUnavailableError``. Any other error, a ``403`` among them,
-is never repeated. ``GRAPH__MODE`` decides nothing yet: the client has no write.
+is never repeated. One read - a ``connect`` block: the token request, the identity check and the ``calendarView``
+pages - ends within ``READ_DEADLINE_SECONDS``: no send starts and no wait is taken without time left, a send still
+running at the deadline is cut, and the read ends as ``IntegrationUnavailableError``. A listing longer than
+``MAX_PAGES`` is refused, never cut short. ``GRAPH__MODE`` decides nothing yet: the client has no write.
 """
 
 import asyncio
 import re
+import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Self
 from urllib.parse import quote
@@ -33,7 +38,7 @@ from app.integrations.errors import (
 from app.integrations.transport import InnerTransport, IntegrationHttp, Params, Reply
 
 from .config import GraphSettings
-from .credential import TOKENS, AppCredential, TokenCache, app_token, load_credential
+from .credential import TOKEN_PATH_TEMPLATE, TOKENS, AppCredential, TokenCache, app_token, load_credential
 from .identity import verify_calendar
 from .models import Calendar, CalendarEvent, GraphModel
 
@@ -66,6 +71,8 @@ MAX_PAGES = 100
 MAX_ATTEMPTS = 3
 """A throttled read is sent at most this often."""
 MAX_RETRY_AFTER_SECONDS = 30
+READ_DEADLINE_SECONDS = 120
+"""One read - token, identity check and every page - ends within this many seconds, throttling waits included."""
 CALENDARS_TEMPLATE = "/users/{mailbox}/calendars"
 CALENDAR_VIEW_TEMPLATE = "/users/{mailbox}/calendars/{calendar_id}/calendarView"
 
@@ -73,16 +80,54 @@ _SECONDS = re.compile(r"[0-9]+")
 """``Retry-After`` as delta-seconds; Graph sends no HTTP date, and one is not honoured."""
 
 type Sleep = Callable[[float], Awaitable[None]]
+type Clock = Callable[[], float]
+
+
+@dataclass(frozen=True, slots=True)
+class _Deadline:
+    """The end of one read, on a monotonic clock."""
+
+    at: float
+    clock: Clock
+
+    @classmethod
+    def start(cls, clock: Clock) -> _Deadline:
+        return cls(clock() + READ_DEADLINE_SECONDS, clock)
+
+    def left(self) -> float:
+        return self.at - self.clock()
+
+    def passed(self, where: str) -> IntegrationUnavailableError:
+        return IntegrationUnavailableError(f"graph {where}: the read passed its deadline of {READ_DEADLINE_SECONDS} s")
+
+    async def run[T](self, send: Callable[[], Awaitable[T]], where: str) -> T:
+        """Start ``send`` only with time left, and cut it at the deadline."""
+        if (left := self.left()) > 0:
+            try:
+                async with asyncio.timeout(left) as scope:
+                    return await send()
+            except TimeoutError:
+                if not scope.expired():
+                    raise
+        raise self.passed(where) from None
 
 
 class GraphClient:
     """The lesson calendar of one mailbox. Built by ``connect``: a client whose calendar is not confirmed reads none
     (``IdentityCheckError``)."""
 
-    def __init__(self, http: IntegrationHttp, *, mailbox: str, sleep: Sleep = asyncio.sleep) -> None:
+    def __init__(
+        self,
+        http: IntegrationHttp,
+        *,
+        mailbox: str,
+        sleep: Sleep = asyncio.sleep,
+        deadline: _Deadline | None = None,
+    ) -> None:
         self._http = http
         self._user_path = f"/users/{quote(mailbox, safe='@')}"
         self._sleep = sleep
+        self._deadline = deadline or _Deadline.start(time.monotonic)
         self._calendar_id: str | None = None
 
     def __repr__(self) -> str:
@@ -97,12 +142,18 @@ class GraphClient:
         transport: InnerTransport | None = None,
         tokens: TokenCache = TOKENS,
         sleep: Sleep = asyncio.sleep,
+        clock: Clock = time.monotonic,
     ) -> AsyncGenerator[Self]:
-        """A client whose lesson calendar passed the identity check (fail closed: ``IdentityCheckError``)."""
+        """A client whose lesson calendar passed the identity check (fail closed: ``IdentityCheckError``), for one
+        read: its deadline starts here."""
+        deadline = _Deadline.start(clock)
         credential = _credential(settings)
         if settings.mailbox is None or settings.calendar_name is None:
             raise IdentityCheckError("GRAPH__MAILBOX or GRAPH__CALENDAR_NAME is not set: no calendar can be confirmed")
-        token = await app_token(credential, mode=settings.mode, tokens=tokens, transport=transport)
+        token = await deadline.run(
+            lambda: app_token(credential, mode=settings.mode, tokens=tokens, transport=transport),
+            f"POST {TOKEN_PATH_TEMPLATE}",
+        )
         http = IntegrationHttp(
             name="graph",
             base_url=BASE_URL,
@@ -115,7 +166,7 @@ class GraphClient:
             transport=transport,
         )
         async with http:
-            client = cls(http, mailbox=settings.mailbox, sleep=sleep)
+            client = cls(http, mailbox=settings.mailbox, sleep=sleep, deadline=deadline)
             client._calendar_id = await verify_calendar(
                 client._calendars, mailbox=settings.mailbox, name=settings.calendar_name
             )
@@ -156,10 +207,12 @@ class GraphClient:
         raise UnexpectedResponseError(f"graph GET {template}: more than {MAX_PAGES} pages")
 
     async def _read(self, url: str, params: Params | None, template: str) -> Reply:
-        """One read; a ``429`` is repeated as its ``Retry-After`` says, within ``MAX_ATTEMPTS`` and the cap."""
+        """One read; a ``429`` is repeated as its ``Retry-After`` says, within ``MAX_ATTEMPTS``, the cap and the
+        read's deadline."""
+        where = f"GET {template}"
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
-                return await self._http.read(url, params=params, template=template)
+                return await self._deadline.run(lambda: self._http.read(url, params=params, template=template), where)
             except IntegrationRejectedError as exc:
                 if exc.status != 429:
                     raise
@@ -168,6 +221,8 @@ class GraphClient:
                     raise IntegrationUnavailableError(
                         f"graph GET {template} was throttled ({attempt} of {MAX_ATTEMPTS} attempts)", status=429
                     ) from None
+                if delay >= self._deadline.left():
+                    raise self._deadline.passed(where) from None
                 await self._sleep(delay)
         raise AssertionError("unreachable")
 

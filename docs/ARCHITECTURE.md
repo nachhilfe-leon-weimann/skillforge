@@ -112,8 +112,12 @@ row, commit, call, record the outcome - there is no job queue.
   calendar named `GRAPH__CALENDAR_NAME` among the mailbox's calendars must exist once and be owned by
   `GRAPH__MAILBOX` - the app has no directory permission to read the mailbox itself; anything else, a failed read
   included, is an `IdentityCheckError`. `calendar_view` reads `calendarView` in UTC with only the fields of
-  fixture G1 (`EVENT_FIELDS`), following `@odata.nextLink` on the Graph host; the client repeats a `429` as its
-  `Retry-After` says, bounded (`MAX_ATTEMPTS`, `MAX_RETRY_AFTER_SECONDS`), and nothing else. Graph has no trial:
+  fixture G1 (`EVENT_FIELDS`), following `@odata.nextLink` on the Graph host, and refuses a listing longer than
+  `MAX_PAGES` instead of cutting it short; the client repeats a `429` as its `Retry-After` says, bounded
+  (`MAX_ATTEMPTS`, `MAX_RETRY_AFTER_SECONDS`), and nothing else. One read - a `connect` block with its token
+  request, identity check and pages - ends within `READ_DEADLINE_SECONDS` (120 s): no send starts and no wait is
+  taken without time left, a send still running is cut, and the read ends as `IntegrationUnavailableError` (inside
+  the identity check, as `IdentityCheckError`). Graph has no trial:
   the client treats its tenant as a `live` account, which no test run reaches. Log lines and errors name paths by
   their templates (`CALENDAR_VIEW_TEMPLATE`), never the mailbox or a calendar id.
 - **Tooling** for the maintainer, all calling sevDesk and none in CI: `just sevdesk-doctor trial|live`

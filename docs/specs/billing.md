@@ -1187,7 +1187,8 @@ write (`invoices.py`)._
   - [x] Every test runs through a mocked transport: on fixtures G1 to G7, and on an answer built in the test where
         no fixture holds the case - a `429`, a `5xx`, a body that is no JSON or does not parse, an unusable token,
         a transport error.
-  - [x] Paging reads to the end; a `429` is repeated as `Retry-After` says, a `403` is not.
+  - [x] Paging reads to the end; a `429` is repeated as `Retry-After` says, within a total deadline per read, a
+        `403` is not.
   - [x] Only the fields of G1 are requested.
   - [x] No calendar read leaves before the identity check passed; a calendar owned by another address and a
         missing calendar each fail closed.
