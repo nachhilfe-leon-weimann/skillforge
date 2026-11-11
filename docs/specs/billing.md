@@ -320,8 +320,9 @@ Every column that references a party has its row in `EXTERNAL_LINKS`, and the de
 ## Calendar import
 
 The import reads one calendar of one mailbox (`GRAPH__MAILBOX`, `GRAPH__CALENDAR_NAME`) for a range of at most 92
-Berlin days through `calendarView`, which expands a series into occurrences. It asks for times in UTC and converts with
-`Europe/Berlin`. It requests only the fields of fixture G1 - never a body, attendees or an organizer.
+Berlin days - a bound the request model of the import route checks - through `calendarView`, which expands a series
+into occurrences. It asks for times in UTC and converts with `Europe/Berlin`. It requests only the fields of
+fixture G1 - never a body, attendees or an organizer.
 
 What happens to an occurrence, first match wins:
 
@@ -360,20 +361,23 @@ What happens to an occurrence, first match wins:
   cancelled early is deleted from the calendar and so never shows.
 - **A ticked or charged lesson is never changed.** If its appointment moved, shrank or vanished, the import sets
   `changed` on the event and the maintainer decides.
-- **The rules are applied at every import**, also to an occurrence that has a lesson. If the title names another
-  student or subject - by the rules' lesson, or by its name where the rules stop before it (a phone call, an
-  all-day entry, a first meeting, a duration no lesson can have) - the import flags `changed` at every import until
-  the lesson, the title or an alias settles it. If the rules give no lesson, a touched lesson's appointment changed,
+- **The rules are applied at every import** to an occurrence that has a lesson as well; a dismissed or flagged
+  occurrence without one is not judged again. If the title of an occurrence with a lesson names another student -
+  by the rules' lesson, or by its name where the rules stop before it (a phone call, an all-day entry, a first
+  meeting, a duration no lesson can have) - or another subject, which is compared only for the rules' lesson and a
+  duration no lesson can have, the import flags `changed` at every import until the lesson, the title or an alias
+  settles it; then a dismiss clears the flag. If the rules give no lesson, a touched lesson's appointment changed,
   or the lesson cannot follow because its student has a lesson at the new start already, it flags `changed`. In no
   case does it change the lesson.
-- **Dismissing acknowledges** what was seen - and so does assigning an occurrence: a "no lesson" answer and a
-  change already seen stay quiet until start, end, cancellation, subject, a new no-lesson reason or the presence
-  changes again. Another student or subject is never acknowledged.
+- **For an occurrence with a lesson, dismissing acknowledges** what was seen - and so does assigning an
+  occurrence: a "no lesson" answer and a change already seen stay quiet until start, end, cancellation, subject, a
+  new no-lesson reason or the presence changes again. Another student, and another subject where it is compared, is
+  never acknowledged.
 - **A vanished appointment of a touched lesson** is flagged once (`calendar_event.vanished`); seen again, the
   occurrence is compared as usual, and a later vanishing is flagged again.
 - **Names are kept only as long as needed** (PD13): `title_name` only while an occurrence waits for an assignment.
-  Every occurrence without a lesson - unassigned or dismissed, whether or not it held a name - is deleted 90 Berlin
-  days after its start, with the next import. Its dismissal goes with it: importing that range again proposes the
+  Every occurrence without a lesson, whether or not it held a name, is deleted 90 Berlin days after its start, with
+  the next import. Its dismissal goes with it: importing that range again proposes the
   occurrence anew, and the same import deletes it again unless it gets a lesson.
 
 ## Pricing, charges and invoices
