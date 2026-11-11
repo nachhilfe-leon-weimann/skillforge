@@ -402,8 +402,8 @@ What happens to an occurrence, first match wins:
   short sessions with `Database.session()`, one before the call and one after.
 - **Read-back.** After a successful create the invoice and its positions are read back, and the sum of sevDesk's
   positions is compared with `total_cents` to the cent. A difference sets `drift`; nothing is corrected silently.
-  `getPositions` answers without `total` (Q18), so positions are read with `limit=1000`: a listing as long as the
-  limit, or whose sum differs from the invoice's `sumNet`, is incomplete and sets `drift` as well.
+  `getPositions` answers without `total` (Q18): a read-back that `invoice_positions` refuses, or positions whose
+  sum differs from the invoice's `sumNet`, sets `drift` as well.
 - **The sevDesk request** follows today's invoices: `invoiceType` `RE`, `status` 100, `currency` `EUR`, the
   contact from `ext.sevdesk_contact`, the contact person and the hour unit from configuration, `taxRule` 11 with
   the § 19 text, the invoice's `taxRate` and `discount` 0, `timeToPay` 14, `invoiceDate`, `deliveryDate` and
@@ -462,13 +462,15 @@ What happens to an occurrence, first match wins:
 - **Refresh** reads status, number, positions and sums. It sets `drift` when positions or the sum differ from the
   snapshot, and it changes no charge (PD7).
 - **`discard` and `mark-cancelled` read first.** After the identity check, `discard` reads the draft and proceeds
-  only if sevDesk answers `404` (Q17). `mark-cancelled` reads the frozen contact's invoices whole and proceeds only if
-  one of type `SR` names the invoice as its `origin` and its `sumNet` is exactly the invoice's sum negated; the
-  original's own status stays 1000 and proves nothing (Q12). A partial cancellation is the maintainer's by hand.
+  only if sevDesk answers `404` (Q17). `mark-cancelled` reads the frozen contact's invoices whole and proceeds only
+  if one of type `SR` names the invoice as its `origin` and its `sumNet` is exactly the original's `sumNet`, as
+  sevDesk lists it, negated; the original's own status stays 1000 and proves nothing (Q12). A partial cancellation
+  is the maintainer's by hand.
   Anything else is `invoice_state`; a read that fails changes nothing.
 - **Drift on a draft** means the maintainer edited it in sevDesk. The way out is to make sevDesk match again, or to
-  delete the draft there, discard it here and create a new one. Drift compares positions (quantity, price, description) and sums, never `header`, `headText` or `footText`:
-  sevDesk's editor stores a text it saved in another form that looks the same (Verified behavior).
+  delete the draft there, discard it here and create a new one. Drift compares positions (quantity, price,
+  description) and sums, never `header`, `headText` or `footText`: sevDesk's editor stores a text it saved in
+  another form that looks the same (Verified behavior).
 
 ### Errors from an integration
 
@@ -548,7 +550,8 @@ What is _not_ family-visible text and lives elsewhere - German words included, b
 ### Position
 
 The position's name is the sevDesk part of the subject (`<Fach>-Online`: `Mathe-Online`, `Informatik-Online`, ...).
-SkillForge sends the part's name read at the preview (PD4). Quantity: `minutes / 60` with two decimals (`1,00`, `1,50`), unit `Std`.
+SkillForge sends the part's name read at the preview (PD4). Quantity: `minutes / 60` with two decimals (`1,00`,
+`1,50`), unit `Std`.
 
 `POSITION_DESCRIPTION` - a lesson:
 
@@ -683,8 +686,8 @@ Mit freundlichen Grüßen<br>
   invoices render it as `…/zahlung?re=<number>&betrag=<d,dd>%20EUR`: the amount with a decimal comma and ` EUR`.
   The link must satisfy the `/zahlung` contract ([Verified behavior](#verified-behavior)); an invoice without
   PayPal has no link.
-- `{Zahlungsziel}`, `{Kontaktperson}`, `{Rechnungsnummer}` and `{Betrag}` stand for sevDesk's placeholders
-  `[%ZAHLUNGSZIEL%]`, `[%KONTAKTPERSON%]`, `[%RECHNUNGSNUMMER%]` and `[%BETRAG%]`, which sevDesk resolves when it
+- `{Zahlungsziel}` and `{Kontaktperson}` stand for sevDesk's placeholders `[%ZAHLUNGSZIEL%]` and
+  `[%KONTAKTPERSON%]`; `PAYMENT_LINK` carries `[%RECHNUNGSNUMMER%]` and `[%BETRAG%]`. sevDesk resolves them when it
   renders - inside the link target too (Q2). `[%ZAHLUNGSZIEL%]` printed the invoice date on the trial's drafts,
   which carried no `timeToPay`; the draft sends `timeToPay` 14 (decision L), and the first real draft shows the
   date (SF6). `[%BETRAG%]` renders as `97,50%20EUR`, which `/zahlung` accepts.
@@ -1377,11 +1380,11 @@ write (`invoices.py`)._
 
 - _Technique:_ `POST /invoices` as in [Pricing, charges and invoices](#pricing-charges-and-invoices): fingerprint,
   pending row and charges, commit, one call, outcome, read-back; `GET /invoices...`. The billing services never
-  set `customer_internal_note` (decision R) and send each position's frozen part name (PD4). `invoice_positions` in the sevDesk
-  client reads with `limit=1000` instead of `countAll`, which `getPositions` ignores (Q18), and refuses a listing as
-  long as the limit; read-back, refresh and reconcile compare the positions' sum with `sumNet`. The client's module
-  docstring no longer speaks of validation errors as `500` (Q14). The client reads an error's message from both recorded
-  shapes (`{"error": {"message"}}` and the `401`'s `{"message"}`, S21). The create service takes the
+  set `customer_internal_note` (decision R) and send each position's frozen part name (PD4). `invoice_positions` in
+  the sevDesk client reads with `limit=1000` instead of `countAll`, which `getPositions` ignores (Q18), and refuses
+  a listing as long as the limit; read-back, refresh and reconcile compare the positions' sum with `sumNet`. The
+  client's module docstring no longer speaks of validation errors as `500` (Q14). The client reads an error's
+  message from both recorded shapes (`{"error": {"message"}}` and the `401`'s `{"message"}`, S21). The create service takes the
   `Database`, not the request's `DBSession`, and opens two short sessions; the billing architecture test names
   this route as the one that may.
 - _Tests that change:_ none - and no scenario or golden file.
@@ -1411,7 +1414,7 @@ write (`invoices.py`)._
         unchanged (S20, one test each). `find_invoices` and its `customerInternalNote` filter leave the sevDesk
         client.
   - [ ] Two `unknown` invoices of one contact with equal quantities and prices but different lesson days never bind
-        to the same draft: the description decides.
+        to the same draft: the description decides. One match among several candidates is `created`.
   - [ ] Reconcile and `mark-cancelled` read the contact frozen on the invoice; relinking the payer changes neither.
   - [ ] Reconcile refuses a `pending` row younger than the write timeout plus one minute (`invoice_state`).
   - [ ] Refresh never changes a charge - not on a `404`, a `401` or a `5xx` (one test each).
@@ -1439,7 +1442,8 @@ write (`invoices.py`)._
   - [ ] `.env.example` lists every setting of [Configuration](#configuration) without a real value.
   - [ ] The maintainer confirmed: the production database has moved, the configuration is set, the doctor is green
         on the real account, `/health` reports the released version.
-  - [ ] The maintainer created the first real draft and checked it in sevDesk: title, texts, link, GiroCode, sum.
+  - [ ] The maintainer created the first real draft and checked it in sevDesk: title, texts, link, GiroCode, sum;
+        a refresh after saving it in the old editor shows no drift.
 
 **SF-CLI - Command-line stage.** _After SF7, before the admin screens._
 
