@@ -6,10 +6,10 @@ These tests commit, so they cannot run on the rolled-back ``session`` fixture; t
 import asyncio
 import uuid
 from collections.abc import AsyncIterator
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 from app.core.db import Database
 from app.core.db.models import Party, PreferredMeetingTool, Rate
@@ -92,3 +92,31 @@ async def test_a_put_for_a_student_whose_delete_is_under_way_waits_and_then_is_p
     finally:
         await deleting.close()
         await writing.close()
+
+
+# A wrong lock mode makes the second transaction wait: it fails after this instead of hanging.
+LOCK_TIMEOUT = text("SET LOCAL lock_timeout = '1s'")
+# The lock the CRM's `saved` takes on every party it touches.
+NO_KEY_UPDATE = text("SELECT id FROM core.party WHERE id = :party_id FOR NO KEY UPDATE")
+
+
+async def test_the_student_lock_blocks_neither_another_rate_put_nor_a_crm_write(
+    db: Database, students: list[uuid.UUID]
+):
+    """A rate `PUT` holds its student `FOR KEY SHARE`, the weakest lock that keeps `delete_party` out: a second `PUT`
+    for the same student and the CRM's `FOR NO KEY UPDATE` are granted at once."""
+    student = students[0]
+    holding, other, crm = db.session_factory(), db.session_factory(), db.session_factory()
+    try:
+        # The first PUT holds the student's lock, not committed ...
+        await rates.put_rate(holding, student, DAY, cents_per_hour=3200)
+        for session in (other, crm):
+            await session.execute(LOCK_TIMEOUT)
+
+        # ... and neither a PUT on another day for the student nor a CRM write on it waits.
+        await rates.put_rate(other, student, DAY + timedelta(days=1), cents_per_hour=3600)
+        assert await crm.scalar(NO_KEY_UPDATE, {"party_id": student}) == student
+    finally:
+        await holding.close()
+        await other.close()
+        await crm.close()
