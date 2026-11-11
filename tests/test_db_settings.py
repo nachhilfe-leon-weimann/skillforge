@@ -27,9 +27,10 @@ def test_a_malformed_url_is_refused_without_repeating_it(clean_env, field: str):
     clean_env.setenv("DB__URL", VALID_URL)
     clean_env.setenv(f"DB__{field.upper()}", MALFORMED_URL)
 
-    with pytest.raises(ValidationError, match=field) as raised:
+    with pytest.raises(ValidationError) as raised:
         DatabaseSettings.from_env()
 
+    assert [error["loc"] for error in raised.value.errors()] == [(field,)]
     for shown in (str(raised.value), repr(raised.value)):
         assert MALFORMED_URL not in shown
         assert PASSWORD not in shown
