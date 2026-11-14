@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.7.0](https://github.com/nachhilfe-leon-weimann/skillforge/compare/v0.6.0...v0.7.0) (2026-11-14)
+
+
+### Features
+
+* **billing:** add students' rates and the seed-demo command ([#229](https://github.com/nachhilfe-leon-weimann/skillforge/issues/229)) ([368a7ad](https://github.com/nachhilfe-leon-weimann/skillforge/commit/368a7ad9d85f122002f5fe473b899283e2827d19))
+* **billing:** add the calendar rules and the calendar alias table ([#233](https://github.com/nachhilfe-leon-weimann/skillforge/issues/233)) ([e1feb6e](https://github.com/nachhilfe-leon-weimann/skillforge/commit/e1feb6e77e3e8101ceb14eadeb9f355c6bbd5f4b))
+* **billing:** add the lesson and rate schema and the billing scopes ([#226](https://github.com/nachhilfe-leon-weimann/skillforge/issues/226)) ([f46e292](https://github.com/nachhilfe-leon-weimann/skillforge/commit/f46e29286fb06625996f57d746386941d76a57d9))
+* **billing:** add the lessons and their life cycle ([#227](https://github.com/nachhilfe-leon-weimann/skillforge/issues/227)) ([fff80a0](https://github.com/nachhilfe-leon-weimann/skillforge/commit/fff80a01659bd989d13acc816aaa9bb56a9ca74d))
+* **billing:** add the payer mapping backfill command ([#231](https://github.com/nachhilfe-leon-weimann/skillforge/issues/231)) ([5f4de4f](https://github.com/nachhilfe-leon-weimann/skillforge/commit/5f4de4ffc7ef096e0707723ed1dc4b05e7994b38))
+* **billing:** add the payer of a lesson and the sevDesk contact link ([#230](https://github.com/nachhilfe-leon-weimann/skillforge/issues/230)) ([d5820b8](https://github.com/nachhilfe-leon-weimann/skillforge/commit/d5820b8ca01a7d3c9f9ce7ff54af55a5d1407ffd))
+* **billing:** import the lesson calendar ([#234](https://github.com/nachhilfe-leon-weimann/skillforge/issues/234)) ([e15529d](https://github.com/nachhilfe-leon-weimann/skillforge/commit/e15529dd8749e19216104f1a8bdccf5ba2249f67))
+* **integrations:** add the fixture recorder and the sevDesk spike script ([#215](https://github.com/nachhilfe-leon-weimann/skillforge/issues/215)) ([71b91f1](https://github.com/nachhilfe-leon-weimann/skillforge/commit/71b91f1a4ba2f434cd8741940bc9411d402c5922))
+* **integrations:** add the guarded outbound transport and integration modes ([#211](https://github.com/nachhilfe-leon-weimann/skillforge/issues/211)) ([2ef35be](https://github.com/nachhilfe-leon-weimann/skillforge/commit/2ef35be31d713bc322317a1d827122eb9f27d7bd))
+* **integrations:** add the sevDesk client with its identity check ([#212](https://github.com/nachhilfe-leon-weimann/skillforge/issues/212)) ([a3927b2](https://github.com/nachhilfe-leon-weimann/skillforge/commit/a3927b2eb62ee5ed9fb11fae918d680b6f6a83a5))
+* **integrations:** add the sevDesk doctor and the contract-test run ([#218](https://github.com/nachhilfe-leon-weimann/skillforge/issues/218)) ([019c91b](https://github.com/nachhilfe-leon-weimann/skillforge/commit/019c91b62d1cf8f6e358afb958992ef806f5b5d9))
+* **integrations:** add the sevDesk invoice drafts ([#213](https://github.com/nachhilfe-leon-weimann/skillforge/issues/213)) ([cbc2a5b](https://github.com/nachhilfe-leon-weimann/skillforge/commit/cbc2a5b3c3b6366b40f7d0c2946ab07921358c5a))
+* **integrations:** read the lesson calendar through Microsoft Graph ([#232](https://github.com/nachhilfe-leon-weimann/skillforge/issues/232)) ([a33c6e7](https://github.com/nachhilfe-leon-weimann/skillforge/commit/a33c6e7f1badce423ce2c0b0033f009fbb975106))
+* **integrations:** walk the fixture manifest's remaining rows in the spike ([#216](https://github.com/nachhilfe-leon-weimann/skillforge/issues/216)) ([897c987](https://github.com/nachhilfe-leon-weimann/skillforge/commit/897c987e62f3011b30fbde2d083ca3d8b45956b1))
+
+
+### Bug Fixes
+
+* **billing:** give no lesson to an appointment off the minute ([#245](https://github.com/nachhilfe-leon-weimann/skillforge/issues/245)) ([35bfb68](https://github.com/nachhilfe-leon-weimann/skillforge/commit/35bfb68715eaeda8eea716e4da74703e616b7c82))
+* **billing:** recognise a first meeting whose subject contains Kennenlern ([#240](https://github.com/nachhilfe-leon-weimann/skillforge/issues/240)) ([907deef](https://github.com/nachhilfe-leon-weimann/skillforge/commit/907deef6b3cd3dd98860d0c6c84798ebd164a9d1))
+* **billing:** refuse a lesson start that is not on the minute ([#235](https://github.com/nachhilfe-leon-weimann/skillforge/issues/235)) ([d2fa8ac](https://github.com/nachhilfe-leon-weimann/skillforge/commit/d2fa8ac74e026364722f3f41c4e53215eb9104e2))
+* **billing:** show the backfill's rate span and refuse a decimal default rate ([#237](https://github.com/nachhilfe-leon-weimann/skillforge/issues/237)) ([b6352c0](https://github.com/nachhilfe-leon-weimann/skillforge/commit/b6352c02bc1c0813732f658edd78f10bb911c0e2))
+* **db:** keep a malformed database URL out of validation errors ([#238](https://github.com/nachhilfe-leon-weimann/skillforge/issues/238)) ([aa1a888](https://github.com/nachhilfe-leon-weimann/skillforge/commit/aa1a888be98358f6c78b54d21de4bccab0a11912))
+* **db:** keep the database URLs out of the settings representation ([#243](https://github.com/nachhilfe-leon-weimann/skillforge/issues/243)) ([f66923e](https://github.com/nachhilfe-leon-weimann/skillforge/commit/f66923e207232326639f1c62783fd179b75aa4ea))
+* **integrations:** send the invoice's tax rate and discount to sevDesk ([#246](https://github.com/nachhilfe-leon-weimann/skillforge/issues/246)) ([6612e85](https://github.com/nachhilfe-leon-weimann/skillforge/commit/6612e858f48e746e7f3220f0417664160bf5b899))
+* **scripts:** stop the RBAC script on a failed Exchange write ([#223](https://github.com/nachhilfe-leon-weimann/skillforge/issues/223)) ([8e787da](https://github.com/nachhilfe-leon-weimann/skillforge/commit/8e787da70ae41b07ed8e8630860867de9e0abc89))
+* **tests:** keep the leak tests' ids out of log timestamps ([#224](https://github.com/nachhilfe-leon-weimann/skillforge/issues/224)) ([3a8b443](https://github.com/nachhilfe-leon-weimann/skillforge/commit/3a8b443f9a51fc81417d853dc867f9eb1fbc6762))
+
 ## [0.6.0](https://github.com/nachhilfe-leon-weimann/skillforge/compare/v0.5.0...v0.6.0) (2026-10-01)
 
 
