@@ -19,8 +19,9 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    ports:
-      - "8000:8000"
+    # Only Traefik reaches the API, over the Docker network; nothing is published on the host.
+    expose:
+      - "8000"
 
   # Housekeeping: deletes login sessions and one-time tokens 30 days after they expire, and beats for
   # /health. Same image as the app, its own entrypoint, the pooled DB connection; SKIP LOCKED batches
