@@ -64,23 +64,27 @@ _FOOT_REST = LINE.join((
     "Mit freundlichen Grüßen",
     "[%KONTAKTPERSON%]",
 ))
-FOOT_TEXT = (
-    f'Spike {{run_id}}: <strong>Zahlungsverfahren:</strong> <i>PayPal (<a href="{PAY_LINK}">Weiter mit PayPal</a>)'
-    f"</i>{LINE}{_FOOT_REST}"
+FOOT_TEXT = LINE.join((
+    "Spike {run_id}: Bitte überweisen Sie den Betrag <strong>bis zum [%ZAHLUNGSZIEL%]</strong> mit dem "
+    "Verwendungszweck [%RECHNUNGSNUMMER%].",
+    "Bei Fragen erreichen Sie mich jederzeit per E-Mail oder WhatsApp.",
+    "Mit freundlichen Grüßen",
+    "[%KONTAKTPERSON%]",
+))
+"""S15: ``FOOT_TEXT`` of billing.md, with sevDesk's placeholders."""
+FOOT_TEXT_DOCUMENT_NUMBER = (
+    f'Spike {{run_id}}: <strong>Zahlungsverfahren:</strong> <i>PayPal (<a href="{PAY_LINK_DOCUMENT_NUMBER}">'
+    f"Weiter mit PayPal</a>)</i>{LINE}{_FOOT_REST}"
 )
-"""S15: the markup of ``FOOT_PAYPAL`` in billing.md, with candidate placeholders (``discovery`` lists the account's)
-and italic as ``<i>``: sevDesk's editor drops ``<em>`` when the maintainer saves a draft."""
-FOOT_TEXT_DOCUMENT_NUMBER = FOOT_TEXT.replace(PAY_LINK, PAY_LINK_DOCUMENT_NUMBER)
-"""S15: ``FOOT_TEXT`` with ``PAY_LINK_DOCUMENT_NUMBER``, on one variant of S11."""
+"""S15: SP-SD's PayPal foot text with ``PAY_LINK_DOCUMENT_NUMBER``, on one variant of S11; italic as ``<i>``:
+sevDesk's editor drops ``<em>`` when the maintainer saves a draft."""
 FOOT_TRANSFER = f"Spike {{run_id}}: <strong>Zahlungsverfahren:</strong> <i>Überweisung</i>{LINE}{_FOOT_REST}"
 """S15: ``FOOT_TRANSFER`` of billing.md, italic as ``<i>``, on one variant of S11."""
 HEAD_TEXT = LINE.join((
     "Spike {run_id}: [%VOLLEANREDE%],",
-    "",
-    "vielen Dank für Ihren Auftrag und das damit verbundene Vertrauen!",
-    "Nachfolgend finden Sie die Abrechnung der vereinbarten Leistungen im oben genannten Zeitraum:",
+    "vielen Dank für Ihr Vertrauen. Hier ist die Abrechnung der Nachhilfestunden im oben genannten Zeitraum:",
 ))
-"""S15: ``HEAD_TEXT`` of billing.md, with today's placeholder for the full salutation (M3)."""
+"""S15: ``HEAD_TEXT`` of billing.md, with the placeholder for the full salutation (M3)."""
 DOCUMENT_TITLE = "Spike {run_id}: Rechnung Nr. [%DOKUMENTENNUMMER%]"
 """S14: ``DOCUMENT_TITLE`` of billing.md as the ``header`` of one variant of S11 (M9)."""
 TOPUP_TEXT = "Vorauszahlung für kommende Unterrichtsstunden"

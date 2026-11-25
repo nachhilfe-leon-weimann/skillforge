@@ -122,12 +122,12 @@ async def test_a_full_walk_creates_tagged_objects_records_everything_and_saves_t
     assert written["/api/v1/Contact"]["familyname"] == RUN_ID
     drafts = [json.loads(r.content)["invoice"] for r in trial.requests if r.url.path.endswith("/saveInvoice")]
     assert all(draft["customerInternalNote"] in (TAG, f"{TAG}:S20", f"{TAG}:S21") for draft in drafts)
-    assert drafts[0]["footText"].startswith(f"Spike {RUN_ID}: <strong>Zahlungsverfahren:</strong> <i>PayPal")
-    assert "?re=[%RECHNUNGSNUMMER%]&betrag=" in drafts[0]["footText"]
+    assert drafts[0]["footText"].startswith(f"Spike {RUN_ID}: Bitte überweisen Sie den Betrag")
+    assert "Verwendungszweck [%RECHNUNGSNUMMER%]." in drafts[0]["footText"]
     assert [d.get("footText", "").split("<br>")[0] for d in drafts].count(TRANSFER) == 1, (
         "one variant with FOOT_TRANSFER"
     )
-    assert drafts[0]["headText"].startswith(f"Spike {RUN_ID}: [%VOLLEANREDE%],<br>\n<br>\n")
+    assert drafts[0]["headText"].startswith(f"Spike {RUN_ID}: [%VOLLEANREDE%],<br>\nvielen Dank")
     assert [d.get("header") for d in drafts].count(f"Spike {RUN_ID}: Rechnung Nr. [%DOKUMENTENNUMMER%]") == 1, (
         "one variant with DOCUMENT_TITLE"
     )
@@ -620,14 +620,13 @@ def test_the_s15_texts_are_the_specs_blocks_line_by_line():
         "{Vollanrede}": "[%VOLLEANREDE%]",
         "{Zahlungsziel}": "[%ZAHLUNGSZIEL%]",
         "{Kontaktperson}": "[%KONTAKTPERSON%]",
-        "{Zahlungslink}": sevdesk_spike.PAY_LINK,
+        "{Rechnungsnummer}": "[%RECHNUNGSNUMMER%]",
     }
-    texts = {"HEAD_TEXT": "HEAD_TEXT", "FOOT_PAYPAL": "FOOT_TEXT", "FOOT_TRANSFER": "FOOT_TRANSFER"}
-    for block, constant in texts.items():
+    for block in ("HEAD_TEXT", "FOOT_TEXT"):
         expected = _spec_block(block)
         for written, placeholder in placeholders.items():
             expected = expected.replace(written, placeholder)
-        assert getattr(sevdesk_spike, constant) == "Spike {run_id}: " + expected, constant
+        assert getattr(sevdesk_spike, block) == "Spike {run_id}: " + expected, block
 
 
 def test_the_document_title_and_the_top_up_text_are_the_specs_blocks():
