@@ -22,7 +22,6 @@ def settings() -> SevdeskSettings:
         expected_account_id=ACCOUNT_ID,
         contact_person_id=11,
         hour_unit_id=12,
-        payment_method_field_setting_id=13,
     )
 
 

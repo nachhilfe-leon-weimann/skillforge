@@ -17,8 +17,8 @@ too. The layer is described in [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.
   a path is named by its template (`path_template`).
 - **Imports.** This package imports only `app.core` and itself; `app/core/` imports nothing from it but the
   settings `app/core/config.py` nests (`tests/integrations/test_integrations_architecture.py`).
-- **Ids are configuration.** Account-specific ids (contact person, units, custom fields) come from settings, never
-  from literals in code.
+- **Ids are configuration.** Account-specific ids (contact person, units) come from settings, never from literals
+  in code.
 - **Fixtures only through the recorder.** `Recorder` in `recording.py` writes them under
   `tests/fixtures/<integration>/<run id>/`, scrubbed, and never overwrites one; `tests/test_fixture_scan.py`
   checks them. Never hand-edit a recorded fixture. Graph's are the exception: synthetic, built from the

@@ -37,7 +37,6 @@ from .models import (
     Account,
     BookkeepingVersion,
     Contact,
-    ContactCustomField,
     CustomFieldSetting,
     Invoice,
     InvoicePosition,
@@ -154,24 +153,6 @@ class SevdeskClient:
 
     async def get_contact(self, contact_id: int) -> Contact | None:
         return await self._get_by_id(Contact, "/Contact", contact_id)
-
-    async def custom_field_settings(self) -> list[CustomFieldSetting]:
-        return await self._get_list(CustomFieldSetting, "/ContactCustomFieldSetting")
-
-    async def get_custom_field_setting(self, setting_id: int) -> CustomFieldSetting | None:
-        return await self._get_by_id(CustomFieldSetting, "/ContactCustomFieldSetting", setting_id)
-
-    async def contact_custom_fields(self, contact_id: int) -> list[ContactCustomField]:
-        """The custom field values of one contact; filtered here too, in case sevDesk ignores the filter.
-
-        Whether sevDesk filters by contact is a spike question."""
-        params = {"contact[id]": contact_id, "contact[objectName]": "Contact"}
-        fields = await self._get_all(ContactCustomField, "/ContactCustomField", params)
-        return [field for field in fields if field.contact.id == contact_id]
-
-    async def find_contacts_by_custom_field(self, field_name: str, value: str) -> list[Contact]:
-        params = {"customFieldName": field_name, "value": value}
-        return await self._get_list(Contact, "/Contact/Factory/findContactsByCustomFieldValue", params)
 
     async def parts(self) -> list[Part]:
         return await self._get_all(Part, "/Part")

@@ -37,8 +37,6 @@ class SevdeskSettings(IntegrationSettings):
     """The ``SevUser`` named as contact person on every invoice."""
     hour_unit_id: AccountObjectId = None
     """The ``Unity`` of an invoice position counted in hours."""
-    payment_method_field_setting_id: AccountObjectId = None
-    """The ``ContactCustomFieldSetting`` that holds a contact's payment method."""
 
     # A malformed token is still a token: no validation error repeats an input.
     model_config = SettingsConfigDict(env_prefix="SEVDESK__", hide_input_in_errors=True)

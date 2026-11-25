@@ -205,7 +205,7 @@ def test_a_text_the_run_sent_stays_and_any_other_goes():
     sent = {
         "header": f"Spike {RUN_ID}",
         "customerInternalNote": f"skillforge-spike:{RUN_ID}",
-        "footText": f"Spike {RUN_ID}: <strong>Zahlungsverfahren:</strong> PayPal<br>[%KONTAKTPERSON%]",
+        "footText": f"Spike {RUN_ID}: Bitte überweisen Sie den Betrag <strong>bis zum [%ZAHLUNGSZIEL%]</strong><br>",
         "taxText": f"Spike {RUN_ID} tax text",
     }
     scrub.sent({"invoice": sent, "invoicePosSave": [{"name": f"Spike {RUN_ID} position"}]})
@@ -231,18 +231,19 @@ def test_a_text_the_run_sent_stays_and_any_other_goes():
 
 def test_nothing_is_learned_from_what_the_run_sent():
     recorder = _recorder()
+    tag = f"skillforge-spike:{RUN_ID}"
     exchange = replace(
         _exchange(),
-        url="https://my.sevdesk.de/api/v1/Contact/Factory/findContactsByCustomFieldValue?customFieldName=Zahlungsverfahren&value=PayPal",
+        url=f"https://my.sevdesk.de/api/v1/Invoice?customerInternalNote={tag}",
         request_body=None,
-        response_content=json.dumps({"objects": [{"id": "21", "objectName": "Contact"}]}).encode(),
+        response_content=json.dumps({"objects": [{"id": "501", "objectName": "Invoice"}]}).encode(),
     )
     recorder.record(exchange)
 
-    setting = {"objectName": "ContactCustomFieldSetting", "name": "Zahlungsverfahren", "description": "PayPal"}
-    assert _recorded(replace(exchange, response_content=json.dumps(setting).encode()), recorder)["response"][
-        "body"
-    ] == (setting)
+    part = {"objectName": "Part", "name": "Maths", "text": tag}
+    assert _recorded(replace(exchange, response_content=json.dumps(part).encode()), recorder)["response"]["body"] == (
+        part
+    )
 
 
 def test_a_placeholder_stays_and_is_never_learned():
@@ -282,11 +283,13 @@ def test_a_placeholder_still_passes_the_patterns(value: str, expected: str):
     assert expected in str(scrub({"objectName": "SevUser", "salutation": value}))
 
 
-def test_payment_methods_and_configuration_names_stay():
+def test_configuration_names_stay():
     scrubbed = Scrubber()([
-        {"objectName": "ContactCustomField", "value": "PayPal", "contact": {"id": "21", "objectName": "Contact"}},
-        {"objectName": "ContactCustomField", "value": "Überweisung"},
-        {"objectName": "ContactCustomField", "value": "Synthia's notes"},
+        {
+            "objectName": "ContactCustomField",
+            "value": "Synthia's notes",
+            "contact": {"id": "21", "objectName": "Contact"},
+        },
         {"objectName": "Unity", "name": "Std."},
         {"objectName": "Part", "name": "Maths"},
         {"objectName": "ContactCustomFieldSetting", "name": "Zahlungsverfahren"},
@@ -295,9 +298,7 @@ def test_payment_methods_and_configuration_names_stay():
     ])
 
     assert scrubbed == [
-        {"objectName": "ContactCustomField", "value": "PayPal", "contact": {"id": "21", "objectName": "Contact"}},
-        {"objectName": "ContactCustomField", "value": "Überweisung"},
-        {"objectName": "ContactCustomField", "value": SCRUBBED},
+        {"objectName": "ContactCustomField", "value": SCRUBBED, "contact": {"id": "21", "objectName": "Contact"}},
         {"objectName": "Unity", "name": "Std."},
         {"objectName": "Part", "name": "Maths"},
         {"objectName": "ContactCustomFieldSetting", "name": "Zahlungsverfahren"},
