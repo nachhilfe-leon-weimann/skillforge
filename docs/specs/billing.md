@@ -610,7 +610,10 @@ frontend's workflow: it keeps no state of skillsite's, and any client granted th
   carries the `/zahlung` link too, and its number ends on skillsite's "not found" page. `404` never says which case
   it was. Anything the table does not name - several invoices under one number, another status, an open amount
   below 0, a sum that does not parse - is `502 sevdesk_unavailable`: the page then fails closed and redirects
-  nobody.
+  nobody. Drafts (status 100) are set aside first, as a draft can keep a number an issued invoice took (Q3,
+  `RE-1003` in `deleted-read-187`): only several invoices under one number that are no draft are ambiguous, exactly
+  one is answered by the table, and drafts alone are `404 invoice_not_payable`. _Decided 2026-11-25 by the session
+  lead under the maintainer's go to build SF-PAY; awaits the maintainer's confirmation in review._
 - **PayPal blocked.** `paypal` is `blocked` when the contact's `customerNumber` is one of
   `BILLING__PAYPAL_BLOCKED_CUSTOMER_NUMBERS`, compared exactly; otherwise `allowed`. A contact without a customer
   number is `allowed`. The setting is never logged.

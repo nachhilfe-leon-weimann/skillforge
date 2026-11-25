@@ -179,6 +179,43 @@ async def test_a_number_that_is_no_payable_invoice_is_404_and_says_not_which_cas
     assert fake.sent() == [IDENTITY, LISTING]
 
 
+async def test_a_draft_that_kept_an_issued_number_shadows_nothing(fake: FakeSevdesk, sevdesk_settings):
+    """A draft can keep a number an issued invoice took (Q3): the issued one answers, the draft is set aside."""
+    _list(fake, _changed(NUMBERED_DRAFT, invoiceNumber="RE-1000"), OPEN)
+
+    response = await _look_up(fake, sevdesk_settings, "RE-1000")
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "invoice_number": "RE-1000",
+        "state": "open",
+        "open_amount_cents": 4500,
+        "paypal": "allowed",
+    }
+    assert fake.sent() == [IDENTITY, LISTING, CONTACT]
+
+
+async def test_the_recorded_draft_beside_its_cancelled_original_answers_as_the_original(
+    fake: FakeSevdesk, sevdesk_settings
+):
+    """``deleted-read-187`` lists the cancelled original and a draft under RE-1003: the original decides - 404."""
+    _list(fake, CANCELLED_ORIGINAL, NUMBERED_DRAFT)
+
+    response = await _look_up(fake, sevdesk_settings, "RE-1003")
+
+    assert (response.status_code, response.json()) == (404, NOT_PAYABLE)
+
+
+async def test_drafts_alone_under_a_number_are_404(fake: FakeSevdesk, sevdesk_settings):
+    second_draft = _changed(NUMBERED_DRAFT, id="139163754")
+    _list(fake, NUMBERED_DRAFT, second_draft)
+
+    response = await _look_up(fake, sevdesk_settings, "RE-1003")
+
+    assert (response.status_code, response.json()) == (404, NOT_PAYABLE)
+    assert fake.sent() == [IDENTITY, LISTING]
+
+
 async def test_the_filter_is_sent_as_documented_and_an_invoice_under_another_number_is_none_of_it(
     fake: FakeSevdesk, sevdesk_settings
 ):
@@ -235,7 +272,10 @@ async def test_a_refused_call_is_502_sevdesk_refused_and_reads_no_invoice(refusa
 
 
 UNNAMED = {
-    "several invoices under one number": ([CANCELLED_ORIGINAL, NUMBERED_DRAFT], "RE-1003"),
+    "several invoices under one number that are no draft": (
+        [CANCELLED_ORIGINAL, _changed(OPEN, invoiceNumber="RE-1003"), NUMBERED_DRAFT],
+        "RE-1003",
+    ),
     "another status": ([_changed(OPEN, status="300")], "RE-1000"),
     "an open amount below 0": ([_changed(OPEN, paidAmount=50)], "RE-1000"),
     "a paid amount below 0": ([_changed(PAID, paidAmount=-1)], "RE-1002"),

@@ -298,7 +298,8 @@ payment page's client, in no role and never vouched.
   amount in cents and whether PayPal is `allowed`. A number off `INVOICE_NUMBER_PATTERN` is a `422` and reaches no
   sevDesk. After the identity check it reads `GET /Invoice` with the `invoiceNumber` filter (`invoices_by_number`)
   and, for an answer, the invoice's contact; it writes nothing and opens no database session. Only a listed invoice
-  carrying exactly the number counts (`payment_state`): an `RE` at 200 or 750 is `open` with `sumGross` minus
+  carrying exactly the number counts (`payment_state`), drafts set aside first - only several others are ambiguous
+  (`502`): an `RE` at 200 or 750 is `open` with `sumGross` minus
   `paidAmount` through `Money`, one at 1000 with a paid amount `paid`; none, a draft, another type and a cancelled
   original are `invoice_not_payable`; anything else is `sevdesk_unavailable`, a refusal `sevdesk_refused`. `paypal`
   is `blocked` exactly for a customer number in `BILLING__PAYPAL_BLOCKED_CUSTOMER_NUMBERS` (`paypal_permission`),

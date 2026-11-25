@@ -9125,7 +9125,7 @@
     },
     "/api/v1/billing/payment-requests/{invoice_number}": {
       "get": {
-        "description": "Read the payment state of one invoice from sevDesk: `open` with the amount left to pay, or `paid`, and whether\nPayPal is allowed. Writes nothing.\n\nA number without a payable invoice - none, a draft, a cancellation, a cancelled original, another document such as\na dunning letter - is `invoice_not_payable`, which never says which. A sevDesk that cannot be read, or answers\nanything else - several invoices under one number, an unknown status - is `sevdesk_unavailable`; a configuration\nthat is refused is `sevdesk_refused`.",
+        "description": "Read the payment state of one invoice from sevDesk: `open` with the amount left to pay, or `paid`, and whether\nPayPal is allowed. Writes nothing.\n\nA number without a payable invoice - none, a draft, a cancellation, a cancelled original, another document such as\na dunning letter - is `invoice_not_payable`, which never says which; a draft under the number of an issued\ninvoice is set aside. A sevDesk that cannot be read, or answers anything else - several invoices under one number\nthat are no draft, an unknown status - is `sevdesk_unavailable`; a configuration that is refused is\n`sevdesk_refused`.",
         "operationId": "billing_get_payment_request",
         "parameters": [
           {

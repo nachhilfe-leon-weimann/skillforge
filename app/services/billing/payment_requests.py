@@ -7,8 +7,9 @@ neither sevDesk nor the database is written - so it works in ``dry_run``.
 - ``payment_state`` holds the answer table: an ``RE`` invoice sent (200) or partly paid (750) is ``open`` with
   ``sumGross`` minus ``paidAmount`` left, in ``int`` cents through ``Money``; one paid (1000 with a paid amount) is
   ``paid``. No invoice, a draft, another type and a cancelled original (1000, nothing paid; Q12) are
-  ``InvoiceNotPayableError``, which never says which. Anything else is ``SevdeskUnavailableError``: the page then
-  fails closed.
+  ``InvoiceNotPayableError``, which never says which. Drafts are set aside before that, so a draft that kept an issued
+  invoice's number (Q3) shadows nothing. Anything else - several invoices under the number that are no draft
+  included - is ``SevdeskUnavailableError``: the page then fails closed.
 - ``paypal_permission``: ``blocked`` exactly for a contact whose customer number is in
   ``BILLING__PAYPAL_BLOCKED_CUSTOMER_NUMBERS``.
 - Every integration error is translated here ("Errors from an integration"). No answer, message or log line holds a
@@ -100,20 +101,22 @@ def payment_state(invoice_number: str, listed: Sequence[Invoice]) -> tuple[Invoi
     """The answer table: the invoice under ``invoice_number``, its state and its open amount in cents.
 
     Only an invoice that carries exactly this number counts; how sevDesk filters is Q19's, so a listed invoice under
-    another number is none of it.
+    another number is none of it. Drafts are set aside first: a draft is never payable, and it can keep a number an
+    issued invoice took at issue (Q3), so only several invoices that are no draft are ambiguous.
     """
     matches = [invoice for invoice in listed if invoice.invoice_number == invoice_number]
     if not matches:
         raise InvoiceNotPayableError("No invoice carries the number")
-    if len(matches) > 1:
-        raise _unexpected("several invoices carry the number")
-    [invoice] = matches
+    issued = [invoice for invoice in matches if invoice.status != DRAFT]
+    if not issued:
+        raise InvoiceNotPayableError("Only drafts carry the number")
+    if len(issued) > 1:
+        raise _unexpected("several invoices that are no draft carry the number")
+    [invoice] = issued
     if invoice.invoice_type is None:
         raise _unexpected("the invoice has no type")
     if invoice.invoice_type != INVOICE_TYPE:
         raise InvoiceNotPayableError("The document is no invoice")
-    if invoice.status == DRAFT:
-        raise InvoiceNotPayableError("The invoice is a draft")
     gross, paid = invoice.sum_gross_cents, invoice.paid_amount_cents
     if gross is None or paid is None:
         raise _unexpected("the invoice lacks its gross sum or its paid amount")
