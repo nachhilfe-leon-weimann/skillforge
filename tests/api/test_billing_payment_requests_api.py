@@ -44,7 +44,10 @@ LISTING = "GET /Invoice"
 CONTACT = f"GET /Contact/{CONTACT_ID}"
 NOT_PAYABLE = {"detail": "No payable invoice has this number", "code": "invoice_not_payable"}
 UNAVAILABLE = {"detail": "sevDesk could not be read", "code": "sevdesk_unavailable"}
-REFUSED = {"detail": "sevDesk was not called: its configuration was refused", "code": "sevdesk_refused"}
+REFUSED = {
+    "detail": "SkillForge refused to use sevDesk: the configuration or the account could not be confirmed",
+    "code": "sevdesk_refused",
+}
 
 # The recorded invoices of the answer table (billing spec, "Fixture manifest": SF-PAY records nothing new).
 OPEN = recorded_object("read-back-158")  # RE-1000, status 200, 45 EUR, nothing paid

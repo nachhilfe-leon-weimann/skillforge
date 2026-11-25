@@ -56,7 +56,7 @@ EVENT_NOT_ASSIGNABLE = "The calendar event cannot become a lesson: its start is 
 CALENDAR_UNAVAILABLE = "The lesson calendar could not be read"
 NOT_PAYABLE = "No payable invoice has this number"
 SEVDESK_UNAVAILABLE = "sevDesk could not be read"
-SEVDESK_REFUSED = "sevDesk was not called: its configuration was refused"
+SEVDESK_REFUSED = "SkillForge refused to use sevDesk: the configuration or the account could not be confirmed"
 ASSIGNMENT = {"student_id": ID, "subject": "Mathe", "minutes": 60}
 
 

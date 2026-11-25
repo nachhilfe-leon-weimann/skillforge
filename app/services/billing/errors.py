@@ -104,11 +104,11 @@ class SevdeskUnavailableError(UpstreamError):
 
 
 class SevdeskRefusedError(UpstreamError):
-    """SkillForge did not call sevDesk: the configuration was refused - no token, mode or allowlist - or the account
+    """SkillForge refused to use sevDesk: the configuration was refused - no token, mode or allowlist - or the account
     could not be confirmed by the identity check, whose read may have failed. Nothing but the identity read was
     sent."""
 
-    message = "sevDesk was not called: its configuration was refused"
+    message = "SkillForge refused to use sevDesk: the configuration or the account could not be confirmed"
 
 
 class CalendarUnavailableError(UpstreamError):
