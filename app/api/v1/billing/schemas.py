@@ -476,7 +476,9 @@ class PaymentRequest(ApiModel):
     state: PaymentState
     """`open` - sent or partly paid - or `paid`."""
     open_amount_cents: int = Field(ge=0)
-    """What is left to pay, in cents: the gross sum minus what is paid; `0` once `paid`."""
+    """What is left to pay, in cents: the gross sum minus what is paid; `0` once `paid`. A partly paid invoice whose
+    payments already reach its gross sum can still be `open` with `0` until sevDesk marks it paid: treat `0` as
+    paid."""
     paypal: PayPalPermission
     """Whether the invoice may be paid by PayPal: `blocked` for the customers who may only pay by transfer."""
 

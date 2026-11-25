@@ -2199,7 +2199,7 @@
             "type": "string"
           },
           "open_amount_cents": {
-            "description": "What is left to pay, in cents: the gross sum minus what is paid; `0` once `paid`.",
+            "description": "What is left to pay, in cents: the gross sum minus what is paid; `0` once `paid`. A partly paid invoice whose\npayments already reach its gross sum can still be `open` with `0` until sevDesk marks it paid: treat `0` as\npaid.",
             "minimum": 0,
             "title": "Open Amount Cents",
             "type": "integer"
@@ -9246,7 +9246,7 @@
                   "sevdesk_refused": {
                     "value": {
                       "code": "sevdesk_refused",
-                      "detail": "sevDesk was not called: its configuration was refused"
+                      "detail": "SkillForge refused to use sevDesk: the configuration or the account could not be confirmed"
                     }
                   },
                   "sevdesk_unavailable": {
@@ -9261,7 +9261,7 @@
                 }
               }
             },
-            "description": "sevDesk could not be read / sevDesk was not called: its configuration was refused"
+            "description": "sevDesk could not be read / SkillForge refused to use sevDesk: the configuration or the account could not be confirmed"
           }
         },
         "security": [
