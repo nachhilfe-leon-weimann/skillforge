@@ -11,7 +11,9 @@ first run. It is the one path that reads before the account is confirmed.
 ``--invoice-number`` (repeatable) answers Q19 of the billing spec: after the identity check it reads ``GET /Invoice``
 with the documented ``invoiceNumber`` filter, per number, and prints how many invoices came back and, for each,
 whether its number matches exactly, its type and its status - never a name, a contact, a customer number or an
-amount. A number passes when every listed invoice carries it exactly; none listed passes too.
+amount. A number passes when every listed invoice carries it exactly. A number nothing lists is neither a pass nor a
+failure: an ``info`` line, left out of the exit code, says that only a number no invoice carries should show it -
+for an existing number it means the filter is wrong.
 """
 
 import argparse
@@ -20,6 +22,7 @@ import os
 import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 
 from app.core.logging import LoggingSettings, LogLevel, configure_logging
 from app.integrations.config import IntegrationAccount, IntegrationMode
@@ -33,21 +36,37 @@ from app.services.billing.payment_requests import INVOICE_NUMBER_PATTERN
 EXPECTED_BOOKKEEPING_VERSION = "2.0"
 
 
+class Outcome(StrEnum):
+    """A check's result; only ``FAIL`` fails the run, ``INFO`` reports without passing or failing."""
+
+    OK = "ok"
+    FAIL = "FAIL"
+    INFO = "info"
+
+
 @dataclass(frozen=True, slots=True)
 class Check:
     label: str
-    ok: bool
+    outcome: Outcome
     detail: str
 
+    @classmethod
+    def of(cls, label: str, ok: bool, detail: str) -> Check:
+        return cls(label, Outcome.OK if ok else Outcome.FAIL, detail)
+
+    @property
+    def failed(self) -> bool:
+        return self.outcome is Outcome.FAIL
+
     def __str__(self) -> str:
-        return f"{'ok  ' if self.ok else 'FAIL'} {self.label}: {self.detail}"
+        return f"{self.outcome:<4} {self.label}: {self.detail}"
 
 
 async def configured_ids(client: SevdeskClient, settings: SevdeskSettings) -> list[Check]:
     """Whether the bookkeeping system is 2.0 and every configured id exists in the account."""
     version = await client.bookkeeping_version()
     return [
-        Check("bookkeeping system", version == EXPECTED_BOOKKEEPING_VERSION, version),
+        Check.of("bookkeeping system", version == EXPECTED_BOOKKEEPING_VERSION, version),
         await _exists("contact person (SevUser)", "CONTACT_PERSON_ID", settings.contact_person_id, client.get_user),
         await _exists("hour unit (Unity)", "HOUR_UNIT_ID", settings.hour_unit_id, client.get_unity),
     ]
@@ -58,11 +77,13 @@ async def discover(settings: SevdeskSettings, *, transport: InnerTransport | Non
     try:
         found = await SevdeskClient.discover(settings, transport=transport)
     except IntegrationError as exc:
-        return [Check("discover", False, str(exc))]
+        return [Check.of("discover", False, str(exc))]
     return [
-        Check("GET /SevClient", True, f"id={found.account_id} TRIAL marker: {'yes' if found.trial_marker else 'no'}"),
-        Check("GET /SevUser", True, f"sevClient ids {_ids(found.user_account_ids)}"),
-        Check("GET /ContactCustomFieldSetting", True, f"sevClient ids {_ids(found.field_setting_account_ids)}"),
+        Check.of(
+            "GET /SevClient", True, f"id={found.account_id} TRIAL marker: {'yes' if found.trial_marker else 'no'}"
+        ),
+        Check.of("GET /SevUser", True, f"sevClient ids {_ids(found.user_account_ids)}"),
+        Check.of("GET /ContactCustomFieldSetting", True, f"sevClient ids {_ids(found.field_setting_account_ids)}"),
     ]
 
 
@@ -76,12 +97,12 @@ async def _invoice_number(client: SevdeskClient, number: str) -> Check:
     try:
         listed = await client.invoices_by_number(number)
     except IntegrationError as exc:
-        return Check(label, False, str(exc))
+        return Check.of(label, False, str(exc))
     count = f"{len(listed)} listed"
     if not listed:
-        return Check(label, True, count)
+        return Check(label, Outcome.INFO, f"{count} - expected only for a number no invoice carries")
     found = "; ".join(_listed(invoice, number) for invoice in listed)
-    return Check(label, all(invoice.invoice_number == number for invoice in listed), f"{count} - {found}")
+    return Check.of(label, all(invoice.invoice_number == number for invoice in listed), f"{count} - {found}")
 
 
 def _listed(invoice: Invoice, number: str) -> str:
@@ -95,13 +116,13 @@ async def doctor(
     """The identity check, then the configured ids - or, given invoice numbers, their listings instead."""
     try:
         async with SevdeskClient.connect(settings, transport=transport) as client:
-            identity = Check("account", True, f"{settings.expected_account_id} ({settings.account.value})")
+            identity = Check.of("account", True, f"{settings.expected_account_id} ({settings.account.value})")
             checks = await invoice_numbers(client, numbers) if numbers else await configured_ids(client, settings)
             return [identity, *checks]
     except IdentityCheckError as exc:
-        return [Check("account", False, str(exc))]
+        return [Check.of("account", False, str(exc))]
     except IntegrationError as exc:
-        return [Check("sevDesk", False, str(exc))]
+        return [Check.of("sevDesk", False, str(exc))]
 
 
 async def run(
@@ -124,20 +145,20 @@ async def run(
         checks = await doctor(settings, numbers=invoice_numbers, transport=transport)
     for check in checks:
         out(str(check))
-    return 0 if all(check.ok for check in checks) else 1
+    return 1 if any(check.failed for check in checks) else 0
 
 
 async def _exists[T: SevUser | Unity](
     label: str, variable: str, object_id: int | None, find: Callable[[int], Awaitable[T | None]]
 ) -> Check:
     if object_id is None:
-        return Check(label, False, f"SEVDESK__{variable} is not set")
+        return Check.of(label, False, f"SEVDESK__{variable} is not set")
     match await find(object_id):
         case None:
-            return Check(label, False, f"{object_id} does not exist")
+            return Check.of(label, False, f"{object_id} does not exist")
         case Unity(name=name):
-            return Check(label, True, f"{object_id} ({name})")
-    return Check(label, True, str(object_id))
+            return Check.of(label, True, f"{object_id} ({name})")
+    return Check.of(label, True, str(object_id))
 
 
 def _ids(ids: tuple[int, ...]) -> str:

@@ -225,7 +225,7 @@ async def test_invoice_numbers_send_only_the_identity_and_the_filtered_reads_and
     assert lines == [
         f"ok   account: {ACCOUNT_ID} (trial)",
         "ok   invoice number RE-1000: 1 listed - exact match yes, type RE, status 200",
-        "ok   invoice number RE-9999: 0 listed",
+        "info invoice number RE-9999: 0 listed - expected only for a number no invoice carries",
         "FAIL invoice number RE-100: 2 listed - exact match no, type SR, status 1000;"
         " exact match yes, type RE, status 100",
     ]
@@ -246,6 +246,32 @@ async def test_every_number_matching_exactly_passes(settings, fake_sevdesk: Fake
 
     assert code == 0
     assert lines[-1] == "ok   invoice number RE-1000: 1 listed - exact match yes, type RE, status 200"
+
+
+async def test_a_number_nothing_lists_is_reported_neutrally_and_left_out_of_the_exit_code(
+    settings, fake_sevdesk: FakeSevdesk
+):
+    """An existing number that lists nothing means a wrong filter (Q19): the line must not read as a pass."""
+    fake_sevdesk.on("GET", "/Invoice", _listed())
+
+    code, lines = await _check_numbers(settings, fake_sevdesk, "RE-9999")
+
+    assert lines == [
+        f"ok   account: {ACCOUNT_ID} (trial)",
+        "info invoice number RE-9999: 0 listed - expected only for a number no invoice carries",
+    ]
+    assert not any(line.startswith("ok") and "RE-9999" in line for line in lines)
+    assert code == 0
+
+
+async def test_a_neutral_line_does_not_hide_a_failed_number(settings, fake_sevdesk: FakeSevdesk):
+    answers = {"RE-9999": _listed(), "RE-100": _listed({**SYNTHETIC_INVOICE, "invoiceNumber": "RE-1000"})}
+    fake_sevdesk.on("GET", "/Invoice", lambda request: answers[request.url.params["invoiceNumber"]])
+
+    code, lines = await _check_numbers(settings, fake_sevdesk, "RE-9999", "RE-100")
+
+    assert [line.split(" ", 1)[0] for line in lines] == ["ok", "info", "FAIL"]
+    assert code == 1
 
 
 async def test_a_failed_listing_fails_the_run_and_prints_no_remote_text(settings, fake_sevdesk: FakeSevdesk):
