@@ -68,6 +68,8 @@ def test_no_customer_number_is_blocked_by_default(clean_env):
         ("1000", {"1000"}),
         ("1000,KD-7,0042", {"1000", "KD-7", "0042"}),
         (" 1000 , 1001 ,", {"1000", "1001"}),
+        ("1000, 1001", {"1000", "1001"}),
+        ("KD_7.1", {"KD_7.1"}),
         ("1000,1000", {"1000"}),
     ],
 )
@@ -76,6 +78,40 @@ def test_the_blocked_customer_numbers_are_read_comma_separated_under_their_prefi
 
     assert Settings(_env_file=None).billing.paypal_blocked_customer_numbers == numbers
     assert BillingSettings(_env_file=None).paypal_blocked_customer_numbers == numbers
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        '["1000","1001"]',
+        "[1000, 1001]",
+        "1000 1001",
+        "1000,10 01",
+        '"1000"',
+        "'1000'",
+        "1000;1001",
+        "1000,KD/7",
+    ],
+)
+def test_a_malformed_blocked_customer_list_stops_the_settings_load(clean_env, value: str):
+    """Fail closed: a list written otherwise - JSON, spaces inside an item, quotes - would block nobody silently."""
+    clean_env.setenv("BILLING__PAYPAL_BLOCKED_CUSTOMER_NUMBERS", value)
+
+    for load in (lambda: Settings(_env_file=None), lambda: BillingSettings(_env_file=None)):
+        with pytest.raises(ValidationError, match="paypal_blocked_customer_numbers"):
+            load()
+
+
+def test_a_refused_blocked_customer_list_names_the_setting_but_no_customer_number(clean_env):
+    clean_env.setenv("BILLING__PAYPAL_BLOCKED_CUSTOMER_NUMBERS", 'KD-73915,"KD-62817"')
+
+    for load in (lambda: Settings(_env_file=None), lambda: BillingSettings(_env_file=None)):
+        with pytest.raises(ValidationError) as refused:
+            load()
+        message = str(refused.value)
+        assert "paypal_blocked_customer_numbers" in message
+        assert "73915" not in message
+        assert "62817" not in message
 
 
 def test_the_blocked_customer_numbers_stay_out_of_the_settings_repr(clean_env):

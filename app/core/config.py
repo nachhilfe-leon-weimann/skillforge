@@ -2,7 +2,7 @@ import re
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import BeforeValidator, Field, StrictInt
+from pydantic import AfterValidator, BeforeValidator, Field, StrictInt
 from pydantic_settings import NoDecode, SettingsConfigDict
 from skillcore.config import CoreSettings
 
@@ -14,6 +14,7 @@ from .db.config import DatabaseSettings
 from .logging import LoggingSettings
 
 _WHOLE_NUMBER = re.compile(r"-?[0-9]+", re.ASCII)
+_PLAIN_ITEM = re.compile(r"[A-Za-z0-9._-]+", re.ASCII)
 
 
 def _whole_number(value: object) -> object:
@@ -33,7 +34,17 @@ def _comma_separated(value: object) -> object:
     return value
 
 
-type CommaSeparated = Annotated[frozenset[str], NoDecode, BeforeValidator(_comma_separated)]
+def _plain_items(items: frozenset[str]) -> frozenset[str]:
+    """Every item letters, digits, ``.``, ``_`` or ``-``: a list written otherwise - as JSON, quoted, with a space
+    inside an item - fails the load instead of matching nothing. The message never repeats an item."""
+    if not all(_PLAIN_ITEM.fullmatch(item) for item in items):
+        raise ValueError("write the items comma-separated, each of letters, digits, '.', '_' or '-' only")
+    return items
+
+
+type CommaSeparated = Annotated[
+    frozenset[str], NoDecode, BeforeValidator(_comma_separated), AfterValidator(_plain_items)
+]
 
 
 class BillingSettings(CoreSettings):
@@ -44,9 +55,10 @@ class BillingSettings(CoreSettings):
     here as in the database: cents per hour divisible by 4, so every quarter hour is a whole cent."""
     paypal_blocked_customer_numbers: CommaSeparated = Field(default=frozenset(), repr=False)
     """The sevDesk customer numbers that may not pay by PayPal, comma-separated (billing spec, decision K). Read only
-    by the payment-request lookup, compared exactly, and never logged."""
+    by the payment-request lookup, compared exactly, and never logged; a malformed list fails the load."""
 
-    model_config = SettingsConfigDict(env_prefix="BILLING__")
+    # A refused list must not repeat a customer number.
+    model_config = SettingsConfigDict(env_prefix="BILLING__", hide_input_in_errors=True)
 
 
 class Settings(CoreSettings):
