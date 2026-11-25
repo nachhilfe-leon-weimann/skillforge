@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Accepted, 2026-11 - SF0, SF1-1 to SF1-4, SF2-1 to SF2-3, SF3-1, SF3-2, SF4-1 to SF4-3 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD done (2026-11-11, run
+> Status: Accepted, 2026-11 - SF0, SF1-1 to SF1-4, SF2-1 to SF2-3, SF3-1, SF3-2, SF4-1 to SF4-3 done (SF2-3's charge box waits for SF5-3); SF-PAY built (its release waits for Q19); SP-CAL done (Q9 and Q16 answered). SP-SD done (2026-11-11, run
 > `run202611112124164167`): every question is answered and the spec is frozen; a change needs the maintainer's
 > approval.
 > **Amended 2026-11-25** (approved by the maintainer in the session): every invoice uses one sevDesk layout that
@@ -1607,21 +1607,21 @@ by PayPal - not one frontend's workflow ([`AGENTS.md`](../../AGENTS.md)); confir
   `EXPECTATIONS` and `CATALOG` in `tests/api/test_billing_error_contract.py` with the lookup's errors;
   `test_seed_default_scopes_is_idempotent` in `tests/db/test_auth_service.py`.
 - _Acceptance criteria:_
-  - [ ] One test per row of the answer table through a mocked transport: open, partly paid, paid, unknown number,
+  - [x] One test per row of the answer table through a mocked transport: open, partly paid, paid, unknown number,
         draft, another type (an `SR`), cancelled original, a failed read - the invoice states from SP-SD's recorded
         fixtures, the filtered listing from `tests/fixtures/sevdesk/documented/`; no recorded fixture changed.
-  - [ ] `open_amount_cents` is `sumGross` minus `paidAmount` in `int` cents through `Money`; no `float` in the
+  - [x] `open_amount_cents` is `sumGross` minus `paidAmount` in `int` cents through `Money`; no `float` in the
         service (architecture test).
-  - [ ] A number off `^[A-Z0-9][A-Z0-9._-]{0,31}$` is a `422`, and the transport saw no request.
-  - [ ] `paypal` is `blocked` exactly for a contact whose customer number is in the setting, and `allowed` with the
+  - [x] A number off `^[A-Z0-9][A-Z0-9._-]{0,31}$` is a `422`, and the transport saw no request.
+  - [x] `paypal` is `blocked` exactly for a contact whose customer number is in the setting, and `allowed` with the
         setting empty.
-  - [ ] The `200` body holds the four fields only; no response, log line or error message holds a name, a contact
+  - [x] The `200` body holds the four fields only; no response, log line or error message holds a name, a contact
         id or a customer number (test on captured logs).
-  - [ ] A failed read - a `429` of sevDesk's included - is `502 sevdesk_unavailable`, a refusal
+  - [x] A failed read - a `429` of sevDesk's included - is `502 sevdesk_unavailable`, a refusal
         `502 sevdesk_refused`; the transport sees reads only, and no row changes.
-  - [ ] `billing:read` or `billing:write` alone is `403`; the `admin` role does not hold `billing:payment:read`, and
+  - [x] `billing:read` or `billing:write` alone is `403`; the `admin` role does not hold `billing:payment:read`, and
         a token from the Discord exchange never carries it.
-  - [ ] `--invoice-number` sends only the identity reads and `GET /Invoice` with the filter, and prints counts, the
+  - [x] `--invoice-number` sends only the identity reads and `GET /Invoice` with the filter, and prints counts, the
         exact match, type and status - never a name, contact, customer number or amount (test on a synthetic
         response).
   - [ ] Before the release that carries SF-PAY - not before its merge - Q19 is answered in this spec from the

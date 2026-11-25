@@ -18,7 +18,17 @@ from app.integrations.sevdesk import client as sevdesk_client
 from app.integrations.sevdesk.client import SevdeskClient
 from app.integrations.sevdesk.models import Account, Contact, Part
 from app.integrations.transport import Exchange, Reply
-from tests.integrations.sevdesk.fake_sevdesk import ACCOUNT_ID, TOKEN, FakeSevdesk, objects, page
+from tests.integrations.sevdesk.fake_sevdesk import (
+    ACCOUNT_ID,
+    TOKEN,
+    FakeSevdesk,
+    documented,
+    invoice_listing,
+    objects,
+    page,
+    recorded,
+    recorded_object,
+)
 
 PART = {"id": "31", "objectName": "Part", "name": "Maths", "price": "30", "taxRate": "0.0", "status": "100"}
 
@@ -192,6 +202,61 @@ async def test_the_configuration_reads(settings, fake_sevdesk: FakeSevdesk):
     assert [found.id for found in users] == [11] and users[0].sev_client is not None
     assert user_11 is not None and user_11.sev_client is not None and user_11.sev_client.id == ACCOUNT_ID
     assert unity is not None and (unity.id, unity.name) == (12, "Std.")
+
+
+@pytest.mark.parametrize(
+    ("fixture", "invoice_type", "paid_cents"),
+    [
+        ("read-back-158", "RE", 0),
+        ("read-back-195", "RE", 2000),
+        ("read-back-163", "RE", 9750),
+        ("read-back-190", "SR", 0),
+    ],
+)
+async def test_a_recorded_invoice_reads_its_type_and_paid_amount_in_cents(
+    fixture: str, invoice_type: str, paid_cents: int, settings, fake_sevdesk: FakeSevdesk
+):
+    """``paidAmount`` is a JSON number (Q14): ``97.5`` reaches ``Money`` as a ``Decimal``, never as a ``float``."""
+    recorded_invoice = recorded(fixture)
+    fake_sevdesk.on("GET", recorded_invoice["request"]["path"].removeprefix("/api/v1"), _recorded_answer(fixture))
+    invoice_id = int(recorded_invoice["response"]["body"]["objects"][0]["id"])
+
+    async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
+        invoice = await client.get_invoice(invoice_id)
+
+    assert invoice is not None
+    assert (invoice.invoice_type, invoice.paid_amount_cents) == (invoice_type, paid_cents)
+    assert type(invoice.paid_amount_cents) is int
+
+
+async def test_invoices_by_number_send_the_documented_filter_and_list_what_sevdesk_answers(
+    settings, fake_sevdesk: FakeSevdesk
+):
+    """The client lists as sevDesk answers, other numbers included: the caller compares the number (Q19)."""
+    shape = documented("invoice-by-number")["request"]
+    listed = [recorded_object("read-back-158"), recorded_object("read-back-195")]
+    fake_sevdesk.on("GET", "/Invoice", invoice_listing({"RE-1000": listed}))
+
+    async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
+        invoices = await client.invoices_by_number("RE-1000")
+        none = await client.invoices_by_number(shape["params"]["invoiceNumber"])
+
+    assert [(invoice.invoice_number, invoice.sum_gross_cents) for invoice in invoices] == [
+        ("RE-1000", 4500),
+        ("RE-1001", 4500),
+    ]
+    assert none == []
+    listing = [request for request in fake_sevdesk.requests if request.url.path == shape["path"]]
+    assert [dict(request.url.params) for request in listing] == [
+        {**shape["params"], "invoiceNumber": "RE-1000"},
+        shape["params"],
+    ]
+    assert fake_sevdesk.sent("GET") == fake_sevdesk.sent()
+
+
+def _recorded_answer(name: str) -> httpx.Response:
+    response = recorded(name)["response"]
+    return httpx.Response(response["status"], json=response["body"], headers=response["headers"])
 
 
 def _part(part_id: int) -> dict[str, object]:

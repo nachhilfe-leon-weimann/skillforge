@@ -12,8 +12,9 @@ from app.core.config import BillingSettings, Settings
 @pytest.fixture
 def clean_env(monkeypatch, tmp_path):
     """No ``BILLING__*`` variable, and a working directory without an env file: independent of the checkout."""
-    monkeypatch.delenv("BILLING__DEFAULT_RATE_CENTS_PER_HOUR", raising=False)
-    monkeypatch.delenv("billing__default_rate_cents_per_hour", raising=False)
+    for name in ("BILLING__DEFAULT_RATE_CENTS_PER_HOUR", "BILLING__PAYPAL_BLOCKED_CUSTOMER_NUMBERS"):
+        monkeypatch.delenv(name, raising=False)
+        monkeypatch.delenv(name.lower(), raising=False)
     monkeypatch.chdir(tmp_path)
     return monkeypatch
 
@@ -56,10 +57,42 @@ def test_a_rate_that_is_no_int_is_refused_from_code(clean_env, value: object):
         BillingSettings(_env_file=None, default_rate_cents_per_hour=value)  # ty: ignore[invalid-argument-type]
 
 
-def test_the_example_env_file_lists_every_setting_with_its_default_and_nothing_else():
+def test_no_customer_number_is_blocked_by_default(clean_env):
+    assert Settings(_env_file=None).billing.paypal_blocked_customer_numbers == frozenset()
+
+
+@pytest.mark.parametrize(
+    ("value", "numbers"),
+    [
+        ("", set()),
+        ("1000", {"1000"}),
+        ("1000,KD-7,0042", {"1000", "KD-7", "0042"}),
+        (" 1000 , 1001 ,", {"1000", "1001"}),
+        ("1000,1000", {"1000"}),
+    ],
+)
+def test_the_blocked_customer_numbers_are_read_comma_separated_under_their_prefix(clean_env, value: str, numbers):
+    clean_env.setenv("BILLING__PAYPAL_BLOCKED_CUSTOMER_NUMBERS", value)
+
+    assert Settings(_env_file=None).billing.paypal_blocked_customer_numbers == numbers
+    assert BillingSettings(_env_file=None).paypal_blocked_customer_numbers == numbers
+
+
+def test_the_blocked_customer_numbers_stay_out_of_the_settings_repr(clean_env):
+    clean_env.setenv("BILLING__PAYPAL_BLOCKED_CUSTOMER_NUMBERS", "KD-73915")
+
+    assert "KD-73915" not in repr(Settings(_env_file=None)) + repr(BillingSettings(_env_file=None))
+
+
+def test_the_example_env_file_lists_every_setting_with_its_default_and_nothing_else(clean_env):
+    """Each listed value, read as the environment would give it, is the setting's default."""
     example = (Path(__file__).resolve().parents[1] / ".env.example").read_text()
     listed = dict(re.findall(r"^#?BILLING__(\w+)=(.*)$", example, flags=re.MULTILINE))
 
-    assert {name.lower(): value for name, value in listed.items()} == {
-        name: str(field.default) for name, field in BillingSettings.model_fields.items()
+    assert {name.lower() for name in listed} == set(BillingSettings.model_fields)
+    for name, value in listed.items():
+        clean_env.setenv(f"BILLING__{name}", value)
+    defaults = {
+        name: field.get_default(call_default_factory=True) for name, field in BillingSettings.model_fields.items()
     }
+    assert BillingSettings(_env_file=None).model_dump() == defaults

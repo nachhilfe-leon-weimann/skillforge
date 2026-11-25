@@ -16,6 +16,7 @@ from app.core.db.models import CalendarAlias, Lesson, LessonStatus, ManualPayer,
 from app.services.billing.calendar import ImportCounts, ListedEvent
 from app.services.billing.calendar_rules import NoLessonReason, is_on_the_minute, normalize_name
 from app.services.billing.payers import StudentPayer
+from app.services.billing.payment_requests import PaymentRequestState, PaymentState, PayPalPermission
 from app.services.crm.inputs import require_storable_text
 
 # A lesson longer than a day is a typo. Rule G (minutes divisible by 15) is request validation: the catalog has no
@@ -465,3 +466,25 @@ class CalendarEventAssignRequest(ApiModel):
     """The duration to bill, a multiple of 15: the appointment's, or a correction of it."""
     alias: CalendarName | None = None
     """A calendar name to store as the student's alias, so the import matches it from now on; usually `title_name`."""
+
+
+class PaymentRequest(ApiModel):
+    """The payment state of one invoice - nothing about the person it is for: no name, contact or customer number."""
+
+    invoice_number: str
+    """The invoice's number, as asked."""
+    state: PaymentState
+    """`open` - sent or partly paid - or `paid`."""
+    open_amount_cents: int = Field(ge=0)
+    """What is left to pay, in cents: the gross sum minus what is paid; `0` once `paid`."""
+    paypal: PayPalPermission
+    """Whether the invoice may be paid by PayPal: `blocked` for the customers who may only pay by transfer."""
+
+    @classmethod
+    def from_model(cls, answer: PaymentRequestState) -> Self:
+        return cls(
+            invoice_number=answer.invoice_number,
+            state=answer.state,
+            open_amount_cents=answer.open_amount_cents,
+            paypal=answer.paypal,
+        )

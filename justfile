@@ -157,18 +157,27 @@ contract-sevdesk:
     if [ ! -f "$env_file" ]; then echo "no trial configured: $env_file does not exist"; exit 0; fi
     SKILLFORGE_CONTRACT_RUN=1 uv run --env-file "$env_file" pytest -m contract
 
-# Check the configured sevDesk ids, read-only: `just sevdesk-doctor trial|live [--discover]`.
+# Check the configured sevDesk ids, read-only: `just sevdesk-doctor trial|live [--discover]`; with
+# `--invoice-number <number>` (repeatable) list what the invoiceNumber filter finds instead (billing spec, Q19).
 [positional-arguments]
 sevdesk-doctor account *args:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ -n "${CI:-}" ]; then echo "sevdesk-doctor never runs in CI" >&2; exit 1; fi
+    usage="sevdesk-doctor takes trial or live and at most --discover, or --invoice-number <number> (repeatable)"
     account="$1"
     shift
-    case "$*" in
-        "" | --discover) ;;
-        *) echo "sevdesk-doctor takes trial or live and at most --discover" >&2; exit 1 ;;
-    esac
+    if [ "$*" != "--discover" ]; then
+        rest=("$@")
+        while [ "${#rest[@]}" -gt 0 ]; do
+            if [ "${#rest[@]}" -ge 2 ] && [ "${rest[0]}" = "--invoice-number" ] \
+                && [[ "${rest[1]}" =~ ^[A-Z0-9][A-Z0-9._-]{0,31}$ ]]; then
+                rest=("${rest[@]:2}")
+            else
+                echo "$usage" >&2; exit 1
+            fi
+        done
+    fi
     case "$account" in
         trial)
             source "{{justfile_directory()}}/scripts/sevdesk_trial_env.sh" "{{justfile_directory()}}"

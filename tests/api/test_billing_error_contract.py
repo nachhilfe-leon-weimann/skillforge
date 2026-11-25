@@ -30,12 +30,15 @@ from app.services.billing.errors import (
     CalendarEventNotAssignableError,
     CalendarEventNotFoundError,
     CalendarUnavailableError,
+    InvoiceNotPayableError,
     LessonAlreadyExistsError,
     LessonNotBillableError,
     LessonNotFoundError,
     RateNotFoundError,
     RateNotQuarterHourError,
     SevdeskContactAlreadyLinkedError,
+    SevdeskRefusedError,
+    SevdeskUnavailableError,
     UnknownStudentError,
 )
 from app.services.crm.errors import PartyNotFoundError
@@ -51,6 +54,9 @@ ALIAS_EXISTS = "An alias for this calendar name already exists"
 EVENT_ASSIGNED = "The calendar event already has a lesson"
 EVENT_NOT_ASSIGNABLE = "The calendar event cannot become a lesson: its start is not on a whole minute"
 CALENDAR_UNAVAILABLE = "The lesson calendar could not be read"
+NOT_PAYABLE = "No payable invoice has this number"
+SEVDESK_UNAVAILABLE = "sevDesk could not be read"
+SEVDESK_REFUSED = "sevDesk was not called: its configuration was refused"
 ASSIGNMENT = {"student_id": ID, "subject": "Mathe", "minutes": 60}
 
 
@@ -92,6 +98,7 @@ ENDPOINTS = {
         "POST", f"/calendar/events/{ID}/assign", "calendar.assign_event", json=ASSIGNMENT
     ),
     "dismiss_calendar_event": Endpoint("POST", f"/calendar/events/{ID}/dismiss", "calendar.dismiss_event"),
+    "get_payment_request": Endpoint("GET", "/payment-requests/RE-1000", "payment_requests.look_up_payment_request"),
 }
 
 # (endpoint, raised error, status, detail) - one row per error a route documents.
@@ -123,6 +130,9 @@ EXPECTATIONS: list[Expectation] = [
     ("assign_calendar_event", LessonAlreadyExistsError(INTERNAL), 409, ALREADY_EXISTS),
     ("assign_calendar_event", CalendarAliasAlreadyExistsError(INTERNAL), 409, ALIAS_EXISTS),
     ("dismiss_calendar_event", CalendarEventNotFoundError(INTERNAL), 404, "Calendar event not found"),
+    ("get_payment_request", InvoiceNotPayableError(INTERNAL), 404, NOT_PAYABLE),
+    ("get_payment_request", SevdeskUnavailableError(INTERNAL), 502, SEVDESK_UNAVAILABLE),
+    ("get_payment_request", SevdeskRefusedError(INTERNAL), 502, SEVDESK_REFUSED),
 ]
 
 # The CRM's errors a billing route answers with (billing spec, "Route map": a party in a path that does not exist),
@@ -145,6 +155,7 @@ CATALOG: dict[type[DomainError], tuple[str, int, str, bool]] = {
     RateNotFoundError: ("rate_not_found", 404, "Rate not found", False),
     CalendarAliasNotFoundError: ("calendar_alias_not_found", 404, "Calendar alias not found", False),
     CalendarEventNotFoundError: ("calendar_event_not_found", 404, "Calendar event not found", False),
+    InvoiceNotPayableError: ("invoice_not_payable", 404, NOT_PAYABLE, False),
     LessonAlreadyExistsError: ("lesson_already_exists", 409, ALREADY_EXISTS, False),
     SevdeskContactAlreadyLinkedError: ("sevdesk_contact_already_linked", 409, ALREADY_LINKED, False),
     CalendarAliasAlreadyExistsError: ("calendar_alias_already_exists", 409, ALIAS_EXISTS, False),
@@ -154,6 +165,8 @@ CATALOG: dict[type[DomainError], tuple[str, int, str, bool]] = {
     LessonNotBillableError: ("lesson_not_billable", 422, NOT_BILLABLE, False),
     CalendarEventNotAssignableError: ("calendar_event_not_assignable", 422, EVENT_NOT_ASSIGNABLE, False),
     CalendarUnavailableError: ("calendar_unavailable", 502, CALENDAR_UNAVAILABLE, False),
+    SevdeskUnavailableError: ("sevdesk_unavailable", 502, SEVDESK_UNAVAILABLE, False),
+    SevdeskRefusedError: ("sevdesk_refused", 502, SEVDESK_REFUSED, False),
 }
 
 # The closed catalog of the billing spec: no class outside it may ever exist.
@@ -166,7 +179,7 @@ SPEC_CATALOG = {
     "PrepaidAccountStartsBeforeLastCloseError", "PrepaidEntryAlreadyVoidedError",
     "UnknownStudentError", "RateNotQuarterHourError", "LessonNotBillableError", "CalendarEventNotAssignableError",
     "MixedPayersError", "InvoiceBlockedError", "PrepaidEntryNotVoidableError", "TopupAmountOutOfRangeError",
-    "SevdeskUnavailableError", "SevdeskRefusedError", "CalendarUnavailableError",
+    "SevdeskUnavailableError", "SevdeskRefusedError", "CalendarUnavailableError", "InvoiceNotPayableError",
 }  # fmt: skip
 BILLING_PACKAGES = ("app.services.billing", "app.api.v1.billing")
 DERIVED_CODES = {"validation_error", "missing_token", "invalid_token", "forbidden"}
@@ -315,7 +328,7 @@ def _auth_headers() -> dict[str, str]:
         _auth_settings(),
         principal_id=UUID("00000000-0000-0000-0000-000000000001"),
         client_id="operator",
-        scopes=[str(Scope.BILLING_READ), str(Scope.BILLING_WRITE)],
+        scopes=[str(Scope.BILLING_READ), str(Scope.BILLING_WRITE), str(Scope.BILLING_PAYMENT_READ)],
     )
     return {"Authorization": f"Bearer {token.access_token}"}
 

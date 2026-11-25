@@ -1,0 +1,28 @@
+{
+  "source": "derived from the documentation, not recorded: sevDesk's GET /Invoice with its documented invoiceNumber filter, sent with the client's paging parameters, for a number no invoice carries",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/Invoice",
+    "params": {
+      "invoiceNumber": "RE-9999",
+      "limit": "100",
+      "offset": "0",
+      "countAll": "true"
+    },
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "skillforge"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "total": "0",
+      "objects": []
+    }
+  }
+}

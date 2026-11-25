@@ -87,6 +87,30 @@ class CalendarEventNotAssignableError(DomainValidationError):
     message = "The calendar event cannot become a lesson: its start is not on a whole minute"
 
 
+class InvoiceNotPayableError(NotFoundError):
+    """No invoice with this number can be paid: there is none, or it is a draft, a cancellation or another document
+    than an invoice (a dunning letter), or a cancelled original. The answer never says which (billing spec,
+    "Payment-request lookup")."""
+
+    message = "No payable invoice has this number"
+
+
+class SevdeskUnavailableError(UpstreamError):
+    """sevDesk could not be read: a read failed or was rejected - its own throttle (429) included - or answered
+    something SkillForge does not accept. Nothing was changed. The instance message names the integration error's
+    class or the case, never a name, a customer number or a sevDesk id."""
+
+    message = "sevDesk could not be read"
+
+
+class SevdeskRefusedError(UpstreamError):
+    """SkillForge did not call sevDesk: the configuration was refused - no token, mode or allowlist - or the account
+    could not be confirmed by the identity check, whose read may have failed. Nothing but the identity read was
+    sent."""
+
+    message = "sevDesk was not called: its configuration was refused"
+
+
 class CalendarUnavailableError(UpstreamError):
     """The lesson calendar could not be read - refused, unconfirmed, failed or not configured; nothing was imported.
     The instance message names the integration error's class, never a name, a title or a mailbox."""

@@ -3,7 +3,7 @@ from functools import lru_cache
 from typing import Annotated
 
 from pydantic import BeforeValidator, Field, StrictInt
-from pydantic_settings import SettingsConfigDict
+from pydantic_settings import NoDecode, SettingsConfigDict
 from skillcore.config import CoreSettings
 
 from app.integrations.graph.config import GraphSettings
@@ -25,12 +25,26 @@ def _whole_number(value: object) -> object:
 type WholeNumber = Annotated[StrictInt, BeforeValidator(_whole_number)]
 
 
+def _comma_separated(value: object) -> object:
+    """A list written as a variable holds it - ``1000,1001`` - as its stripped, non-empty items; anything else as it
+    is. ``NoDecode`` keeps the environment's value a string instead of JSON."""
+    if isinstance(value, str):
+        return frozenset(item for part in value.split(",") if (item := part.strip()))
+    return value
+
+
+type CommaSeparated = Annotated[frozenset[str], NoDecode, BeforeValidator(_comma_separated)]
+
+
 class BillingSettings(CoreSettings):
     """Billing settings (``BILLING__*``); every one has a default."""
 
     default_rate_cents_per_hour: WholeNumber = Field(default=3000, ge=0, multiple_of=4)
     """The rate of a lesson without its own rate and of a student without one (billing spec, decision E). Rule G holds
     here as in the database: cents per hour divisible by 4, so every quarter hour is a whole cent."""
+    paypal_blocked_customer_numbers: CommaSeparated = Field(default=frozenset(), repr=False)
+    """The sevDesk customer numbers that may not pay by PayPal, comma-separated (billing spec, decision K). Read only
+    by the payment-request lookup, compared exactly, and never logged."""
 
     model_config = SettingsConfigDict(env_prefix="BILLING__")
 

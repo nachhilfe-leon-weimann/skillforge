@@ -1,6 +1,7 @@
 """The doctor only reads, prints ids and configuration names, and never a person's data."""
 
 import sys
+from collections.abc import Mapping
 
 import httpx
 import pytest
@@ -9,7 +10,7 @@ from app.cli.sevdesk_doctor import build_parser, main, run
 from app.integrations.config import IntegrationAccount, IntegrationMode
 from app.integrations.guards import CONTRACT_RUN_ENV
 from app.integrations.sevdesk.config import SevdeskSettings
-from tests.integrations.sevdesk.fake_sevdesk import ACCOUNT_ID, TRIAL_COMPANY, FakeSevdesk, objects
+from tests.integrations.sevdesk.fake_sevdesk import ACCOUNT_ID, TRIAL_COMPANY, FakeSevdesk, objects, page
 
 PERSONAL = ("Synthia", "Examplova", "synthia@mail.example.com", TRIAL_COMPANY)
 
@@ -169,3 +170,115 @@ def test_main_refuses_to_run_in_ci(monkeypatch):
 
     with pytest.raises(SystemExit, match="never runs in CI"):
         main()
+
+
+# --- --invoice-number: Q19, the maintainer's check of the invoiceNumber filter ---
+
+
+def _listed(*invoices: Mapping[str, object]) -> httpx.Response:
+    return page(list(invoices))
+
+
+async def _check_numbers(settings, fake: FakeSevdesk, *numbers: str) -> tuple[int, list[str]]:
+    lines: list[str] = []
+    code = await run(
+        IntegrationAccount.TRIAL,
+        discover_accounts=False,
+        invoice_numbers=numbers,
+        settings=settings,
+        transport=fake.transport,
+        out=lines.append,
+    )
+    return code, lines
+
+
+# A synthetic answer that carries what must never be printed: a name, a contact, a customer number, amounts.
+SYNTHETIC_INVOICE: dict[str, object] = {
+    "id": "73915864",
+    "objectName": "Invoice",
+    "invoiceNumber": "RE-1000",
+    "invoiceType": "RE",
+    "status": "200",
+    "contact": {"id": "84026975", "objectName": "Contact"},
+    "addressName": "Synthia Examplova",
+    "customerNumber": "KD-62817",
+    "sumGross": "123.45",
+    "paidAmount": 67.89,
+}
+
+
+async def test_invoice_numbers_send_only_the_identity_and_the_filtered_reads_and_print_no_personal_data(
+    settings, fake_sevdesk: FakeSevdesk, capsys
+):
+    answers = {
+        "RE-1000": _listed(SYNTHETIC_INVOICE),
+        "RE-9999": _listed(),
+        "RE-100": _listed(
+            {**SYNTHETIC_INVOICE, "invoiceType": "SR", "status": "1000"},
+            {**SYNTHETIC_INVOICE, "id": "73915865", "invoiceNumber": "RE-100", "status": "100"},
+        ),
+    }
+    fake_sevdesk.on("GET", "/Invoice", lambda request: answers[request.url.params["invoiceNumber"]])
+
+    code, lines = await _check_numbers(settings, fake_sevdesk, "RE-1000", "RE-9999", "RE-100")
+
+    assert lines == [
+        f"ok   account: {ACCOUNT_ID} (trial)",
+        "ok   invoice number RE-1000: 1 listed - exact match yes, type RE, status 200",
+        "ok   invoice number RE-9999: 0 listed",
+        "FAIL invoice number RE-100: 2 listed - exact match no, type SR, status 1000;"
+        " exact match yes, type RE, status 100",
+    ]
+    assert code == 1
+    assert fake_sevdesk.sent() == ["GET /SevClient", "GET /Invoice", "GET /Invoice", "GET /Invoice"]
+    filters = [request.url.params["invoiceNumber"] for request in fake_sevdesk.requests[1:]]
+    assert filters == ["RE-1000", "RE-9999", "RE-100"]
+    output = capsys.readouterr().out + "\n".join(lines)
+    for value in (*PERSONAL, "Synthia", "Examplova", "73915864", "84026975", "KD-62817", "123.45", "67.89"):
+        assert value not in output
+    assert not any(amount in line for line in lines for amount in ("123", "12345", "67", "6789"))
+
+
+async def test_every_number_matching_exactly_passes(settings, fake_sevdesk: FakeSevdesk):
+    fake_sevdesk.on("GET", "/Invoice", _listed(SYNTHETIC_INVOICE))
+
+    code, lines = await _check_numbers(settings, fake_sevdesk, "RE-1000")
+
+    assert code == 0
+    assert lines[-1] == "ok   invoice number RE-1000: 1 listed - exact match yes, type RE, status 200"
+
+
+async def test_a_failed_listing_fails_the_run_and_prints_no_remote_text(settings, fake_sevdesk: FakeSevdesk):
+    fake_sevdesk.on("GET", "/Invoice", httpx.Response(400, json={"error": {"message": "Synthia Examplova"}}))
+
+    code, lines = await _check_numbers(settings, fake_sevdesk, "RE-1000")
+
+    assert code == 1
+    assert lines[-1].startswith("FAIL invoice number RE-1000: sevdesk GET /api/v1/Invoice was rejected")
+    assert "Synthia" not in "\n".join(lines)
+
+
+async def test_invoice_numbers_stop_at_a_failed_identity_check(settings, fake_sevdesk: FakeSevdesk):
+    fake_sevdesk.on("GET", "/SevClient", objects([{"id": "4712", "name": TRIAL_COMPANY}]))
+
+    code, lines = await _check_numbers(settings, fake_sevdesk, "RE-1000")
+
+    assert code == 1
+    assert lines == [f"FAIL account: the token belongs to sevDesk account 4712, not to {ACCOUNT_ID}"]
+    assert fake_sevdesk.sent() == ["GET /SevClient"]
+
+
+def test_the_parser_takes_invoice_numbers_repeatedly_on_the_pattern_and_never_with_discover():
+    parsed = build_parser().parse_args(["--account", "live", "--invoice-number", "RE-1", "--invoice-number", "RE-2"])
+
+    assert parsed.invoice_numbers == ["RE-1", "RE-2"]
+    assert build_parser().parse_args(["--account", "live"]).invoice_numbers == []
+    for arguments in (
+        ["--account", "live", "--invoice-number", "re-1"],
+        ["--account", "live", "--invoice-number", "RE/1"],
+        ["--account", "live", "--invoice-number"],
+        ["--account", "live", "--discover", "--invoice-number", "RE-1"],
+        ["--account", "live", "--invoice", "RE-1"],
+    ):
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(arguments)

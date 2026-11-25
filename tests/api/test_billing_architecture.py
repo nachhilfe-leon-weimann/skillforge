@@ -86,12 +86,44 @@ def test_the_billing_endpoints_carry_no_boilerplate():
         "delete_sevdesk_contact",
         "put_manual_billing",
         "delete_manual_billing",
+        "get_payment_request",
         "list_rates",
         "put_rate",
         "delete_rate",
     ]
     for module in modules:
         assert _boilerplate(module.read_text()) == [], module.name
+
+
+def _floats(source: str) -> list[str]:
+    """Return what in a source file could make a ``float``: the name ``float``, a float literal, a true division."""
+    tree = ast.parse(source)
+    found = [
+        f"float at line {node.lineno}" for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id == "float"
+    ]
+    found += [
+        f"a float literal at line {node.lineno}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, float)
+    ]
+    found += [
+        f"a true division at line {node.lineno}"
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.BinOp, ast.AugAssign)) and isinstance(node.op, ast.Div)
+    ]
+    return found
+
+
+def test_the_payment_request_lookup_holds_no_float():
+    """Money rule 1: the open amount is ``int`` cents from ``Money``, never a ``float``."""
+    assert _floats((SERVICES / "payment_requests.py").read_text()) == []
+
+
+@pytest.mark.parametrize(
+    "source", ["amount = float(gross)", "amount = gross * 1.0", "amount = gross / 100", "amount /= 100"]
+)
+def test_the_float_check_catches_every_form(source: str):
+    assert _floats(source)
 
 
 def _integration_handling(source: str, *, package: str) -> list[str]:

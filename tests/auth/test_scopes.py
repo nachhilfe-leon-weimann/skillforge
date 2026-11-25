@@ -49,8 +49,9 @@ def test_no_vouched_scope_is_client_only_or_an_account_or_auth_scope():
 
 
 def test_no_billing_scope_is_vouched():
-    """A token the bot vouched for never moves money (billing spec, PD8)."""
-    assert VOUCHED_SCOPES.isdisjoint({Scope.BILLING_READ, Scope.BILLING_WRITE})
+    """A token the bot vouched for never moves money (billing spec, PD8), nor reads an invoice's payment state
+    (decision X)."""
+    assert VOUCHED_SCOPES.isdisjoint({Scope.BILLING_READ, Scope.BILLING_WRITE, Scope.BILLING_PAYMENT_READ})
     assert not any(scope.startswith("billing:") for scope in VOUCHED_SCOPES)
 
 

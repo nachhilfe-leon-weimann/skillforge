@@ -37,6 +37,12 @@ def test_admin_role_holds_exactly_seven_scopes():
     }
 
 
+def test_no_role_holds_the_payment_lookup_scope():
+    """`billing:payment:read` is an `application` grant of skillsite's client, never a person's (decision X)."""
+    assert Scope.BILLING_PAYMENT_READ not in scopes_for(Role)
+    assert Scope.BILLING_PAYMENT_READ not in ROLE_SCOPES[Role.ADMIN]
+
+
 def test_scopes_for_no_roles_is_the_base_user_scopes():
     assert scopes_for([]) == BASE_USER_SCOPES
 
