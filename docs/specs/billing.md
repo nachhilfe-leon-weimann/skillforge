@@ -5,10 +5,12 @@
 > approval.
 > **Amended 2026-11-25** (approved by the maintainer in the session): every invoice uses one sevDesk layout that
 > prints the GiroCode and the PayPal link itself, so SkillForge reads no payment method and sets no link (decision K,
-> SF1-4 removes the reads; the spike's S15 texts follow the new blocks). Head text, foot text and position description follow the maintainer's templates of
-> 2026-11-18, with one foot text for everyone ([Family-visible texts](#family-visible-texts)). A new slice, SF-PAY,
-> answers skillsite's `/zahlung` with an invoice's payment state under the new scope `billing:payment:read`
-> ([Payment-request lookup](#payment-request-lookup)), recorded on a second sevDesk trial.
+> SF1-4 removes the reads; the spike's S15 texts follow the new blocks). Head text, foot text and position
+> description follow the maintainer's templates of 2026-11-18, with one foot text for everyone
+> ([Family-visible texts](#family-visible-texts)). A new slice, SF-PAY, answers skillsite's `/zahlung` with an
+> invoice's payment state under the new scope `billing:payment:read`
+> ([Payment-request lookup](#payment-request-lookup)), for `RE` invoices only, built on SP-SD's fixtures and checked
+> against the real account by the maintainer's read-only doctor run (Q19) before its release.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
 > [`api-conventions.md`](api-conventions.md), [`crm-api.md`](crm-api.md) and
@@ -146,14 +148,14 @@ the vendor's published description.
 | Does a draft carry a number? | Recorded: a draft created through the API has none unless the request sets one (`numbers-129`); the number comes with the editor or at issue (Q1). |
 | Can text templates be read? | Documented: no. `headText` and `footText` are set by the caller and may hold HTML; a dictionary endpoint lists placeholders. Recorded: placeholders resolve in texts set through the API, link targets and `header` included (Q2). |
 | How is a contact's custom field read? | Documented: `ContactCustomFieldSetting` (the definition), `ContactCustomField` (the value per contact), `Contact/Factory/findContactsByCustomFieldValue`. Recorded: all three as documented (`payment-methods-14` to `-23`). Since 2026-11-25 billing reads no custom field (decision K). |
-| Can an invoice be read by its number? | Not verified. SF-PAY assumes `GET /Invoice` with an `invoiceNumber` filter and records it on the second trial first (S26, Q19); how a dunning reads is recorded there too (S27, Q20). |
+| Can an invoice be read by its number? | Not verified. SF-PAY builds `GET /Invoice` with an `invoiceNumber` filter from sevDesk's documentation; the maintainer's read-only `just sevdesk-doctor live --invoice-number` answers it on the real account before the release that carries SF-PAY (Q19). |
 | Where do unit and contact-person ids come from? | Recorded: `GET /Unity` lists the units and `GET /SevUser` the users, though the description lists neither (Q6). |
 | Which statuses exist? | Documented: 100 draft, 200 open, 750 partly paid, 1000 paid. Recorded: all four; a cancellation is an own invoice of type `SR` (Q12, Q13). |
 | How are values typed? | Recorded: sums, prices, quantities, rates and statuses arrive as strings (`"97.5"`, `"1.5"`, `"1000"`), `paidAmount` as a JSON number; no `5xx` was met (Q14). |
 | What does sevDesk's UI do to a draft from the API? | Recorded: the new invoice editor rewrites it when the maintainer opens it - the account's text templates replace head and foot text, `customerInternalNote` is emptied, an empty position is added, the delivery range becomes one day, `timeToPay` becomes 14 and a number is assigned (`read-back-61`, `-62`). The old editor ("Alte Version") keeps it; when the maintainer saves there it drops `<em>` (`<i>` stays), wraps the text in `<p>` and stores it HTML-escaped, and the PDF looks the same (the read-back's log of 139163231 and 139163755; `pdf-224`). Issuing needs an address on the contact and a number. |
 | What did the invoices look like before 2026-11-18? | Observed on two redacted invoices, one per payment method: number `RE-<n>`; one position per lesson (name `<Fach>-Online`, the description of [Family-visible texts](#family-visible-texts), quantity `1,00`, unit `Std`); the § 19 line; a GiroCode and the bank block on both variants; the PayPal link rendered as `…/zahlung?re=<number>&betrag=<d,dd>%20EUR`. |
 | What does `/zahlung` accept? | Read in skillsite's code (`parsePaymentRequest` in `invoice-link.ts`): `re` matches `INVOICE_PATTERN` (letters, digits, `. _ - /`, at most 32 characters); `betrag` is an unambiguous euro figure (`90,00`, `90,00 EUR`, `1.234,56`, `90.00`; a bare `1.234` is refused) within `AMOUNT_LIMITS`. skillsite's payment page (its `payment-page.md`, P-01) ignores `betrag` once it reads the open amount through SF-PAY. |
-| What does the invoice layout print since 2026-11-18? | The maintainer's statement (2026-11-25), not probed through the API: one layout for every invoice, on the account's letterpaper, with the GiroCode and the link `https://nachhilfe.leonweimann.de/zahlung?re={{data.object.invoice_number}}&betrag={{data.object.total}}`; a dunning letter carries the same link with `betrag={{data.object.reminder_remaining_amount}}`. Whether a draft created through the API gets this layout and letterpaper, the maintainer sees on the first real draft (SF6). |
+| What does the invoice layout print since 2026-11-18? | The maintainer's statement (2026-11-25), not probed through the API: one layout for every invoice, on the account's letterpaper, with the GiroCode and the link `https://nachhilfe.leonweimann.de/zahlung?re={{data.object.invoice_number}}&betrag={{data.object.total}}`; a dunning letter carries the same link with `betrag={{data.object.reminder_remaining_amount}}`. The lookup does not serve dunnings: a dunning's number answers `404` and ends on skillsite's "not found" page. Whether a draft created through the API gets this layout and letterpaper, the maintainer sees on the first real draft (SF6). |
 | How is one mailbox opened to an app? | Documented (Microsoft Learn, "Role Based Access Control for Applications in Exchange Online"): it replaces Application Access Policies; Entra grants and Exchange grants are a union; a change takes 30 minutes to 2 hours to apply. Run: `exchange-rbac-calendar.ps1` set it up; the service principal pointer takes the object id of the enterprise application, not of the app registration (`AADServicePrincipalNotFound` otherwise). `Test-ServicePrincipalAuthorization` answers `InScope` true for the lesson mailbox and false for the other; the recorder's read of the other mailbox got `403` (G6). The app holds no application permission in Entra (the maintainer's statement). |
 | How does Graph return recurring lessons? | Documented: `calendarView` expands a series into occurrences; `originalStart` holds an occurrence's planned start. Run: 70 days held 63 single instances, 48 occurrences and 14 exceptions. An occurrence moved in Outlook keeps its `id`, `iCalUId` and `seriesMasterId` and becomes an `exception` (Q16, G2). |
 | What does a lesson event carry? | Run, on 125 events over 70 days: `categories` arrive (50 events had at least one); the late-cancellation category is `Abgesagt` (Q9). `isCancelled` was never true, no event was all-day, `showAs` was always `busy`. 44 Teams meetings carry `isOnlineMeeting` and `teamsForBusiness`; a "Teams" category only colours them. Durations: 15, 30, 45, 60 and 120 minutes. Titles: 122 `<subject> mit <name>`, 1 `Kennenlernen`, 2 without the pattern. |
@@ -587,9 +589,9 @@ frontend's workflow: it keeps no state of skillsite's, and any client granted th
   `{invoice_number}` is one path segment that matches `^[A-Z0-9][A-Z0-9._-]{0,31}$` - no `/`; sevDesk's numbers
   read `RE-%NUMBER` (Q3). A number off the pattern is a `422` of the request's validation and reaches no sevDesk.
 - **Reads only.** After the identity check, the service reads the invoice by its number (`GET /Invoice` with an
-  `invoiceNumber` filter - unverified, Q19) and, for a `200`, the invoice's contact (`GET /Contact/{id}`) for its
-  `customerNumber`. It never writes - not to sevDesk, not to the database - and works in `dry_run`, which sends
-  reads.
+  `invoiceNumber` filter, built from the documentation; Q19 checks it before the release) and, for a `200`, the
+  invoice's contact (`GET /Contact/{id}`) for its `customerNumber`. It never writes - not to sevDesk, not to the
+  database - and works in `dry_run`, which sends reads.
 - **The answer.** `200` carries exactly four fields: `invoice_number`, `state` (`open` or `paid`),
   `open_amount_cents` (`int`) and `paypal` (`allowed` or `blocked`). Nothing else - no name, contact or customer
   number - in the response or in a log line.
@@ -598,16 +600,17 @@ frontend's workflow: it keeps no state of skillsite's, and any client granted th
   |---|---|
   | An invoice of type `RE`, status 200 or 750 | `200`, `open`; `open_amount_cents` is `sumGross` minus `paidAmount`, both parsed through `Money` (money rule 1). |
   | An invoice of type `RE`, status 1000, `paidAmount` > 0 | `200`, `paid`; `open_amount_cents` 0. |
-  | A dunning's number | `200` with the remaining amount sevDesk reports for the dunning - what the letter prints. How a dunning reads through the API is recorded first (S27, Q20); until then no rule is built for it. |
   | No invoice with that number | `404 invoice_not_payable`. |
   | A draft (status 100) | `404 invoice_not_payable`. |
-  | A cancellation (type `SR`) | `404 invoice_not_payable`. |
+  | A document of another type - a cancellation (`SR`), a dunning | `404 invoice_not_payable`. |
   | A cancelled original: status 1000, `paidAmount` 0 (Q12) | `404 invoice_not_payable`. |
   | A read that fails or is refused | `502 sevdesk_unavailable` or `502 sevdesk_refused` (PD6, [Errors from an integration](#errors-from-an-integration)). |
 
-  `404` never says which case it was. Anything the table does not name - several invoices under one number,
-  another type or status, an open amount below 0, a sum that does not parse - is `502 sevdesk_unavailable`: the
-  page then fails closed and redirects nobody.
+  Only an invoice of type `RE` is ever `open` or `paid`. Dunning stays in sevDesk (decision B): a dunning letter
+  carries the `/zahlung` link too, and its number ends on skillsite's "not found" page. `404` never says which case
+  it was. Anything the table does not name - several invoices under one number, another status, an open amount
+  below 0, a sum that does not parse - is `502 sevdesk_unavailable`: the page then fails closed and redirects
+  nobody.
 - **PayPal blocked.** `paypal` is `blocked` when the contact's `customerNumber` is one of
   `BILLING__PAYPAL_BLOCKED_CUSTOMER_NUMBERS`, compared exactly; otherwise `allowed`. A contact without a customer
   number is `allowed`. The setting is never logged.
@@ -891,9 +894,9 @@ repository.
 
 ## Fixture manifest
 
-Every response shape SF1, SF6, SFP-2 and SF-PAY build on is recorded once, scrubbed, and never edited by hand - a
-changed shape is recorded again and the diff reviewed. sevDesk fixtures come from the trial account through the
-recorder of SF1-3b and live under `tests/fixtures/sevdesk/<run id>/`; Graph fixtures are the exception: the maintainer runs
+Every response shape SF1, SF6 and SFP-2 build on is recorded once, scrubbed, and never edited by hand - a changed
+shape is recorded again and the diff reviewed. sevDesk fixtures come from the trial account through the recorder
+of SF1-3b and live under `tests/fixtures/sevdesk/<run id>/`; Graph fixtures are the exception: the maintainer runs
 the recorder of SP-CAL once, outside every work tree, and hands over its redacted summary; an agent builds G1 to G7
 as synthetic fixtures of that shape under `tests/fixtures/graph/` - G7 in the documented shape, since the recorder
 reads tokens through MSAL and records no token exchange. The maintainer compares them with the recording once and
@@ -930,9 +933,6 @@ the script then only reads.
 | S23 | Two drafts created back to back, each with a number from S8; issued in either order: are the numbers kept | Script; the maintainer opens and issues in the UI | SF6-1 | Q3 |
 | S24 | `deliveryDate` and `deliveryDateUntil` around midnight and both clock changes: which day sevDesk shows | Script | SF6-1 | Q15 |
 | S25 | A draft deleted in the UI: `GET /Invoice/{id}` and the contact's invoice list afterwards | The maintainer deletes in the UI; script reads | SF6-2 | Q17 |
-| S26 | `GET /Invoice` filtered by `invoiceNumber`, one read per number: an open `RE`, a partly paid one, a paid one, a draft that carries a number, a cancelled original and its `SR`, a number that does not exist | Second trial: the spike creates synthetic drafts; the maintainer numbers, issues, books and cancels in the UI; script reads | SF-PAY | Q19 |
-| S27 | A dunning of an open invoice: read by its number, with its type, status and the remaining amount sevDesk reports | Second trial: the maintainer creates the dunning in the UI; script reads | SF-PAY | Q20 |
-| S28 | The contact of S26's invoices, read with its `customerNumber` (`GET /Contact/{id}`) | Second trial: script | SF-PAY | |
 | G1 | A `calendarView` page of the lesson calendar with its paging link; the selected fields | The maintainer | SF4-1 | |
 | G2 | A series: an occurrence, a moved occurrence, the same range read twice | The maintainer | SF4-3 | Q16 |
 | G3 | A lesson cancelled late, with its category | The maintainer | SF4-2, SF4-3 | Q9 |
@@ -978,11 +978,14 @@ drafts no one touched (`numbers-128`, `read-back-80`, `cut-connection-140`). The
 The trial lasts 14 days. SF6 and SFP-2 are built on the recorded fixtures and on fault injection, not on a live
 trial.
 
-A **second trial** records S26 to S28 for SF-PAY, under its own run id, and nothing else. The maintainer creates it
-when SF-PAY is ready to record - planned for the week of 2026-11-30 - with synthetic data only, as SP-SD's; an agent
-runs the spike against it only after the maintainer's go in the session. The real account never gets a test
-object. A filter the second trial did not record stops SF-PAY. _Amended 2026-11-25: a second trial, for SF-PAY
-only._
+**SF-PAY records nothing new.** Its tests use this run's fixtures for the invoice states - status 100
+(`read-back-28`), 200 (`-158`), 750 (`-195`), 1000 with `paidAmount` (`-163`) and without it - a cancelled original
+(`-168`) - and the `SR` (`-190`); the `GET /Invoice` listing's shape (`deleted-read-187`); and the contact with its
+`customerNumber` (`contact-reads-12`). The listing filtered by `invoiceNumber` is derived from sevDesk's
+documentation and kept apart from every recorded run, in `tests/fixtures/sevdesk/documented/`, each file marked
+"derived from the documentation, not recorded". Whether the real account answers that filter as documented, the
+maintainer's read-only doctor run shows before the release (Q19); it records nothing, and the real account gets no
+test object (decision Y). No second trial is needed. _Amended 2026-11-25._
 
 ## Success metrics
 
@@ -1578,7 +1581,8 @@ write (`invoices.py`)._
   - [ ] `just sevdesk-doctor` checks the contact person and the hour unit; `--discover` still sends its three reads.
   - [ ] No recorded fixture changed.
 
-**SF-PAY - The payment-request lookup.** _Added 2026-11-25. Needs SF1-2 and the second trial; independent of SF5.
+**SF-PAY - The payment-request lookup.** _Added 2026-11-25. Needs SF1-2 and SF1-4; independent of SF5; its release
+waits for Q19.
 skillsite's `docs/specs/payment-page.md` consumes it.
 The route is a read of the billing domain - is an invoice open, how much is left, may it be paid
 by PayPal - not one frontend's workflow ([`AGENTS.md`](../../AGENTS.md)); confirmed by the maintainer on 2026-11-25._
@@ -1588,22 +1592,24 @@ by PayPal - not one frontend's workflow ([`AGENTS.md`](../../AGENTS.md)); confir
   `InvoiceNotPayableError` joins `app/services/billing/errors.py`. No own limit on lookups in v1: no `429`, no new
   error category; revisit if sevDesk throttling is observed.
   `BillingSettings` gains `paypal_blocked_customer_numbers` (`BILLING__PAYPAL_BLOCKED_CUSTOMER_NUMBERS`), with its
-  line in `.env.example`. The sevDesk client reads invoices by number (`GET /Invoice` with `invoiceNumber`, as S26
-  recorded it), and `Invoice` gains the fields the answer needs - its type and `paidAmount` as `Money` - and whatever
-  S27 shows a dunning needs. The service `app/services/billing/payment_requests.py` holds the answer table and the
-  PayPal check; the route
-  `app/api/v1/billing/payment_requests.py` with the response model `PaymentRequest`. The spike gains a step
-  `payment-requests` that only reads S26 to S28; the fixtures come from the second trial and are never edited.
+  line in `.env.example`. The sevDesk client reads invoices by number (`GET /Invoice` with `invoiceNumber`, as
+  documented), and `Invoice` gains the fields the answer needs: its type and `paidAmount` as `Money`. The service
+  `app/services/billing/payment_requests.py` holds the answer table and the PayPal check; the route
+  `app/api/v1/billing/payment_requests.py` with the response model `PaymentRequest`. `just sevdesk-doctor`
+  gains `--invoice-number <number>` (repeatable; `app/cli/sevdesk_doctor.py`): after the identity check it reads
+  `GET /Invoice` with that filter and prints, per number, how many invoices came back, whether the number matches
+  exactly, the type and the status - no name, contact, customer number or amount. The tests' fixtures follow the
+  [fixture manifest](#fixture-manifest): recorded ones from SP-SD, never edited; the filtered listing in
+  `tests/fixtures/sevdesk/documented/`.
 - _Tests that change:_ `_required_scope` in `tests/api/test_billing_auth.py` learns the lookup - a `GET` under
   `billing:payment:read` - and `PATH_VALUES` gains `invoice_number`; the endpoint list of
   `test_the_billing_endpoints_carry_no_boilerplate` in `tests/api/test_billing_architecture.py`; `ENDPOINTS`,
   `EXPECTATIONS` and `CATALOG` in `tests/api/test_billing_error_contract.py` with the lookup's errors;
   `test_seed_default_scopes_is_idempotent` in `tests/db/test_auth_service.py`.
 - _Acceptance criteria:_
-  - [ ] Q19 and Q20 are answered in this spec from the second trial's fixtures before the service reads them; a
-        filter the trial did not record stops the slice.
-  - [ ] One test per row of the answer table, on the recorded fixtures through a mocked transport: open, partly
-        paid, paid, dunning, unknown number, draft, cancellation, cancelled original, a failed read.
+  - [ ] One test per row of the answer table through a mocked transport: open, partly paid, paid, unknown number,
+        draft, another type (an `SR`), cancelled original, a failed read - the invoice states from SP-SD's recorded
+        fixtures, the filtered listing from `tests/fixtures/sevdesk/documented/`; no recorded fixture changed.
   - [ ] `open_amount_cents` is `sumGross` minus `paidAmount` in `int` cents through `Money`; no `float` in the
         service (architecture test).
   - [ ] A number off `^[A-Z0-9][A-Z0-9._-]{0,31}$` is a `422`, and the transport saw no request.
@@ -1615,10 +1621,16 @@ by PayPal - not one frontend's workflow ([`AGENTS.md`](../../AGENTS.md)); confir
         `502 sevdesk_refused`; the transport sees reads only, and no row changes.
   - [ ] `billing:read` or `billing:write` alone is `403`; the `admin` role does not hold `billing:payment:read`, and
         a token from the Discord exchange never carries it.
-  - [ ] _For the maintainer_ names: the go for the second trial; skillsite's client with the `application` grant
-        `billing:payment:read` (`just bootstrap-client`); the blocked customer numbers; production reading the real
-        account (`SEVDESK__ACCOUNT=live`, `SEVDESK__MODE=dry_run`, token, expected account id) before skillsite
-        releases the page.
+  - [ ] `--invoice-number` sends only the identity reads and `GET /Invoice` with the filter, and prints counts, the
+        exact match, type and status - never a name, contact, customer number or amount (test on a synthetic
+        response).
+  - [ ] Before the release that carries SF-PAY - not before its merge - Q19 is answered in this spec from the
+        maintainer's `just sevdesk-doctor live --invoice-number` run with one of his numbers and one that does not
+        exist; a mismatch stops the release, and the filter is fixed first.
+  - [ ] _For the maintainer_ names: the doctor run of Q19 on the real account before the release; skillsite's
+        client with the `application` grant `billing:payment:read` (`just bootstrap-client`); the blocked customer
+        numbers; production reading the real account (`SEVDESK__ACCOUNT=live`, `SEVDESK__MODE=dry_run`, token,
+        expected account id) before skillsite releases the page.
 
 **SFP-1a - Credit accounts.** _After SF6-2; needs PD12. The slices before it hold no prepaid code._
 
@@ -1742,15 +1754,15 @@ SP-CAL and SP-SD move each answered question here, with the fixture that shows i
 
 None: SP-CAL and SP-SD answered every question ([Decided](#decided-formerly-open-questions)).
 
-### For the second trial
+### Before SF-PAY's release
 
-Added 2026-11-25 for SF-PAY. The second trial answers them ([Fixture manifest](#fixture-manifest)); each moves to
-[Decided](#decided-formerly-open-questions) with its fixture before SF-PAY builds on it.
+Added 2026-11-25. SF-PAY is built before it is answered; the release that carries SF-PAY waits for the answer, which
+moves to [Decided](#decided-formerly-open-questions) and [Verified behavior](#verified-behavior). A mismatch stops
+the release, and the filter is fixed first.
 
-| Id | Question | Fixture |
+| Id | Question | Answered by |
 |---|---|---|
-| Q19 | Does `GET /Invoice` filter by `invoiceNumber` - exactly, every type and status included - and what does it answer for a number that does not exist? | S26 |
-| Q20 | How does a dunning read through the API: its number, type and status, and where sevDesk reports the remaining amount the letter prints? | S27 |
+| Q19 | Does `GET /Invoice` filter by `invoiceNumber` - exactly, every type and status included - and what does it answer for a number that does not exist? | The maintainer, never an agent: `just sevdesk-doctor live --invoice-number` with one of his numbers and one that does not exist; read-only, printing only the count, the exact match, type and status. |
 
 ### For the maintainer
 
@@ -1804,7 +1816,7 @@ No slice waits for a merge: dependent PRs form a stack ([`AGENTS.md`](../../AGEN
 | **SF6-1**, **SF6-2** | SF5-4 | |
 | **SF7** | SF6-2, SF4-3 | The release that carries the slices so far. |
 | **SF-CLI** | SF7 | The maintainer can bill from here on; the admin screens follow. |
-| **SF1-4**, **SF-PAY** | SF1-2, the second trial; SF-PAY also SF1-4 | One stack, independent of SF5. The second trial is planned for the week of 2026-11-30. |
+| **SF1-4**, **SF-PAY** | SF1-2; SF-PAY also SF1-4 | One stack, independent of SF5. The release that carries SF-PAY waits for Q19, the maintainer's doctor run on the real account. |
 | **SFP-1a**, **SFP-1b**, **SFP-1c**, **SFP-2a**, **SFP-2b** | SF6-2, PD12; each the one before | Their scenarios land in their own PRs first. |
 
 - **Before the freeze** only SF1, SF2, SF3 and the scripts of SP-CAL are built - SF2 and SF3 only once their
