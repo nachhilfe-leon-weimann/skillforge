@@ -286,8 +286,8 @@ def test_a_placeholder_still_passes_the_patterns(value: str, expected: str):
 def test_configuration_names_stay():
     scrubbed = Scrubber()([
         {
-            "objectName": "ContactCustomField",
-            "value": "Synthia's notes",
+            "objectName": "Invoice",
+            "customerInternalNote": "Synthia's notes",
             "contact": {"id": "21", "objectName": "Contact"},
         },
         {"objectName": "Unity", "name": "Std."},
@@ -298,7 +298,11 @@ def test_configuration_names_stay():
     ])
 
     assert scrubbed == [
-        {"objectName": "ContactCustomField", "value": SCRUBBED, "contact": {"id": "21", "objectName": "Contact"}},
+        {
+            "objectName": "Invoice",
+            "customerInternalNote": SCRUBBED,
+            "contact": {"id": "21", "objectName": "Contact"},
+        },
         {"objectName": "Unity", "name": "Std."},
         {"objectName": "Part", "name": "Maths"},
         {"objectName": "ContactCustomFieldSetting", "name": "Zahlungsverfahren"},
