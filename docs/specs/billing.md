@@ -3,6 +3,14 @@
 > Status: Accepted, 2026-11 - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3, SF3-1, SF3-2, SF4-1 to SF4-3 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD done (2026-11-11, run
 > `run202611112124164167`): every question is answered and the spec is frozen; a change needs the maintainer's
 > approval.
+> **Amended 2026-11-25** (approved by the maintainer in the session): every invoice uses one sevDesk layout that
+> prints the GiroCode and the PayPal link itself, so SkillForge reads no payment method and sets no link (decision K,
+> SF1-4 removes the reads; the spike's S15 texts follow the new blocks). Head text, foot text and position
+> description follow the maintainer's templates of 2026-11-18, with one foot text for everyone
+> ([Family-visible texts](#family-visible-texts)). A new slice, SF-PAY, answers skillsite's `/zahlung` with an
+> invoice's payment state under the new scope `billing:payment:read`
+> ([Payment-request lookup](#payment-request-lookup)), for `RE` invoices only, built on SP-SD's fixtures and checked
+> against the real account by the maintainer's read-only doctor run (Q19) before its release.
 > Builds on the [project sketch](../PROJECT.md), [ADR 0010](../decisions/0010-outbound-integrations.md) (outbound
 > integrations), [ADR 0007](../decisions/0007-crm-system-of-record.md) (the CRM is the system of record),
 > [`api-conventions.md`](api-conventions.md), [`crm-api.md`](crm-api.md) and
@@ -73,20 +81,20 @@ them.
 | **H - Duration** | A lesson is billed with its planned calendar duration, correctable in 15-minute steps. One position per lesson, quantity = minutes / 60, computed per position and never across a sum. | The appointment is what was agreed, and the correction covers a lesson that ran differently. Arithmetic per position keeps rule G exact; a sum of rounded parts would not be. |
 | **I - Payer** | The payer is the party with a `pays_for` relation to the student, otherwise the student. A student has exactly one payer at a time. When the payer changes, the new one applies from a date and older lessons stay with the old one ([PD1](#approved-by-the-maintainer)). An authority that pays is a company party with `pays_for`. | The CRM already holds who pays (ADR 0007). |
 | **J - Recipient** | The invoice goes to the payer's sevDesk contact (`ext.sevdesk_contact`). Without that link there is no draft. | sevDesk addresses an invoice to a contact, and the `ext` link is the one place a party meets its contact - nothing is looked up by name. |
-| **K - Payment method** | Read from the custom field "Zahlungsverfahren" of the sevDesk contact, with the values `PayPal` and `Überweisung`: read for the preview and frozen there. An empty or unknown value blocks. One method per payer; paying in advance is not a payment method. The maintainer switches the field to these two values before the cut-over. | sevDesk stays the home of how a customer pays; the PayPal link appears only for `PayPal`. |
+| **K - One invoice layout, no payment method** | Since 2026-11-18 every invoice uses one sevDesk layout. It always prints the GiroCode and a PayPal link to `/zahlung`, which it builds itself ([Not set by SkillForge](#not-set-by-skillforge)). No payment method appears on an invoice: SkillForge reads none, freezes none and sets no PayPal link. The maintainer no longer maintains the contact field "Zahlungsverfahren". Which customers may not pay by PayPal is configuration (`BILLING__PAYPAL_BLOCKED_CUSTOMER_NUMBERS`), read only by the payment-request lookup (SF-PAY). | One layout for every family; the payment page, not the invoice, asks a blocked customer to transfer. _Amended 2026-11-25: replaces "Payment method" - the contact's custom field "Zahlungsverfahren", frozen at the preview, with the PayPal link only for `PayPal`._ |
 | **L - Dates and tax** | Invoice date: the day the draft is created. Delivery date: the lesson's day, or the range from the first to the last lesson; a top-up's is the day of the draft (Q15). A lesson that has not ended is never billed. Payment term: 14 days for everyone. § 19 UStG: `taxRule` 11. | A normal sevDesk invoice refuses a delivery date after its invoice date. |
 | **M - Cancellations** | A late cancellation or a no-show is never billable by itself. It shows as cancelled, and the maintainer makes it billable per lesson with one click; it is then the same position as any lesson. A lesson the maintainer cancelled costs nothing, and its replacement is a normal lesson. | Each case is the maintainer's own decision. |
 | **N - Calendar** | Lessons come from one Microsoft 365 calendar, read through Microsoft Graph without a signed-in user. Titles follow `<Fach> mit <Vorname Nachname>`. Lessons are online (Discord or Teams), cost the same and all count. A phone appointment and the free first meeting (`Kennenlernen mit <Name>`) are never proposed as a lesson but can be added by hand. A title without ` mit ` shows as unassigned; there is no ignore list. An alias table maps calendar names to students. | The lesson calendar holds lessons and first meetings only. Names can carry typos or belong to a student not yet in the CRM. |
 | **O - One charge per lesson** | One table, `billing.lesson_charge`, holds every lesson's invoice position and prepaid debit alike. A unique index allows one active charge per lesson. "Billed" is derived from it and never stored. A top-up's positions bill no lesson and are frozen in `billing.topup_position` (SFP-2a). | The database rules out a lesson charged twice, not service discipline. _Amended at the freeze (2026-11): top-up positions._ |
 | **P - Corrections** | A correction voids a charge and books a new one. An issued invoice never changes: a Storno happens in sevDesk and is recorded in SkillForge with one click, which reopens its lessons. A lesson with charge history is never hard-deleted. The calendar import never changes a ticked or charged lesson; it flags the difference. | Every charge keeps its trail. |
 | **Q - Outbound writes** | Pending row, commit, call, outcome. A write is never retried. An unknown outcome is a state that a reconcile resolves. A sevDesk read error never changes money. | ADR 0010. |
-| **R - Number, no reference** | The invoice number is sevDesk's: its editor assigns it before preview or issue (Q1). SkillForge never sets one: title and PayPal link carry sevDesk's placeholders, which sevDesk fills when it renders (Q1 to Q3). SkillForge writes no reference: `customerInternalNote` stays empty, because sevDesk prints it on the invoice (S14, [M8](#for-the-maintainer)). | A number is never invented, and families see no token of SkillForge's. _Amended at the freeze (2026-11): the reference and the sequence fallback are gone._ |
+| **R - Number, no reference** | The invoice number is sevDesk's: its editor assigns it before preview or issue (Q1). SkillForge never sets one: title and foot text carry sevDesk's placeholders, which sevDesk fills when it renders (Q1 to Q3); the PayPal link is the layout's (decision K). SkillForge writes no reference: `customerInternalNote` stays empty, because sevDesk prints it on the invoice (S14, [M8](#for-the-maintainer)). | A number is never invented, and families see no token of SkillForge's. _Amended at the freeze (2026-11): the reference and the sequence fallback are gone. Amended 2026-11-25: the PayPal link left SkillForge's texts._ |
 | **S - Credit account** | One credit account per payer, for every child the payer pays for, shown as a statement. Credit is money, not hours. A prepaid lesson is charged to the account when it is ticked and never appears on a normal invoice. Ticking is never blocked: the balance may go negative, and the minus carries into the next top-up. No balance is stored. An account closes only at balance 0. | Replaces a project and a budget per cycle. |
 | **T - Top-up** | A top-up is a normal invoice with positions "N x subject" at the child's rate, without a date. Credit counts once the invoice is issued (sevDesk status >= 200), with the amount sevDesk reports; payment is only a badge. The amount per family defaults to 100 EUR and is free on every top-up, small amounts included. The helper hints when the remaining credit is one hour or less at the highest rate valid today among the account's children ([M11](#for-the-maintainer)), and the maintainer triggers the top-up. A prepaid family that wants single lessons for a while stays prepaid and gets a small top-up. | Today's practice. A draft is no invoice, so it is no credit. _Amended 2026-11 by M11: the hint follows the children's rate instead of a fixed 30 EUR._ |
 | **U - No opening balance** | A prepaid family moves to SkillForge when its running cycle in the time tracker is used up: it starts at balance 0 with a new top-up. Nothing is computed from the tracker. | No figure has to be verified per family. |
 | **V - Authorities** | Lessons an authority pays for (BuT) are billed by hand in v1: they show as "bill manually" and get no draft. | Rare, and an authority may ask for an e-invoice ([L2](#recorded-not-resolved)). |
 | **W - What families see** | Nothing new in v1. The maintainer reads a balance from the statement when a family asks. | The admin helper comes first. |
-| **X - Scopes** | `billing:read` and `billing:write` on `Scope`; the `admin` role holds both. | One permission system (sketch, principle 5). |
+| **X - Scopes** | `billing:read` and `billing:write` on `Scope`; the `admin` role holds both. `billing:payment:read` allows only the payment-request lookup (SF-PAY): an `application` grant of skillsite's own client, not in the `admin` role and not in `VOUCHED_SCOPES`. | One permission system (sketch, principle 5); the page that answers families needs an invoice's payment state, not the billing data. _Amended 2026-11-25: `billing:payment:read`._ |
 | **Y - Testing** | Every write test against sevDesk runs on a synthetic trial account, through the two trial recipes only - `just contract-sevdesk` (SF1-3a) and `just sevdesk-spike` (SF1-3b) - and an agent runs either only after the maintainer's go in the session. The real account never gets a test object. Checks of the admin screens run only against a local SkillForge with `just seed-demo` data (SF2-3). `httpx` becomes a direct runtime dependency with SF1-1 (it is already installed through `fastapi[standard]`); any other new runtime dependency is asked first. | ADR 0010; a draft cannot be deleted through the documented API. |
 | **Z - Cut-over** | The time tracker ends in a hard cut-over on the first day of a month, after one month in parallel and a full export. No import, no write-back. | One month side by side shows every difference while the old way still works; after it, a lesson has one system of record. The export keeps the old records. |
 
@@ -139,13 +147,15 @@ the vendor's published description.
 | Which tax rule is § 19 UStG? | Documented: `taxRule` 11. Recorded: sevDesk prints its own § 19 line for it, not the `taxText` sent (S14). |
 | Does a draft carry a number? | Recorded: a draft created through the API has none unless the request sets one (`numbers-129`); the number comes with the editor or at issue (Q1). |
 | Can text templates be read? | Documented: no. `headText` and `footText` are set by the caller and may hold HTML; a dictionary endpoint lists placeholders. Recorded: placeholders resolve in texts set through the API, link targets and `header` included (Q2). |
-| How is a contact's custom field read? | Documented: `ContactCustomFieldSetting` (the definition), `ContactCustomField` (the value per contact), `Contact/Factory/findContactsByCustomFieldValue`. Recorded: all three as documented (`payment-methods-14` to `-23`). |
+| How is a contact's custom field read? | Documented: `ContactCustomFieldSetting` (the definition), `ContactCustomField` (the value per contact), `Contact/Factory/findContactsByCustomFieldValue`. Recorded: all three as documented (`payment-methods-14` to `-23`). Since 2026-11-25 billing reads no custom field (decision K). |
+| Can an invoice be read by its number? | Not verified. SF-PAY builds `GET /Invoice` with an `invoiceNumber` filter from sevDesk's documentation; the maintainer's read-only `just sevdesk-doctor live --invoice-number` answers it on the real account before the release that carries SF-PAY (Q19). |
 | Where do unit and contact-person ids come from? | Recorded: `GET /Unity` lists the units and `GET /SevUser` the users, though the description lists neither (Q6). |
 | Which statuses exist? | Documented: 100 draft, 200 open, 750 partly paid, 1000 paid. Recorded: all four; a cancellation is an own invoice of type `SR` (Q12, Q13). |
 | How are values typed? | Recorded: sums, prices, quantities, rates and statuses arrive as strings (`"97.5"`, `"1.5"`, `"1000"`), `paidAmount` as a JSON number; no `5xx` was met (Q14). |
 | What does sevDesk's UI do to a draft from the API? | Recorded: the new invoice editor rewrites it when the maintainer opens it - the account's text templates replace head and foot text, `customerInternalNote` is emptied, an empty position is added, the delivery range becomes one day, `timeToPay` becomes 14 and a number is assigned (`read-back-61`, `-62`). The old editor ("Alte Version") keeps it; when the maintainer saves there it drops `<em>` (`<i>` stays), wraps the text in `<p>` and stores it HTML-escaped, and the PDF looks the same (the read-back's log of 139163231 and 139163755; `pdf-224`). Issuing needs an address on the contact and a number. |
-| What do today's invoices look like? | Observed on two redacted invoices, one per payment method: number `RE-<n>`; one position per lesson (name `<Fach>-Online`, the description of [Family-visible texts](#family-visible-texts), quantity `1,00`, unit `Std`); the § 19 line; a GiroCode and the bank block on both variants; the PayPal link rendered as `…/zahlung?re=<number>&betrag=<d,dd>%20EUR`. |
-| What does `/zahlung` accept? | Read in skillsite's code (`parsePaymentRequest` in `invoice-link.ts`): `re` matches `INVOICE_PATTERN` (letters, digits, `. _ - /`, at most 32 characters); `betrag` is an unambiguous euro figure (`90,00`, `90,00 EUR`, `1.234,56`, `90.00`; a bare `1.234` is refused) within `AMOUNT_LIMITS`. |
+| What did the invoices look like before 2026-11-18? | Observed on two redacted invoices, one per payment method: number `RE-<n>`; one position per lesson (name `<Fach>-Online`, the description of [Family-visible texts](#family-visible-texts), quantity `1,00`, unit `Std`); the § 19 line; a GiroCode and the bank block on both variants; the PayPal link rendered as `…/zahlung?re=<number>&betrag=<d,dd>%20EUR`. |
+| What does `/zahlung` accept? | Read in skillsite's code (`parsePaymentRequest` in `invoice-link.ts`): `re` matches `INVOICE_PATTERN` (letters, digits, `. _ - /`, at most 32 characters); `betrag` is an unambiguous euro figure (`90,00`, `90,00 EUR`, `1.234,56`, `90.00`; a bare `1.234` is refused) within `AMOUNT_LIMITS`. skillsite's payment page (its `payment-page.md`, P-01) ignores `betrag` once it reads the open amount through SF-PAY. |
+| What does the invoice layout print since 2026-11-18? | The maintainer's statement (2026-11-25), not probed through the API: one layout for every invoice, on the account's letterpaper, with the GiroCode and the link `https://nachhilfe.leonweimann.de/zahlung?re={{data.object.invoice_number}}&betrag={{data.object.total}}`; a dunning letter carries the same link with `betrag={{data.object.reminder_remaining_amount}}`. The lookup does not serve dunnings: a dunning's number answers `404` and ends on skillsite's "not found" page. Whether a draft created through the API gets this layout and letterpaper, the maintainer sees on the first real draft (SF6). |
 | How is one mailbox opened to an app? | Documented (Microsoft Learn, "Role Based Access Control for Applications in Exchange Online"): it replaces Application Access Policies; Entra grants and Exchange grants are a union; a change takes 30 minutes to 2 hours to apply. Run: `exchange-rbac-calendar.ps1` set it up; the service principal pointer takes the object id of the enterprise application, not of the app registration (`AADServicePrincipalNotFound` otherwise). `Test-ServicePrincipalAuthorization` answers `InScope` true for the lesson mailbox and false for the other; the recorder's read of the other mailbox got `403` (G6). The app holds no application permission in Entra (the maintainer's statement). |
 | How does Graph return recurring lessons? | Documented: `calendarView` expands a series into occurrences; `originalStart` holds an occurrence's planned start. Run: 70 days held 63 single instances, 48 occurrences and 14 exceptions. An occurrence moved in Outlook keeps its `id`, `iCalUId` and `seriesMasterId` and becomes an `exception` (Q16, G2). |
 | What does a lesson event carry? | Run, on 125 events over 70 days: `categories` arrive (50 events had at least one); the late-cancellation category is `Abgesagt` (Q9). `isCancelled` was never true, no event was all-day, `showAs` was always `busy`. 44 Teams meetings carry `isOnlineMeeting` and `teamsForBusiness`; a "Teams" category only colours them. Durations: 15, 30, 45, 60 and 120 minutes. Titles: 122 `<subject> mit <name>`, 1 `Kennenlernen`, 2 without the pattern. |
@@ -167,6 +177,8 @@ the vendor's published description.
 - **Draft**: an invoice created in sevDesk and not sent.
 - **Issued**: sevDesk reports status 200 or higher for the invoice.
 - **Top-up**: an invoice that adds credit to a credit account.
+- **Payment request**: what skillsite's `/zahlung` asks about one invoice number - its state, its open amount and
+  whether PayPal is allowed (SF-PAY).
 
 ### Tables
 
@@ -179,7 +191,6 @@ two columns: `principal_type` and `principal_id`.
 ```sql
 billing.lesson_status = ('planned', 'held', 'cancelled', 'not_held')
 billing.rate_source = ('default', 'student', 'lesson')
-billing.payment_method = ('paypal', 'transfer')
 billing.invoice_state = ('pending', 'created', 'failed', 'unknown', 'issued', 'cancelled', 'discarded')
 billing.invoice_kind = ('lessons', 'topup')              -- SFP-2a
 billing.prepaid_entry_kind = ('topup', 'adjustment')     -- SFP-1a
@@ -228,7 +239,6 @@ last_seen_at TIMESTAMPTZ NOT NULL
 -- billing.invoice  (SF5-3)
 payer_party_id UUID NOT NULL
 state invoice_state NOT NULL
-payment_method payment_method NOT NULL                   -- frozen (decision K)
 sevdesk_contact_id TEXT NOT NULL                         -- frozen at create; reconcile and mark-cancelled read it
 invoice_date DATE NOT NULL
 delivery_from DATE NOT NULL                              -- a top-up's is the day of the draft (Q15)
@@ -413,7 +423,7 @@ What happens to an occurrence, first match wins:
 - **Route.** `route_lesson(lesson, payer, accounts)` answers `invoice`, `manual` (PD5) or, from SFP-1a, `prepaid`. The
   same pure function serves the tick and the preview, so no lesson falls between two rules.
 - **Preview.** `POST /invoices/preview` takes lesson ids of one payer and returns the planned invoice: positions,
-  texts, dates, the total, the frozen payment method, a fingerprint, every blocker at once, and warnings. Blockers are
+  texts, dates, the total, a fingerprint, every blocker at once, and warnings. Blockers are
   a closed list:
 
   | Code | Means |
@@ -423,17 +433,13 @@ What happens to an occurrence, first match wins:
   | `payer_ambiguous` | The student has more than one payer. |
   | `payer_missing` | The lesson is billable and has no stored payer (PD1). |
   | `no_sevdesk_contact` | The payer has no `ext.sevdesk_contact`. |
-  | `payment_method_missing` | "Zahlungsverfahren" is empty or holds another value than `PayPal` or `Überweisung`. |
   | `manual_payer` | The payer is billed by hand. |
   | `prepaid_payer` | The lesson belongs to a credit account (SFP-1a). |
   | `subject_without_part` | No sevDesk part is configured for the lesson's subject. |
 
   A warning blocks nothing. The closed list has one code, `payer_changed`: the payer stored on a lesson is not the
-  one the CRM resolves now (PD1).
+  one the CRM resolves now (PD1). _Amended 2026-11-25: the blocker `payment_method_missing` is gone (decision K)._
 
-- **Payment method.** The contact's field is addressed by `SEVDESK__PAYMENT_METHOD_FIELD_SETTING_ID`; its values
-  `PayPal` and `Überweisung` map to `payment_method` in one place, `app/services/billing/payment_methods.py`
-  (SF5-4). They are match tokens, not family-visible text.
 - **Create.** `POST /invoices` repeats the preview and compares the fingerprint (PD2). Then, in order: the invoice
   row in state `pending` and one charge per lesson are inserted and committed; `saveInvoice` is called once; the
   outcome is stored in a second transaction ([Invoice states](#invoice-states)). The request-wide `DBSession` is one
@@ -451,9 +457,10 @@ What happens to an occurrence, first match wins:
   (`invoice-27`) shows the fields.
 - **Position name.** sevDesk shows no name on a position sent with `part` and without `name` (Q5). The preview reads
   the part's name from sevDesk (`Mathe-Online`), freezes it, and the draft sends it as the position's `name`.
-- **Payment link.** `PAYMENT_LINK` in `texts.py` is the `/zahlung` link of
-  [Family-visible texts](#family-visible-texts) with sevDesk's placeholders for number and amount; sevDesk fills
-  them when it renders (Q2). SkillForge neither knows nor sends the number.
+- **No payment method, no payment link.** The invoice layout prints the GiroCode and the `/zahlung` link itself
+  (decision K, [Not set by SkillForge](#not-set-by-skillforge)); the draft sends neither, and SkillForge reads no
+  payment method for it. _Amended 2026-11-25: replaces the payment method of `payment_methods.py` and
+  `PAYMENT_LINK`._
 
 ### sevDesk in `dry_run` and without a token
 
@@ -467,7 +474,7 @@ What happens to an occurrence, first match wins:
   of the real one. SF1 builds `IntegrationMode` with `dry_run` and `live`; `fake` is SF5-4's addition, with the
   one place the client is injected. The mode is refused together with `SEVDESK__ACCOUNT=live`. `just seed-demo`,
   the checks of the admin screens and the test of the command-line stage set it, and `just seed-demo` fills the
-  fake with synthetic contacts, payment methods and parts.
+  fake with synthetic contacts and parts.
 - **A missing token selects nothing.** Without a token and without `fake`, every sevDesk call is
   `sevdesk_refused`. A production that lost its token refuses; it never stores an invoice with a fake id.
 
@@ -572,6 +579,49 @@ billing services translate them; no endpoint catches one.
 - **A lesson the maintainer cancels** is not charged and nothing is paid back: the credit stays (decision M).
   Refunds, reopening an account and closing with credit left are v1.1.
 
+## Payment-request lookup
+
+skillsite's `/zahlung` (its `docs/specs/payment-page.md`) asks SkillForge for the payment state of one invoice
+before it redirects to PayPal (SF-PAY). The lookup is billing's read of an invoice under its own scope, not a
+frontend's workflow: it keeps no state of skillsite's, and any client granted the scope gets the same answer.
+
+- **Route.** `GET /api/v1/billing/payment-requests/{invoice_number}` under `billing:payment:read` (decision X).
+  `{invoice_number}` is one path segment that matches `^[A-Z0-9][A-Z0-9._-]{0,31}$` - no `/`; sevDesk's numbers
+  read `RE-%NUMBER` (Q3). A number off the pattern is a `422` of the request's validation and reaches no sevDesk.
+- **Reads only.** After the identity check, the service reads the invoice by its number (`GET /Invoice` with an
+  `invoiceNumber` filter, built from the documentation; Q19 checks it before the release) and, for a `200`, the
+  invoice's contact (`GET /Contact/{id}`) for its `customerNumber`. It never writes - not to sevDesk, not to the
+  database - and works in `dry_run`, which sends reads.
+- **The answer.** `200` carries exactly four fields: `invoice_number`, `state` (`open` or `paid`),
+  `open_amount_cents` (`int`) and `paypal` (`allowed` or `blocked`). Nothing else - no name, contact or customer
+  number - in the response or in a log line.
+
+  | sevDesk reports for the number | Answer |
+  |---|---|
+  | An invoice of type `RE`, status 200 or 750 | `200`, `open`; `open_amount_cents` is `sumGross` minus `paidAmount`, both parsed through `Money` (money rule 1). |
+  | An invoice of type `RE`, status 1000, `paidAmount` > 0 | `200`, `paid`; `open_amount_cents` 0. |
+  | No invoice with that number | `404 invoice_not_payable`. |
+  | A draft (status 100) | `404 invoice_not_payable`. |
+  | A document of another type - a cancellation (`SR`), a dunning | `404 invoice_not_payable`. |
+  | A cancelled original: status 1000, `paidAmount` 0 (Q12) | `404 invoice_not_payable`. |
+  | A read that fails or is refused | `502 sevdesk_unavailable` or `502 sevdesk_refused` (PD6, [Errors from an integration](#errors-from-an-integration)). |
+
+  Only an invoice of type `RE` is ever `open` or `paid`. Dunning stays in sevDesk (decision B): a dunning letter
+  carries the `/zahlung` link too, and its number ends on skillsite's "not found" page. `404` never says which case
+  it was. Anything the table does not name - several invoices under one number, another status, an open amount
+  below 0, a sum that does not parse - is `502 sevdesk_unavailable`: the page then fails closed and redirects
+  nobody.
+- **PayPal blocked.** `paypal` is `blocked` when the contact's `customerNumber` is one of
+  `BILLING__PAYPAL_BLOCKED_CUSTOMER_NUMBERS`, compared exactly; otherwise `allowed`. A contact without a customer
+  number is `allowed`. The setting is never logged.
+- **No own limit in v1.** SkillForge does not limit the lookups itself: the page's traffic is tiny, and a lookup
+  costs up to three reads (identity, invoice, contact). A throttle of sevDesk's (its own `429`) is
+  `502 sevdesk_unavailable` (PD6), which skillsite shows as "not reachable". Revisit if sevDesk throttling is
+  observed.
+- **Production reads the real account first.** Before skillsite releases the page, production SkillForge reads the
+  real sevDesk account (`SEVDESK__ACCOUNT=live`) - earlier than SF7 planned it (the maintainer's decision,
+  2026-11-25). Writes stay `dry_run` until SF7.
+
 ## Family-visible texts
 
 This section is the single source of every German text a family sees. The billing domain's text module
@@ -582,10 +632,12 @@ marked **pending approval** is a proposal: it is not built before the maintainer
 What is _not_ family-visible text and lives elsewhere - German words included, because they are matching data:
 
 - **Match tokens** - `mit`, `Kennenlern`, `Telefon`, the late-cancellation category
-  (`app/services/billing/calendar_rules.py`); `Zahlungsverfahren`, `PayPal`, `Überweisung` as sevDesk reports them
-  (`app/services/billing/payment_methods.py`, and the field by its configured id).
+  (`app/services/billing/calendar_rules.py`).
 - **The contact person.** The name under the foot text comes from sevDesk - its placeholder `[%KONTAKTPERSON%]`
   for the user behind `SEVDESK__CONTACT_PERSON_ID` - and never from `texts.py` or any file of the repository.
+- **The layout's lines.** "Überweisung · mit der Banking-App scannen" under the GiroCode and "Oder bequem online
+  bezahlen (PayPal) →" with the `/zahlung` link are printed by the invoice layout in sevDesk
+  ([Not set by SkillForge](#not-set-by-skillforge)), not sent by SkillForge: they never go into `texts.py`.
 
 ### Position
 
@@ -596,22 +648,23 @@ SkillForge sends the part's name read at the preview (PD4). Quantity: `minutes /
 `POSITION_DESCRIPTION` - a lesson:
 
 ```text
-<Wochentag>, <T>. <Monat> <JJJJ> / HH:MM – HH:MM
+<Wt>, <TT>.<MM>.<JJJJ> → <HH:MM>–<HH:MM>
 ```
 
 `POSITION_DESCRIPTION_WITH_NAME` - a lesson on an invoice that holds lessons of several children:
 
 ```text
-<Vorname> / <Wochentag>, <T>. <Monat> <JJJJ> / HH:MM – HH:MM
+<Vorname> / <Wt>, <TT>.<MM>.<JJJJ> → <HH:MM>–<HH:MM>
 ```
 
-- `<Wochentag>`: `Montag`, `Dienstag`, `Mittwoch`, `Donnerstag`, `Freitag`, `Samstag`, `Sonntag`.
-- `<Monat>`: `Januar`, `Februar`, `März`, `April`, `Mai`, `Juni`, `Juli`, `August`, `September`, `Oktober`,
-  `November`, `Dezember`.
-- `<T>` has no leading zero. Times are `Europe/Berlin`, 24 hours, start and end. Between them stands an en dash
-  (U+2013) with one space on each side.
-- Example with synthetic data: `Montag, 3. November 2025 / 14:00 – 15:00`.
+- `<Wt>`: the weekday in two letters - `Mo`, `Di`, `Mi`, `Do`, `Fr`, `Sa`, `So`.
+- `<TT>` and `<MM>` have a leading zero, `<JJJJ>` four digits. Times are `Europe/Berlin`, 24 hours, start and end.
+- Between date and start stands the arrow `→` (U+2192) with one space on each side; between start and end the en
+  dash `–` (U+2013) without spaces.
+- Example with synthetic data: `Di, 17.11.2026 → 16:00–17:00`; with a name: `<Vorname> / Di, 17.11.2026 → 16:00–17:00`.
 - A billable cancellation uses the same description (decision M).
+- _Amended 2026-11-25: the maintainer's template of 2026-11-18 replaces
+  `<Wochentag>, <T>. <Monat> <JJJJ> / HH:MM – HH:MM`._
 
 A top-up position has the subject's part as its name and quantity N. Today's top-up invoices carry no
 description; from SkillForge's first top-up on it carries one (M4, approved). A remainder top-up (M6) uses the same.
@@ -652,98 +705,65 @@ sevDesk prints its own line for tax rule 11, which reads exactly so; the `taxTex
 
 ### Head text
 
-Today's template in sevDesk, raw (M3). `[%VOLLEANREDE%]` is the full salutation (`Sehr geehrte Frau …`,
-`Sehr geehrter Herr …`):
+The maintainer's template of 2026-11-18, raw (M3), with no blank line after the salutation. `[%VOLLEANREDE%]` is
+the full salutation (`Sehr geehrte Frau …`, `Sehr geehrter Herr …`):
 
 ```text
 [%VOLLEANREDE%],
-
-vielen Dank für Ihren Auftrag und das damit verbundene Vertrauen!
-Nachfolgend finden Sie die Abrechnung der vereinbarten Leistungen im oben genannten Zeitraum:
+vielen Dank für Ihr Vertrauen. Hier ist die Abrechnung der Nachhilfestunden im oben genannten Zeitraum:
 ```
 
-A top-up uses the same head text, as today (approved, M3).
+A top-up's head text is deferred to SFP: this one speaks of "Abrechnung der Nachhilfestunden", which SFP revisits
+for a top-up (M3).
 
-`HEAD_TEXT` - the markup SkillForge sends; approved as today's look (M7):
+`HEAD_TEXT` - the markup SkillForge sends; approved with the template (M7):
 
 ```html
 {Vollanrede},<br>
-<br>
-vielen Dank für Ihren Auftrag und das damit verbundene Vertrauen!<br>
-Nachfolgend finden Sie die Abrechnung der vereinbarten Leistungen im oben genannten Zeitraum:
+vielen Dank für Ihr Vertrauen. Hier ist die Abrechnung der Nachhilfestunden im oben genannten Zeitraum:
 ```
 
 `{Vollanrede}` stands for `[%VOLLEANREDE%]`, which sevDesk resolves (Q2): `Sehr geehrte Damen und Herren` for the
 trial's contact without a salutation; a person's salutation the maintainer sees on the first real draft (SF6).
+_Amended 2026-11-25: the template of 2026-11-18 replaces "vielen Dank für Ihren Auftrag und das damit verbundene
+Vertrauen! …"._
 
 ### Foot text
 
-Today's templates in sevDesk, raw, for reference. "Überweisung":
+One foot text for every invoice (decision K): the maintainer's template of 2026-11-18, raw.
+`bis zum [%ZAHLUNGSZIEL%]` is bold; the due date is the invoice date plus 14 days.
 
 ```text
-Zahlungsverfahren: [%KONTAKT.ZAHLUNGSVERFAHREN%]
-Bitte begleichen Sie den Rechnungsbetrag bis zum [%ZAHLUNGSZIEL%] unter Angabe der Rechnungs- oder Kundennummer.
-Bei Rückfragen stehe ich Ihnen gerne zur Verfügung.
+Bitte überweisen Sie den Betrag bis zum [%ZAHLUNGSZIEL%] mit dem Verwendungszweck [%RECHNUNGSNUMMER%].
+Bei Fragen erreichen Sie mich jederzeit per E-Mail oder WhatsApp.
 Mit freundlichen Grüßen
 [%KONTAKTPERSON%]
 ```
 
-"PayPal" differs in its first line, where `Weiter mit PayPal` is a link:
+The wording is the template's word for word (M1), the markup approved with it (M7).
 
-```text
-Zahlungsverfahren: [%KONTAKT.ZAHLUNGSVERFAHREN%] (Weiter mit PayPal)
-```
-
-Rendered today, `Zahlungsverfahren:` is bold, its value italic - the link included - and `bis zum <Datum>` bold;
-the due date is the invoice date plus 14 days.
-
-From SkillForge's first draft on the first line no longer comes from the contact's field: SkillForge writes
-`Überweisung` or `PayPal (Weiter mit PayPal)` itself (decided). The rest keeps today's wording word for word
-(approved, M1); a modernised wording is the maintainer's to give. The markup is approved as today's look (M7): S15
-changed how it is written (`<i>` for italic), not how it looks.
-
-`FOOT_TRANSFER`:
+`FOOT_TEXT`:
 
 ```html
-<strong>Zahlungsverfahren:</strong> <i>Überweisung</i><br>
-Bitte begleichen Sie den Rechnungsbetrag <strong>bis zum {Zahlungsziel}</strong> unter Angabe der Rechnungs- oder Kundennummer.<br>
-Bei Rückfragen stehe ich Ihnen gerne zur Verfügung.<br>
+Bitte überweisen Sie den Betrag <strong>bis zum {Zahlungsziel}</strong> mit dem Verwendungszweck {Rechnungsnummer}.<br>
+Bei Fragen erreichen Sie mich jederzeit per E-Mail oder WhatsApp.<br>
 Mit freundlichen Grüßen<br>
 {Kontaktperson}
 ```
 
-`FOOT_PAYPAL`:
-
-```html
-<strong>Zahlungsverfahren:</strong> <i>PayPal (<a href="{Zahlungslink}">Weiter mit PayPal</a>)</i><br>
-Bitte begleichen Sie den Rechnungsbetrag <strong>bis zum {Zahlungsziel}</strong> unter Angabe der Rechnungs- oder Kundennummer.<br>
-Bei Rückfragen stehe ich Ihnen gerne zur Verfügung.<br>
-Mit freundlichen Grüßen<br>
-{Kontaktperson}
-```
-
-- `{Zahlungslink}` is `PAYMENT_LINK` below. Today's
-  invoices render it as `…/zahlung?re=<number>&betrag=<d,dd>%20EUR`: the amount with a decimal comma and ` EUR`.
-  The link must satisfy the `/zahlung` contract ([Verified behavior](#verified-behavior)); an invoice without
-  PayPal has no link.
-- `{Zahlungsziel}` and `{Kontaktperson}` stand for sevDesk's placeholders `[%ZAHLUNGSZIEL%]` and
-  `[%KONTAKTPERSON%]`; `PAYMENT_LINK` carries `[%RECHNUNGSNUMMER%]` and `[%BETRAG%]`. sevDesk resolves them when it
-  renders - inside the link target too (Q2). `[%ZAHLUNGSZIEL%]` printed the invoice date on the trial's drafts,
-  which carried no `timeToPay`; the draft sends `timeToPay` 14 (decision L), and the first real draft shows the
-  date (SF6). `[%BETRAG%]` renders as `97,50%20EUR`, which `/zahlung` accepts.
-- Italic is written `<i>`: sevDesk's editor drops `<em>` when the maintainer saves a draft (M7).
-- sevDesk prints the bank block (bank, IBAN) in the footer under an own foot text. The trial printed no GiroCode,
-  even with it switched on, and the API has no documented switch per invoice (Q4); the maintainer checks the
-  GiroCode on the first real draft (SF6).
-
-`PAYMENT_LINK` - the target of `Weiter mit PayPal`, with sevDesk's placeholders for number and amount:
-
-```text
-https://nachhilfe.leonweimann.de/zahlung?re=[%RECHNUNGSNUMMER%]&betrag=[%BETRAG%]
-```
+- `{Zahlungsziel}`, `{Rechnungsnummer}` and `{Kontaktperson}` stand for sevDesk's placeholders `[%ZAHLUNGSZIEL%]`,
+  `[%RECHNUNGSNUMMER%]` and `[%KONTAKTPERSON%]`, which sevDesk resolves when it renders (Q2):
+  `[%RECHNUNGSNUMMER%]` is empty on a draft and the number once issued. `[%ZAHLUNGSZIEL%]` printed the invoice date
+  on the trial's drafts, which carried no `timeToPay`; the draft sends `timeToPay` 14 (decision L), and the first
+  real draft shows the date (SF6).
+- The foot text names no payment method and carries no link: the layout prints the GiroCode and the PayPal link
+  (decision K).
+- sevDesk prints the bank block (bank, IBAN) in the footer under an own foot text.
+- _Amended 2026-11-25: `FOOT_TEXT` replaces `FOOT_TRANSFER` and `FOOT_PAYPAL`, and `PAYMENT_LINK` is gone
+  (decision K)._
 
 `TOPUP_CREDIT_SENTENCE` - **pending approval**, deferred to SFP (M2): a proposal, not built before then; until
-then a top-up carries today's foot text. One more line in the foot text of a top-up, before `Bei Rückfragen …`:
+then a top-up carries `FOOT_TEXT`. One more line in the foot text of a top-up, before `Bei Fragen …`:
 
 ```html
 Der Rechnungsbetrag wird Ihrem Guthaben gutgeschrieben und mit den kommenden Unterrichtsstunden verrechnet.<br>
@@ -758,11 +778,20 @@ What the maintainer keeps so in sevDesk, because SkillForge cannot set it per in
 - **The old editor.** A draft of SkillForge's is opened in the old invoice editor ("Alte Version"). The new one
   rewrites it on opening: the account's text templates, an empty position, one delivery day instead of the range
   (Verified behavior). Drift shows such a change; the way out is the one for any drift.
-- **sevDesk's own PayPal display** stays at "Ausblenden": the PayPal link is the one in the foot text.
+- **One invoice layout** (decision K). Since 2026-11-18 every invoice uses it, on the account's letterpaper. It
+  always prints the GiroCode, with "Überweisung · mit der Banking-App scannen" under it, and "Oder bequem online
+  bezahlen (PayPal) →", linked to
+  `https://nachhilfe.leonweimann.de/zahlung?re={{data.object.invoice_number}}&betrag={{data.object.total}}`; a
+  dunning letter carries the same link with `betrag={{data.object.reminder_remaining_amount}}`. Whether a draft
+  created through the API gets this layout and the account's letterpaper, the maintainer sees on the first real
+  draft (SF6).
+- **The document's switch "EPC-QR-Code (GiroCode)"** is on.
+- **sevDesk's own PayPal display** stays at "Ausblenden": the PayPal link is the layout's.
 
 ## Route map
 
-Target shape, under `/api/v1/billing`, tag `billing`. R is `billing:read`, W is `billing:write`; every route follows
+Target shape, under `/api/v1/billing`, tag `billing`. R is `billing:read`, W is `billing:write`, P is
+`billing:payment:read`; every route follows
 [`api-conventions.md`](api-conventions.md). A party id in a path that does not exist answers with the CRM's
 `PartyNotFoundError`.
 
@@ -792,6 +821,7 @@ Target shape, under `/api/v1/billing`, tag `billing`. R is `billing:read`, W is 
 | `POST /invoices/{invoice_id}/refresh` | W | SF6-2 | Reads status, number, positions and sums from sevDesk. |
 | `POST /invoices/{invoice_id}/mark-cancelled` | W | SF6-2 | Reads the frozen contact's invoices whole; voids the charges only if an `SR` names the invoice as its `origin` and negates its sum exactly. |
 | `POST /invoices/{invoice_id}/discard` | W | SF6-2 | Reads that the draft is gone in sevDesk, then voids the charges. |
+| `GET /payment-requests/{invoice_number}` | P | SF-PAY | The payment state of one invoice for skillsite's `/zahlung`: state, open amount, whether PayPal is allowed ([Payment-request lookup](#payment-request-lookup)). Reads sevDesk, writes nothing. |
 | `GET`, `POST /prepaid-accounts`, `GET`, `PATCH /prepaid-accounts/{account_id}` | R, W, R, W | SFP-1a | Credit accounts with balance and flags. |
 | `POST /prepaid-accounts/{account_id}/settle` | W | SFP-1b | Charges every open lesson in the account's window; idempotent. |
 | `GET /prepaid-accounts/{account_id}/statement` | R | SFP-1c | The statement in sections. |
@@ -812,7 +842,7 @@ Closed. The classes live in `app/services/billing/errors.py`; the `code` is deri
 
 | Category | Classes |
 |---|---|
-| `NotFoundError` (404) | `LessonNotFoundError`, `RateNotFoundError`, `CalendarEventNotFoundError`, `CalendarAliasNotFoundError`, `InvoiceNotFoundError`, `PrepaidAccountNotFoundError`, `PrepaidEntryNotFoundError` |
+| `NotFoundError` (404) | `LessonNotFoundError`, `RateNotFoundError`, `CalendarEventNotFoundError`, `CalendarAliasNotFoundError`, `InvoiceNotFoundError`, `PrepaidAccountNotFoundError`, `PrepaidEntryNotFoundError`, `InvoiceNotPayableError` |
 | `ConflictError` (409) | `LessonAlreadyExistsError`, `LessonChargedError`, `CalendarAliasAlreadyExistsError`, `CalendarEventAlreadyAssignedError`, `SevdeskContactAlreadyLinkedError`, `PreviewOutdatedError`, `InvoiceStateError`, `PrepaidAccountAlreadyOpenError`, `PrepaidAccountNotSettledError`, `PrepaidAccountStartsBeforeLastCloseError`, `PrepaidEntryAlreadyVoidedError` |
 | `DomainValidationError` (422) | `UnknownStudentError`, `RateNotQuarterHourError`, `LessonNotBillableError`, `CalendarEventNotAssignableError`, `MixedPayersError`, `InvoiceBlockedError`, `PrepaidEntryNotVoidableError`, `TopupAmountOutOfRangeError` |
 | `UpstreamError` (502; PD6) | `SevdeskUnavailableError`, `SevdeskRefusedError`, `CalendarUnavailableError` |
@@ -825,7 +855,10 @@ Closed. The classes live in `app/services/billing/errors.py`; the `code` is deri
 - Creating a draft answers `201` with the invoice in state `created`, `failed` or `unknown`: the row exists in all
   three, so the outcome is returned, not raised (the pattern of decision O in
   [`user-authentication.md`](user-authentication.md)).
-- No message repeats a name, a calendar title or a sevDesk id.
+- `InvoiceNotPayableError` answers a payment request for a number that is no payable invoice - none, a draft, a
+  cancellation, a cancelled original - and never says which.
+- No message repeats a name, a calendar title, a customer number or a sevDesk id.
+- _Amended 2026-11-25: `InvoiceNotPayableError` (SF-PAY)._
 
 ## Configuration
 
@@ -841,14 +874,18 @@ repository.
 | `SEVDESK__EXPECTED_ACCOUNT_ID` | SF1-2 | The identity the account must report before any other call. |
 | `SEVDESK__CONTACT_PERSON_ID` | SF1-2 | The contact person on invoices. |
 | `SEVDESK__HOUR_UNIT_ID` | SF1-2 | The unit `Std`. |
-| `SEVDESK__PAYMENT_METHOD_FIELD_SETTING_ID` | SF1-2 | The custom field "Zahlungsverfahren". |
 | `SEVDESK__PART_IDS` | SF5-4 | Subject label to sevDesk part id (PD4). |
 | `GRAPH__MODE` | SF4-1 | As for sevDesk. The calendar client has no write - its token request is declared a read - so both values behave alike today. |
 | `GRAPH__TENANT_ID`, `GRAPH__CLIENT_ID` | SF4-1 | The Entra app `skillforge`. |
 | `GRAPH__CERTIFICATE_PEM`, `GRAPH__PRIVATE_KEY_PEM` | SF4-1 | This location's credential in secret settings: the PEM text, base64-encoded into one line. No file is mounted. |
 | `GRAPH__MAILBOX`, `GRAPH__CALENDAR_NAME` | SF4-1 | The one lesson calendar. |
 | `BILLING__DEFAULT_RATE_CENTS_PER_HOUR` | SF2-1 | The default rate; default `3000`. |
+| `BILLING__PAYPAL_BLOCKED_CUSTOMER_NUMBERS` | SF-PAY | The sevDesk customer numbers that may not pay by PayPal, comma-separated; default empty, about five entries. Read only by the payment-request lookup and never logged. |
 
+- `SEVDESK__PAYMENT_METHOD_FIELD_SETTING_ID` (SF1-2) is gone with decision K; SF1-4 removes it from the code and
+  `.env.example`. _Amended 2026-11-25._
+- Production reads the real sevDesk account before skillsite releases its payment page: `SEVDESK__ACCOUNT=live`
+  with `SEVDESK__MODE=dry_run`, the token and the expected account id (SF-PAY); writes leave only with SF7.
 - `SKILLFORGE_CONTRACT_RUN=1` is no setting: only the two trial recipes set it, and it is what lets a test reach
   the trial.
 - The trial's settings live in `~/.config/skillforge/sevdesk-trial.env`, outside the repository; only the two
@@ -874,8 +911,8 @@ the script then only reads.
 | S1 | `GET /Tools/bookkeepingSystemVersion` | Script | SF1-2 | Q8 |
 | S2 | The account's identity and company name: `GET /SevClient`; for comparison `GET /SevUser` and `GET /ContactCustomFieldSetting` with their client ids | Script | SF1-2 | Q7 |
 | S3 | A synthetic contact: `GET /Contact/{id}`, `GET /Contact?customerNumber=...&depth=1` | Script | SF1-2, SF5-4 | |
-| S4 | `GET /ContactCustomFieldSetting` with the "Zahlungsverfahren" setting | Script | SF1-2 | |
-| S5 | `GET /ContactCustomField` and `GET /Contact/Factory/findContactsByCustomFieldValue`: a contact with `PayPal`, one with `Überweisung`, one empty; the listing with `countAll` | Script | SF5-4 | Q18 |
+| S4 | `GET /ContactCustomFieldSetting` with the "Zahlungsverfahren" setting. _Dropped 2026-11-25 (decision K): no slice reads it; the recorded files stay as recorded._ | Script | - | |
+| S5 | `GET /ContactCustomField` and `GET /Contact/Factory/findContactsByCustomFieldValue`: a contact with `PayPal`, one with `Überweisung`, one empty; the listing with `countAll`. _Dropped 2026-11-25 (decision K), as S4._ | Script | - | Q18 |
 | S6 | The hour unit as it appears on a position or a part | Script | SF1-2 | Q6 |
 | S7 | The contact person as it appears on an invoice | Script | SF1-2 | Q6 |
 | S8 | `GET /SevSequence/Factory/getByType?objectType=Invoice&type=RE` | Script | SF6-1 | Q1, Q3 |
@@ -884,7 +921,7 @@ the script then only reads.
 | S11 | `saveInvoice` drafts, request and response: one lesson; several lessons; several children; a top-up "N x subject" | Script | SF1-2, SF6-1, SFP-2a | Q5 |
 | S12 | Read-back of S11: `GET /Invoice/{id}`, `GET /Invoice/{id}/getPositions` with `countAll` | Script | SF6-1 | Q18 |
 | S13 | Status values: a draft; the same invoice after each way of sending; a booked payment if reachable | The maintainer sends and books in the UI; script reads | SF6-2, SFP-2b | Q13 |
-| S14 | The rendered PDF for both foot texts: the title (`header`), the texts, the § 19 line, GiroCode, bank block, and whether the reference (`customerInternalNote`) is printed | Script | SF5-2 | Q2, Q4 |
+| S14 | The rendered PDF: the title (`header`), the texts, the § 19 line, GiroCode, bank block, and whether the reference (`customerInternalNote`) is printed. _Amended 2026-11-25: one foot text (decision K); SP-SD rendered both of its time._ | Script | SF5-2 | Q2, Q4 |
 | S15 | Placeholders and markup in a head and a foot text set through the API - bold, italic, a link, a placeholder inside a link target, line breaks; rendered | Script | SF5-2 | Q2 |
 | S16 | Read-back after an edit: a changed quantity, a changed price, an added position | The maintainer edits in the UI; script reads | SF6-2 | |
 | S17 | A cancellation: the original and the cancellation invoice | The maintainer cancels in the UI; script reads | SF6-2, SFP-2b | Q12 |
@@ -912,8 +949,8 @@ identity reads (`identity-*`); the rows' fixtures:
 | S1 | `version-03` | |
 | S2 | `identity-01`, `-02`, `custom-fields-04`, `discovery-06` | The recorder writes every `sevClient` id as `0`. |
 | S3 | `contact-11`, `contact-reads-12`, `-13` | |
-| S4 | `custom-fields-04`, `payment-methods-14` | |
-| S5 | `payment-methods-15` to `-23` | |
+| S4 | `custom-fields-04`, `payment-methods-14` | Unused since 2026-11-25 (decision K). |
+| S5 | `payment-methods-15` to `-23` | Unused since 2026-11-25 (decision K). |
 | S6, S7 | `discovery-05`, `-06` | |
 | S8 | `numbers-48`, `-127`, `sequence-144` | |
 | S9 | `discovery-07` | |
@@ -938,9 +975,17 @@ sent, and replaces every value it learned in a scrubbed place wherever it shows 
 parameters too. From the second step run on, the texts and the run tag therefore mostly read `[SCRUBBED]`, also in
 drafts no one touched (`numbers-128`, `read-back-80`, `cut-connection-140`). The texts are in the run's log.
 
-The trial lasts 14 days. A second trial is not established: do not plan on one, and ask sevDesk's support on the
-first day whether it can be extended. SF6 and SFP-2 are built on the recorded fixtures and on fault injection, not
-on a live trial.
+The trial lasts 14 days. SF6 and SFP-2 are built on the recorded fixtures and on fault injection, not on a live
+trial.
+
+**SF-PAY records nothing new.** Its tests use this run's fixtures for the invoice states - status 100
+(`read-back-28`), 200 (`-158`), 750 (`-195`), 1000 with `paidAmount` (`-163`) and without it - a cancelled original
+(`-168`) - and the `SR` (`-190`); the `GET /Invoice` listing's shape (`deleted-read-187`); and the contact with its
+`customerNumber` (`contact-reads-12`). The listing filtered by `invoiceNumber` is derived from sevDesk's
+documentation and kept apart from every recorded run, in `tests/fixtures/sevdesk/documented/`, each file marked
+"derived from the documentation, not recorded". Whether the real account answers that filter as documented, the
+maintainer's read-only doctor run shows before the release (Q19); it records nothing, and the real account gets no
+test object (decision Y). No second trial is needed. _Amended 2026-11-25._
 
 ## Success metrics
 
@@ -971,7 +1016,7 @@ the PR. A slice without a _Tests that change_ line edits no existing test.
       metadata (from SF2-1 on), so a new column without a row fails.
 - [ ] No real name, e-mail address, token, tenant id or id of a real account in code, tests, fixtures, logs or
       docs; the fixture scan of SF1-3b is green.
-- [ ] No name, calendar title, contact id or token in a log line or an error message.
+- [ ] No name, calendar title, contact id, customer number or token in a log line or an error message.
 - [ ] Every route follows the API conventions; `openapi.json` is regenerated, never edited.
 - [ ] `just check-all` is green on every slice that touches the database, auth or money, `just check` on the
       others.
@@ -1352,9 +1397,9 @@ write (`invoices.py`)._
 **SF5-1 - Scenarios and golden fixtures.** _After the freeze. Own PR, no code under `app/`._
 
 - _Technique:_ `tests/billing/scenarios/`, a new test area that `AGENTS.md`'s table gains. Each scenario is
-  synthetic input (lessons, rates, payer, payment method) and the expected invoice worked out by hand: positions,
-  descriptions, quantities, prices, amounts, texts, dates, total, link, and the planned `saveInvoice` request. The
-  set: one lesson by transfer; one by PayPal; 45 and 90 minutes; several lessons of one child with a delivery
+  synthetic input (lessons, rates, payer) and the expected invoice worked out by hand: positions, descriptions,
+  quantities, prices, amounts, texts, dates, total, and the planned `saveInvoice` request. The set: one lesson;
+  45 and 90 minutes; several lessons of one child with a delivery
   range; two children with different rates on one invoice; a rate change between two lessons; a lesson's own rate,
   0 included; a billable cancellation; lessons around midnight and both clock changes; a total of 1,000 EUR or
   more.
@@ -1376,8 +1421,7 @@ write (`invoices.py`)._
         amount); the builders import no session and no integration and read no clock.
   - [ ] For every duration from 15 to 600 minutes and every rate divisible by 4, `amount_cents` equals quantity
         times price.
-  - [ ] `PAYMENT_LINK`, with sevDesk's placeholders filled as recorded (`RE-1002`, `97,50%20EUR`), satisfies the
-        `/zahlung` contract.
+  - [ ] `texts.py` holds one foot text and no link, and no constant names a payment method (decision K).
   - [ ] The PR names its mutation probes - the order of rate resolution, the first-name rule, the Berlin
         conversion - and the reviewing session ran them again.
 
@@ -1396,8 +1440,8 @@ write (`invoices.py`)._
 
 **SF5-4 - Preview.** _Needs PD6._
 
-- _Technique:_ `POST /invoices/preview`: blockers, fingerprint (PD2), the payment method read through the sevDesk
-  client (`app/services/billing/payment_methods.py`), `SEVDESK__PART_IDS`. The one place the sevDesk client is
+- _Technique:_ `POST /invoices/preview`: blockers, fingerprint (PD2), `SEVDESK__PART_IDS`; no payment method
+  (decision K). The one place the sevDesk client is
   injected into the billing services, and the mode `fake` with its fake client
   ([sevDesk in `dry_run` and without a token](#sevdesk-in-dry_run-and-without-a-token)); `just seed-demo` sets
   the mode and fills the fake. The sevDesk mapping of [Errors from an integration](#errors-from-an-integration);
@@ -1408,8 +1452,8 @@ write (`invoices.py`)._
   `tests/api/test_billing_architecture.py`; `ENDPOINTS`, `EXPECTATIONS` and `CATALOG` in
   `tests/api/test_billing_error_contract.py` with its errors.
 - _Acceptance criteria:_
-  - [ ] The preview changes no row. The same state gives the same fingerprint; a changed rate, duration, payer,
-        payment method or part name gives another.
+  - [ ] The preview changes no row. The same state gives the same fingerprint; a changed rate, duration, payer or
+        part name gives another.
   - [ ] Every blocker of the closed list is reported, several at once (one test per code); `payer_changed` is
         reported as a warning and blocks nothing; a kept payer and a re-resolved one give different fingerprints.
   - [ ] Lessons of two payers are `mixed_payers`.
@@ -1484,8 +1528,9 @@ write (`invoices.py`)._
   - [ ] `.env.example` lists every setting of [Configuration](#configuration) without a real value.
   - [ ] The maintainer confirmed: the production database has moved, the configuration is set, the doctor is green
         on the real account, `/health` reports the released version.
-  - [ ] The maintainer created the first real draft and checked it in sevDesk: title, texts, link, GiroCode, sum;
-        a refresh after saving it in the old editor shows no drift.
+  - [ ] The maintainer created the first real draft and checked it in sevDesk: title, texts, the layout with
+        GiroCode and PayPal link, the account's letterpaper, sum; a refresh after saving it in the old editor
+        shows no drift.
 
 **SF-CLI - Command-line stage.** _After SF7, before the admin screens._
 
@@ -1502,6 +1547,90 @@ write (`invoices.py`)._
   - [ ] Password and client secret come from a prompt or the environment, never from an argument, and are never
         printed.
   - [ ] A test runs it end to end against the app in-process with demo data and `SEVDESK__MODE=fake`.
+
+**SF1-4 - Drop the payment-method reads.** _Added 2026-11-25 with decision K; the first slice of SF-PAY's stack._
+
+- _Technique:_ decision K leaves nothing to read about a payment method. `payment_method_field_setting_id` leaves
+  `SevdeskSettings` (`app/integrations/sevdesk/config.py`) and `SEVDESK__PAYMENT_METHOD_FIELD_SETTING_ID` leaves
+  `.env.example`; `configured_ids` in `app/cli/sevdesk_doctor.py` loses its payment-method check. `SevdeskClient`
+  loses `custom_field_settings`, `get_custom_field_setting`, `contact_custom_fields` and
+  `find_contacts_by_custom_field`, and `models.py` loses `ContactCustomField`. `SevdeskClient.discover` keeps its read
+  of `GET /ContactCustomFieldSetting`, and with it `CustomFieldSetting`: it compares account ids (S2, Q7), not a
+  payment method. `scripts/sevdesk_spike.py` loses the steps `custom-fields` and `payment-methods` and
+  `PAYMENT_METHODS`, and `FOOT_TRANSFER`, `_FOOT_REST`, `FOOT_TEXT_DOCUMENT_NUMBER`, `PAY_LINK`,
+  `PAY_LINK_DOCUMENT_NUMBER` and the variants "the transfer foot text" and "pay link" that send them; its S15 texts
+  `HEAD_TEXT` and `FOOT_TEXT` follow this spec since the amendment of 2026-11-25. `PAYMENT_METHODS` leaves
+  `app/integrations/recording.py`. The recorded fixtures of S4 and S5 stay as recorded.
+- _Tests that change:_ in `tests/integrations/sevdesk/test_sevdesk_client.py`, `test_the_configuration_reads`,
+  `test_contacts_by_custom_field_send_the_field_and_value`, `test_custom_fields_of_another_contact_are_dropped`,
+  `test_a_reference_typed_as_a_list_of_one_is_accepted` and `test_no_id_appears_in_a_log_line_or_an_error_message`;
+  the `settings` fixture in `tests/integrations/sevdesk/conftest.py`; the `configured` fixture and
+  `test_a_complete_configuration_passes_without_printing_personal_data` in `test_sevdesk_doctor.py`; `clean_env`,
+  `test_the_variables_are_read_under_their_prefix` and `test_an_empty_variable_means_unset` in
+  `test_sevdesk_settings.py`; in `test_sevdesk_spike.py` the `trial` fixture,
+  `test_a_full_walk_creates_tagged_objects_records_everything_and_saves_the_pdf`,
+  `test_the_manifest_steps_report_what_the_rows_ask`, `test_a_failure_to_record_a_write_stops_before_the_next_call`
+  and `test_a_failure_to_record_a_read_sends_no_write_after_it`; `test_payment_methods_and_configuration_names_stay`,
+  `test_nothing_is_learned_from_what_the_run_sent` and `test_a_text_the_run_sent_stays_and_any_other_goes` in
+  `tests/integrations/test_integration_recording.py`; `test_the_reads_billing_needs_parse` in
+  `tests/contract/test_sevdesk_contract.py`.
+- _Acceptance criteria:_
+  - [ ] No file under `app/`, `scripts/` or `tests/` - recorded fixtures aside - names `payment_method`,
+        `PAYMENT_METHODS`, `contact_custom_fields`, `find_contacts_by_custom_field` or the model
+        `ContactCustomField` (`git grep`); `ContactCustomFieldSetting` stays for `discover`.
+  - [ ] `just sevdesk-doctor` checks the contact person and the hour unit; `--discover` still sends its three reads.
+  - [ ] No recorded fixture changed.
+
+**SF-PAY - The payment-request lookup.** _Added 2026-11-25. Needs SF1-2 and SF1-4; independent of SF5; its release
+waits for Q19.
+skillsite's `docs/specs/payment-page.md` consumes it.
+The route is a read of the billing domain - is an invoice open, how much is left, may it be paid
+by PayPal - not one frontend's workflow ([`AGENTS.md`](../../AGENTS.md)); confirmed by the maintainer on 2026-11-25._
+
+- _Technique:_ the [Payment-request lookup](#payment-request-lookup). `Scope.BILLING_PAYMENT_READ`
+  (`billing:payment:read`) in `scopes.py`, in no entry of `ROLE_SCOPES` and not in `VOUCHED_SCOPES` (decision X).
+  `InvoiceNotPayableError` joins `app/services/billing/errors.py`. No own limit on lookups in v1: no `429`, no new
+  error category; revisit if sevDesk throttling is observed.
+  `BillingSettings` gains `paypal_blocked_customer_numbers` (`BILLING__PAYPAL_BLOCKED_CUSTOMER_NUMBERS`), with its
+  line in `.env.example`. The sevDesk client reads invoices by number (`GET /Invoice` with `invoiceNumber`, as
+  documented), and `Invoice` gains the fields the answer needs: its type and `paidAmount` as `Money`. The service
+  `app/services/billing/payment_requests.py` holds the answer table and the PayPal check; the route
+  `app/api/v1/billing/payment_requests.py` with the response model `PaymentRequest`. `just sevdesk-doctor`
+  gains `--invoice-number <number>` (repeatable; `app/cli/sevdesk_doctor.py`): after the identity check it reads
+  `GET /Invoice` with that filter and prints, per number, how many invoices came back, whether the number matches
+  exactly, the type and the status - no name, contact, customer number or amount. The tests' fixtures follow the
+  [fixture manifest](#fixture-manifest): recorded ones from SP-SD, never edited; the filtered listing in
+  `tests/fixtures/sevdesk/documented/`.
+- _Tests that change:_ `_required_scope` in `tests/api/test_billing_auth.py` learns the lookup - a `GET` under
+  `billing:payment:read` - and `PATH_VALUES` gains `invoice_number`; the endpoint list of
+  `test_the_billing_endpoints_carry_no_boilerplate` in `tests/api/test_billing_architecture.py`; `ENDPOINTS`,
+  `EXPECTATIONS` and `CATALOG` in `tests/api/test_billing_error_contract.py` with the lookup's errors;
+  `test_seed_default_scopes_is_idempotent` in `tests/db/test_auth_service.py`.
+- _Acceptance criteria:_
+  - [ ] One test per row of the answer table through a mocked transport: open, partly paid, paid, unknown number,
+        draft, another type (an `SR`), cancelled original, a failed read - the invoice states from SP-SD's recorded
+        fixtures, the filtered listing from `tests/fixtures/sevdesk/documented/`; no recorded fixture changed.
+  - [ ] `open_amount_cents` is `sumGross` minus `paidAmount` in `int` cents through `Money`; no `float` in the
+        service (architecture test).
+  - [ ] A number off `^[A-Z0-9][A-Z0-9._-]{0,31}$` is a `422`, and the transport saw no request.
+  - [ ] `paypal` is `blocked` exactly for a contact whose customer number is in the setting, and `allowed` with the
+        setting empty.
+  - [ ] The `200` body holds the four fields only; no response, log line or error message holds a name, a contact
+        id or a customer number (test on captured logs).
+  - [ ] A failed read - a `429` of sevDesk's included - is `502 sevdesk_unavailable`, a refusal
+        `502 sevdesk_refused`; the transport sees reads only, and no row changes.
+  - [ ] `billing:read` or `billing:write` alone is `403`; the `admin` role does not hold `billing:payment:read`, and
+        a token from the Discord exchange never carries it.
+  - [ ] `--invoice-number` sends only the identity reads and `GET /Invoice` with the filter, and prints counts, the
+        exact match, type and status - never a name, contact, customer number or amount (test on a synthetic
+        response).
+  - [ ] Before the release that carries SF-PAY - not before its merge - Q19 is answered in this spec from the
+        maintainer's `just sevdesk-doctor live --invoice-number` run with one of his numbers and one that does not
+        exist; a mismatch stops the release, and the filter is fixed first.
+  - [ ] _For the maintainer_ names: the doctor run of Q19 on the real account before the release; skillsite's
+        client with the `application` grant `billing:payment:read` (`just bootstrap-client`); the blocked customer
+        numbers; production reading the real account (`SEVDESK__ACCOUNT=live`, `SEVDESK__MODE=dry_run`, token,
+        expected account id) before skillsite releases the page.
 
 **SFP-1a - Credit accounts.** _After SF6-2; needs PD12. The slices before it hold no prepaid code._
 
@@ -1561,7 +1690,8 @@ write (`invoices.py`)._
   - [ ] Creating a top-up draft changes no balance.
   - [ ] The create is SF6-1's: pending row, one call, `unknown` and reconcile; the top-up's positions are in
         `topup_position` before the call, and reconcile and drift compare them (one test each).
-  - [ ] An empty payment method blocks; the foot text is the payer's variant with the top-up sentence.
+  - [ ] The texts are those [Family-visible texts](#family-visible-texts) holds for a top-up when SFP-2a starts
+        (M2, M3); no payment method is read.
 
 **SFP-2b - Credit at issue.**
 
@@ -1582,7 +1712,7 @@ write (`invoices.py`)._
 ### Nice-to-have (P1)
 
 - **SF8 - No GiroCode on PayPal invoices.** Dropped at the freeze: the API has no documented switch per invoice
-  (Q4).
+  (Q4). Moot since 2026-11-25: the layout prints the GiroCode on every invoice (decision K).
 - **SFP-3 - "Record as sent".** Dropped at the freeze: both ways the maintainer sends move an invoice to 200 (Q13).
 
 ### Future considerations (P2)
@@ -1602,7 +1732,7 @@ SP-CAL and SP-SD move each answered question here, with the fixture that shows i
 | Q1 | Which `invoiceNumber` does the API return for a draft, for a second draft, and after issue? | A draft created through the API reads `null`, the second one too. A draft the maintainer opens in the new editor gets the next number at once; in the old editor a draft needs a number before preview, PDF or sending; sevDesk proposes the next one (the maintainer typed `12` into one by hand, `read-back-73`). After issue the number is final. The sequence's `nextSequence` does not move with numbered drafts. | `read-back-28`, `-80`, `numbers-129`, `-131`, `read-back-61`, `read-back-158`, `read-back-163`, `sequence-144` |
 | Q2 | Placeholders, markup and title in texts set through the API. | The dictionary holds `[%VOLLEANREDE%]`, `[%ZAHLUNGSZIEL%]`, `[%KONTAKTPERSON%]`, `[%RECHNUNGSNUMMER%]` and `[%BETRAG%]`; `[%DOKUMENTENNUMMER%]` is not listed but resolves as well. Each resolves when sevDesk renders - in head and foot text, inside a link target (`re=` empty on a draft, the number once issued; `betrag=97,50%20EUR`), and in `header` (`Rechnung Nr. RE-1007` once issued). Without a salutation on the contact `[%VOLLEANREDE%]` reads `Sehr geehrte Damen und Herren`; `[%ZAHLUNGSZIEL%]` printed the invoice date on drafts sent without `timeToPay`; a draft with `timeToPay` was not rendered. `<strong>`, `<i>`, `<a href>` and `<br>` render; `<em>` renders too but the old editor drops it on save (Verified behavior). A draft's PDF is titled as a draft; an issued one prints `header`. | `discovery-08`; the rendered PDFs (`pdf-79`, `pdf-179`, `pdf-228`), which stay outside the repository |
 | Q3 | Does sevDesk keep a draft number set from its sequence? | Yes: `RE-1000` and `RE-1001`, set back to back, were issued in reverse order and kept. sevDesk's next proposal follows the highest number (`RE-1002`). A number already taken is replaced at issue (`RE-1003` became `RE-1005`). The format is `RE-%NUMBER`. | `numbers-127` to `-131`, `read-back-153`, `-158`, `-163`, `-168`, `-173`, `-200` |
-| Q4 | GiroCode and bank block under an own foot text; the GiroCode per invoice. | The bank block (bank, IBAN) is printed in the footer under an own foot text. No trial PDF carried a GiroCode - draft or issued, transfer or PayPal - not even with the document's switch "EPC-QR-Code (GiroCode)" on and IBAN and BIC entered. The render names a per-document parameter `epcQrCode` (yes or no), but `PUT /Invoice/{id}/changeParameter` documents only `language`, `template`, `letterpaper` and `payPal`: the API has no documented switch per invoice. Whether the real account still prints its GiroCode under an own foot text, the maintainer sees on the first real draft (SF6). | `pdf-209`, `pdf-224`, `pdf-228` |
+| Q4 | GiroCode and bank block under an own foot text; the GiroCode per invoice. | The bank block (bank, IBAN) is printed in the footer under an own foot text. No trial PDF carried a GiroCode - draft or issued, transfer or PayPal - not even with the document's switch "EPC-QR-Code (GiroCode)" on and IBAN and BIC entered. The render names a per-document parameter `epcQrCode` (yes or no), but `PUT /Invoice/{id}/changeParameter` documents only `language`, `template`, `letterpaper` and `payPal`: the API has no documented switch per invoice. Whether the real account still prints its GiroCode under an own foot text, the maintainer sees on the first real draft (SF6). Since 2026-11-18 the invoice layout prints the GiroCode (decision K). | `pdf-209`, `pdf-224`, `pdf-228` |
 | Q5 | The part per subject; a position with `part` and no `name`. | `GET /Part` gives id, name (`Mathe-Online`), unit and price. A position sent with `part` and without `name` is accepted and shows **no** name - sevDesk does not take the part's. The real ids the maintainer reads in the account; the doctor lists no parts. | `discovery-07`, `invoice-variants-43`, `-44`, `-138`, `-139`, `pdf-107` |
 | Q6 | The ids of the unit `Std` and of the contact person. | `GET /Unity` lists the units (`Std`, `UNITY_HOUR`) and `GET /SevUser` the users, though the description lists neither; `just sevdesk-doctor` checks the configured ids. | `discovery-05`, `discovery-06` |
 | Q7 | Is `GET /SevClient` the identity read? | Yes: it names the account and its company name, and its id equals `sevClient` on `SevUser` and `ContactCustomFieldSetting` - shown by `just sevdesk-doctor trial --discover` and by the identity check passing before every step run. The fixtures show the reads' shape only: the recorder writes every account id as `0`. | `identity-01`, `-02`, `custom-fields-04`, `discovery-06` |
@@ -1624,6 +1754,16 @@ SP-CAL and SP-SD move each answered question here, with the fixture that shows i
 
 None: SP-CAL and SP-SD answered every question ([Decided](#decided-formerly-open-questions)).
 
+### Before SF-PAY's release
+
+Added 2026-11-25. SF-PAY is built before it is answered; the release that carries SF-PAY waits for the answer, which
+moves to [Decided](#decided-formerly-open-questions) and [Verified behavior](#verified-behavior). A mismatch stops
+the release, and the filter is fixed first.
+
+| Id | Question | Answered by |
+|---|---|---|
+| Q19 | Does `GET /Invoice` filter by `invoiceNumber` - exactly, every type and status included - and what does it answer for a number that does not exist? | The maintainer, never an agent: `just sevdesk-doctor live --invoice-number` with one of his numbers and one that does not exist; read-only, printing only the count, the exact match, type and status. |
+
 ### For the maintainer
 
 The maintainer answered every item in the review of SF0 (2026-11), as the six rows of
@@ -1631,13 +1771,13 @@ The maintainer answered every item in the review of SF0 (2026-11), as the six ro
 
 | Id | Point | Answer |
 |---|---|---|
-| M1 | The foot text SkillForge sets after its first line. | Approved: today's wording word for word (`FOOT_TRANSFER`, `FOOT_PAYPAL`). |
+| M1 | The foot text SkillForge sets after its first line. | Approved: today's wording word for word (`FOOT_TRANSFER`, `FOOT_PAYPAL`). _Amended 2026-11-25: one foot text, the maintainer's template of 2026-11-18 word for word (`FOOT_TEXT`)._ |
 | M2 | The sentence about credit on a top-up. | Deferred to SFP: `TOPUP_CREDIT_SENTENCE` stays a proposal; until then a top-up carries today's foot text. |
-| M3 | The head text's raw template, and a top-up's head text. | Given: [Head text](#head-text) with `[%VOLLEANREDE%]`; a top-up uses the same head text, as today. |
+| M3 | The head text's raw template, and a top-up's head text. | Given: [Head text](#head-text) with `[%VOLLEANREDE%]`; a top-up uses the same head text, as today. _Amended 2026-11-25: the template of 2026-11-18; a top-up's head text is deferred to SFP, since this one speaks of "Abrechnung der Nachhilfestunden"._ |
 | M4 | The description of a top-up position. | Approved: `TOPUP_POSITION_DESCRIPTION`, and `TOPUP_POSITION_DESCRIPTION_WITH_NAME` for several children; today's top-ups carry none. |
 | M5 | How SkillForge gets its Graph token with a certificate. Signing the request needs `cryptography`, a new runtime dependency; Microsoft's own library (`msal`) brings its own HTTP client, past the guarded transport. | Approved: the token request goes through the guarded transport, signed with `pyjwt[crypto]`; the dependency is added with SF4-1. |
 | M6 | A remainder top-up whose amount is not a whole number of hours at the child's rate. | Approved: positions in quarter hours at each child's rate, described as any top-up. If none add up to the minus exactly, the helper blocks instead of rounding and the maintainer settles it with an `adjustment`; SFP works the case out. |
-| M7 | The markup of head and foot text (bold, italic, link, line breaks). | Approved as today's look: S15 changed how the blocks are written (`<i>`), not how they look; a visible difference is asked again. |
+| M7 | The markup of head and foot text (bold, italic, link, line breaks). | Approved as today's look: S15 changed how the blocks are written (`<i>`), not how they look; a visible difference is asked again. _Amended 2026-11-25: `HEAD_TEXT` and `FOOT_TEXT` as given, approved with the templates of 2026-11-18._ |
 | M8 | The reference in `customerInternalNote`. If sevDesk prints it (S14), a family sees it. | Changed at the freeze: S14 shows it printed, so SkillForge writes no reference; reconcile matches the contact's invoices by positions and sum (decision R, [Invoice states](#invoice-states)). |
 | M9 | The document title (`header`). | Approved: as today, `DOCUMENT_TITLE`; its placeholder resolves through the API (Q2). |
 | M11 | The hint at low credit. | Changed: the helper hints at one hour or less at the highest rate valid today among the account's children; no threshold is stored. |
@@ -1676,6 +1816,7 @@ No slice waits for a merge: dependent PRs form a stack ([`AGENTS.md`](../../AGEN
 | **SF6-1**, **SF6-2** | SF5-4 | |
 | **SF7** | SF6-2, SF4-3 | The release that carries the slices so far. |
 | **SF-CLI** | SF7 | The maintainer can bill from here on; the admin screens follow. |
+| **SF1-4**, **SF-PAY** | SF1-2; SF-PAY also SF1-4 | One stack, independent of SF5. The release that carries SF-PAY waits for Q19, the maintainer's doctor run on the real account. |
 | **SFP-1a**, **SFP-1b**, **SFP-1c**, **SFP-2a**, **SFP-2b** | SF6-2, PD12; each the one before | Their scenarios land in their own PRs first. |
 
 - **Before the freeze** only SF1, SF2, SF3 and the scripts of SP-CAL are built - SF2 and SF3 only once their
@@ -1686,7 +1827,9 @@ No slice waits for a merge: dependent PRs form a stack ([`AGENTS.md`](../../AGEN
   `just check-all`. `app/core/config.py`, `.env.example`, `justfile`, `pyproject.toml` and `scopes.py` are touched
   by several slices; the later one rebases.
 - **skillsite** builds each module after the release that carries its SkillForge slices, starting with a sync of
-  the contract.
+  the contract. Its payment page (`payment-page.md`) builds its lookup after SF-PAY is merged and ships after the
+  release with SF-PAY is live and production reads the real sevDesk account - before SF7, with writes in `dry_run`
+  (the maintainer's decision, 2026-11-25).
 - **Cut-over:** families billed after the lesson switch on the first day of a month, after one month in parallel
   and the full export from the time tracker. A prepaid family switches when its running cycle is used up
   (decision U).
@@ -1737,7 +1880,7 @@ independent review has no open finding.
 - Create a test object in the real account.
 - Write family-visible German text outside `app/services/billing/texts.py`, put a person's name into it, or change
   a text of [Family-visible texts](#family-visible-texts) without the maintainer's approval in the session.
-- Log a name, a calendar title, a contact id or a token.
+- Log a name, a calendar title, a contact id, a customer number or a token.
 - Change `compose.yml`, a secret or anything else on the deploy side: name it under "For the maintainer".
 
 ### Stop and report
