@@ -46,9 +46,6 @@ from .ext import (
     MicrosoftContact,
     SevdeskContact,
 )
-from .geo import (
-    PlzOrt,
-)
 from .system import (
     WorkerCycleStatus,
     WorkerHeartbeat,
@@ -88,7 +85,6 @@ __all__ = [
     "PartyRelationType",
     "PartyType",
     "Person",
-    "PlzOrt",
     "PreferredMeetingTool",
     "SevdeskContact",
     "Student",

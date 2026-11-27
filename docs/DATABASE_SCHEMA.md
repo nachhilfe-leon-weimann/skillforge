@@ -7,7 +7,6 @@ under `app/core/db/models/` - keep it in sync when models change.
 ## Schemas
 
 - `core` - central business domain (party/person/company, students, tutors, subjects)
-- `geo` - geographic reference data (PLZ/Ort)
 - `ext` - links from external system identifiers to a `core.party`
 - `auth` - OAuth2 application clients, secrets, scope grants per mode, user accounts (stored roles, sessions, one-time tokens), and the auth audit trail
 - `system` - internal runtime state (background-worker liveness heartbeats)
@@ -105,17 +104,6 @@ type party_relation_type NOT NULL
 created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 PRIMARY KEY (from_party_id, to_party_id, type)
-```
-
-## Geo Schema
-
-```sql
--- geo.plz_ort
-plz VARCHAR(5) NOT NULL
-ort TEXT NOT NULL
-landkreis TEXT NOT NULL
-bundesland TEXT NOT NULL
-PRIMARY KEY (plz, ort)
 ```
 
 ## External Integrations Schema
