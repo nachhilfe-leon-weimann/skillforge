@@ -12,7 +12,9 @@ queue, the two-phase operations: the bot owns them
 
 ## Development
 
-Needs `uv`, `just` and Docker. Python 3.14, FastAPI, async SQLAlchemy 2, Alembic, PostgreSQL (Neon in prod).
+Needs `uv`, `just` and Docker. Python 3.14, FastAPI, async SQLAlchemy 2, Alembic, PostgreSQL. In prod that is
+SkillDB: Postgres 17 as a Dokploy database service on the VPS, reachable over the internal Docker network
+`dokploy-network`; admin access only over the tailnet.
 
 | Command        |                                                                                          |
 | -------------- | ---------------------------------------------------------------------------------------- |

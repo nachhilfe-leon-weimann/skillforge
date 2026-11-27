@@ -95,8 +95,8 @@ Everything runs through [`just`](justfile), which wraps `uv`:
   block means stop and ask, never work around it.
 - **No new external service** without asking. **Legal texts** change only on an explicit request; flag a change that
   may affect one.
-- **The configured database may be production.** The settings read `.env`, and `.env.example` names Neon as the
-  production target. `just dev`, `just dev-local-core`, `just docker-run`, `just bootstrap-client`,
+- **The configured database may be production.** The settings read `.env`; production is SkillDB, reachable from
+  outside only over the tailnet. `just dev`, `just dev-local-core`, `just docker-run`, `just bootstrap-client`,
   `just bootstrap-admin`, `just worker-housekeeping` and Alembic run only after the maintainer confirms in the session
   that `DB__URL` is local: `bootstrap-admin` prints tokens, `worker-housekeeping` deletes rows. `just seed-demo` and
   `just billing-backfill` an agent never runs: they write rows, and `billing-backfill` is meant for production.
