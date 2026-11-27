@@ -34,7 +34,7 @@ docker run -d --name skillforge-pg -p 5432:5432 \
 cp .env.example .env
 uv run alembic upgrade head
 just bootstrap-client operator --application "auth:users:login crm:write" \
-  --delegated "account:self crm:read crm:write auth:users:manage auth:clients:manage auth:discord-links:read"
+  --delegated "account:self crm:read crm:write auth:users:manage auth:clients:manage auth:discord-links:read billing:read billing:write"
 ```
 
 The last command prints the operator client's secret once;

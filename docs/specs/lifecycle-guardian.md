@@ -47,7 +47,7 @@ strand work that nobody sees. With every planned integration (arc 3/4) this risk
 | Topic | Decision | Rationale |
 |---|---|---|
 | **A - Lease** | **Global**, one config constant `JOB_LEASE = 5 min`. No new column - `claimed_at` is enough. Adjustable later if needed. | No migration needed; per-`kind` only in arc 4. |
-| **B - Execution** | **Dedicated worker service in `compose.yml`** (same image, different entrypoint, `REAPER_INTERVAL = 30 s`). Uses the **pooler connection** (like the app). | Established pattern (one-shot `migrate` service); reclaim queries are concurrency-safe via `SKIP LOCKED` anyway. |
+| **B - Execution** | **Dedicated worker service in `compose.yml`** (same image, different entrypoint, `REAPER_INTERVAL = 30 s`). Uses **the DB connection** (like the app). | Established pattern (one-shot `migrate` service); reclaim queries are concurrency-safe via `SKIP LOCKED` anyway. |
 | **C - Idempotency** | Document the at-least-once contract **now**, park the idempotency-key header **until after arc 3**. | The reaper increases re-delivery - handler idempotency becomes mandatory, but the transport key belongs to the eventing arc. |
 | **Attempt budget** | **A lease reclaim costs one attempt** (the increment on claim carries it). No separate budget. | Simple; "every delivery costs one attempt" is acceptable. |
 
@@ -98,7 +98,7 @@ applies the existing `fail_job` reclaim transition.
         does not collide with the sweeper (idempotent marking).
 
 **P0-3 - Dedicated worker service.** A new service in `compose.yml` runs reaper + sweeper in a loop
-(`REAPER_INTERVAL = 30 s`), same image as the app, its own entrypoint, uses the **pooler connection** (the same
+(`REAPER_INTERVAL = 30 s`), same image as the app, its own entrypoint, uses **the DB connection** (the same
 DB URL as the app).
 - *Acceptance criteria:*
   - [x] The worker starts independently in the compose stack and runs independently of app replicas.
@@ -157,7 +157,7 @@ All blockers resolved - the spec is implementation-ready. Recorded decisions:
 - **`JOB_LEASE = 5 min`** - adjustable later if needed.
 - **A lease reclaim costs one attempt** - no separate budget.
 - **`REAPER_INTERVAL = 30 s`.**
-- **The worker uses the pooler connection** (like the app).
+- **The worker uses the DB connection** (like the app).
 - **Requeue via `just` command** (P1-1) - no admin endpoint.
 - **No alerting** - structured logs are enough in this phase.
 

@@ -39,3 +39,9 @@ See `app/core/db/config.py`, `app/core/db/database.py`, `migrations/env.py`.
 - Nothing extra is needed locally - the fallback kicks in.
 
 Introduced in PR #25.
+
+## Update (2026-11)
+
+Production runs on SkillDB since 2026-11: Postgres as a Dokploy database service, without a pooler, so
+`DB__MIGRATION_URL` is unset and the app and migrations both use `DB__URL`. The principle still holds: behind a
+transaction-mode pooler, migrations need the direct URL.
