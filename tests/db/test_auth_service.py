@@ -48,6 +48,7 @@ async def test_seed_default_scopes_is_idempotent(session):
         "auth:users:login",
         "auth:users:manage",
         "account:self",
+        "billing:payment:read",
         "billing:read",
         "billing:write",
         "crm:read",

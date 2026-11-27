@@ -41,6 +41,11 @@ class Scope(StrEnum):
     ACCOUNT_SELF = "account:self", "Manage the caller's own account."
     BILLING_READ = "billing:read", "Read lessons, rates, invoices and credit accounts."
     BILLING_WRITE = "billing:write", "Record lessons and rates, and create invoice drafts and credit entries."
+    BILLING_PAYMENT_READ = (
+        "billing:payment:read",
+        "Read the payment state of one invoice by its number: open or paid, the open amount, whether PayPal is "
+        "allowed. An application grant only; in no role.",
+    )
 
 
 CLIENT_ONLY_SCOPES: frozenset[Scope] = frozenset({Scope.AUTH_USERS_LOGIN, Scope.AUTH_USERS_EXCHANGE})

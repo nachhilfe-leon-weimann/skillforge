@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Accepted, 2026-11 - SF0, SF1-1 to SF1-4, SF2-1 to SF2-3, SF3-1, SF3-2, SF4-1 to SF4-3 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD done (2026-11-11, run
+> Status: Accepted, 2026-11 - SF0, SF1-1 to SF1-4, SF2-1 to SF2-3, SF3-1, SF3-2, SF4-1 to SF4-3 done (SF2-3's charge box waits for SF5-3); SF-PAY built (its release waits for Q19); SP-CAL done (Q9 and Q16 answered). SP-SD done (2026-11-11, run
 > `run202611112124164167`): every question is answered and the spec is frozen; a change needs the maintainer's
 > approval.
 > **Amended 2026-11-25** (approved by the maintainer in the session): every invoice uses one sevDesk layout that
@@ -610,14 +610,18 @@ frontend's workflow: it keeps no state of skillsite's, and any client granted th
   carries the `/zahlung` link too, and its number ends on skillsite's "not found" page. `404` never says which case
   it was. Anything the table does not name - several invoices under one number, another status, an open amount
   below 0, a sum that does not parse - is `502 sevdesk_unavailable`: the page then fails closed and redirects
-  nobody.
+  nobody. Drafts (status 100) are set aside first, as a draft can keep a number an issued invoice took (Q3,
+  `RE-1003` in `deleted-read-187`): only several invoices under one number that are no draft are ambiguous, exactly
+  one is answered by the table, and drafts alone are `404 invoice_not_payable`. _Decided 2026-11-25 by the session
+  lead under the maintainer's go to build SF-PAY; awaits the maintainer's confirmation in review._
 - **PayPal blocked.** `paypal` is `blocked` when the contact's `customerNumber` is one of
   `BILLING__PAYPAL_BLOCKED_CUSTOMER_NUMBERS`, compared exactly; otherwise `allowed`. A contact without a customer
   number is `allowed`. The setting is never logged.
 - **No own limit in v1.** SkillForge does not limit the lookups itself: the page's traffic is tiny, and a lookup
   costs up to three reads (identity, invoice, contact). A throttle of sevDesk's (its own `429`) is
-  `502 sevdesk_unavailable` (PD6), which skillsite shows as "not reachable". Revisit if sevDesk throttling is
-  observed.
+  `502 sevdesk_unavailable` (PD6) - on the identity read `502 sevdesk_refused`, as every failed identity read is
+  ([Errors from an integration](#errors-from-an-integration)) - which skillsite shows as "not reachable". Revisit if
+  sevDesk throttling is observed.
 - **Production reads the real account first.** Before skillsite releases the page, production SkillForge reads the
   real sevDesk account (`SEVDESK__ACCOUNT=live`) - earlier than SF7 planned it (the maintainer's decision,
   2026-11-25). Writes stay `dry_run` until SF7.
@@ -978,10 +982,10 @@ drafts no one touched (`numbers-128`, `read-back-80`, `cut-connection-140`). The
 The trial lasts 14 days. SF6 and SFP-2 are built on the recorded fixtures and on fault injection, not on a live
 trial.
 
-**SF-PAY records nothing new.** Its tests use this run's fixtures for the invoice states - status 100
-(`read-back-28`), 200 (`-158`), 750 (`-195`), 1000 with `paidAmount` (`-163`) and without it - a cancelled original
-(`-168`) - and the `SR` (`-190`); the `GET /Invoice` listing's shape (`deleted-read-187`); and the contact with its
-`customerNumber` (`contact-reads-12`). The listing filtered by `invoiceNumber` is derived from sevDesk's
+**SF-PAY records nothing new.** Its tests use this run's fixtures for the invoice states - status 100 (the
+numbered draft `139163753`, `RE-1003`, in `deleted-read-187`), 200 (`read-back-158`), 750 (`-195`), 1000 with
+`paidAmount` (`-163`) and without it - a cancelled original (`-168`) - and the `SR` (`-190`); the `GET /Invoice`
+listing's shape (`deleted-read-187`); and the contact with its `customerNumber` (`contact-reads-12`). The listing filtered by `invoiceNumber` is derived from sevDesk's
 documentation and kept apart from every recorded run, in `tests/fixtures/sevdesk/documented/`, each file marked
 "derived from the documentation, not recorded". Whether the real account answers that filter as documented, the
 maintainer's read-only doctor run shows before the release (Q19); it records nothing, and the real account gets no
@@ -1598,7 +1602,8 @@ by PayPal - not one frontend's workflow ([`AGENTS.md`](../../AGENTS.md)); confir
   `app/api/v1/billing/payment_requests.py` with the response model `PaymentRequest`. `just sevdesk-doctor`
   gains `--invoice-number <number>` (repeatable; `app/cli/sevdesk_doctor.py`): after the identity check it reads
   `GET /Invoice` with that filter and prints, per number, how many invoices came back, whether the number matches
-  exactly, the type and the status - no name, contact, customer number or amount. The tests' fixtures follow the
+  exactly, the type and the status - no name, contact, customer number or amount. A number nothing lists prints a
+  neutral `info` line, neither pass nor fail, and stays out of the exit code. The tests' fixtures follow the
   [fixture manifest](#fixture-manifest): recorded ones from SP-SD, never edited; the filtered listing in
   `tests/fixtures/sevdesk/documented/`.
 - _Tests that change:_ `_required_scope` in `tests/api/test_billing_auth.py` learns the lookup - a `GET` under
@@ -1607,26 +1612,27 @@ by PayPal - not one frontend's workflow ([`AGENTS.md`](../../AGENTS.md)); confir
   `EXPECTATIONS` and `CATALOG` in `tests/api/test_billing_error_contract.py` with the lookup's errors;
   `test_seed_default_scopes_is_idempotent` in `tests/db/test_auth_service.py`.
 - _Acceptance criteria:_
-  - [ ] One test per row of the answer table through a mocked transport: open, partly paid, paid, unknown number,
+  - [x] One test per row of the answer table through a mocked transport: open, partly paid, paid, unknown number,
         draft, another type (an `SR`), cancelled original, a failed read - the invoice states from SP-SD's recorded
         fixtures, the filtered listing from `tests/fixtures/sevdesk/documented/`; no recorded fixture changed.
-  - [ ] `open_amount_cents` is `sumGross` minus `paidAmount` in `int` cents through `Money`; no `float` in the
+  - [x] `open_amount_cents` is `sumGross` minus `paidAmount` in `int` cents through `Money`; no `float` in the
         service (architecture test).
-  - [ ] A number off `^[A-Z0-9][A-Z0-9._-]{0,31}$` is a `422`, and the transport saw no request.
-  - [ ] `paypal` is `blocked` exactly for a contact whose customer number is in the setting, and `allowed` with the
+  - [x] A number off `^[A-Z0-9][A-Z0-9._-]{0,31}$` is a `422`, and the transport saw no request.
+  - [x] `paypal` is `blocked` exactly for a contact whose customer number is in the setting, and `allowed` with the
         setting empty.
-  - [ ] The `200` body holds the four fields only; no response, log line or error message holds a name, a contact
+  - [x] The `200` body holds the four fields only; no response, log line or error message holds a name, a contact
         id or a customer number (test on captured logs).
-  - [ ] A failed read - a `429` of sevDesk's included - is `502 sevdesk_unavailable`, a refusal
-        `502 sevdesk_refused`; the transport sees reads only, and no row changes.
-  - [ ] `billing:read` or `billing:write` alone is `403`; the `admin` role does not hold `billing:payment:read`, and
+  - [x] A failed read - a `429` of sevDesk's included - is `502 sevdesk_unavailable`, a refusal or a failed
+        identity read `502 sevdesk_refused`; the transport sees reads only, and no row changes.
+  - [x] `billing:read` or `billing:write` alone is `403`; the `admin` role does not hold `billing:payment:read`, and
         a token from the Discord exchange never carries it.
-  - [ ] `--invoice-number` sends only the identity reads and `GET /Invoice` with the filter, and prints counts, the
+  - [x] `--invoice-number` sends only the identity reads and `GET /Invoice` with the filter, and prints counts, the
         exact match, type and status - never a name, contact, customer number or amount (test on a synthetic
         response).
   - [ ] Before the release that carries SF-PAY - not before its merge - Q19 is answered in this spec from the
-        maintainer's `just sevdesk-doctor live --invoice-number` run with one of his numbers and one that does not
-        exist; a mismatch stops the release, and the filter is fixed first.
+        maintainer's `just sevdesk-doctor live --invoice-number` run with an open, a paid and a cancelled number
+        of his and one that does not exist, read as [Q19](#before-sf-pays-release) states; a mismatch stops the
+        release, and the filter is fixed first.
   - [ ] _For the maintainer_ names: the doctor run of Q19 on the real account before the release; skillsite's
         client with the `application` grant `billing:payment:read` (`just bootstrap-client`); the blocked customer
         numbers; production reading the real account (`SEVDESK__ACCOUNT=live`, `SEVDESK__MODE=dry_run`, token,
@@ -1762,7 +1768,27 @@ the release, and the filter is fixed first.
 
 | Id | Question | Answered by |
 |---|---|---|
-| Q19 | Does `GET /Invoice` filter by `invoiceNumber` - exactly, every type and status included - and what does it answer for a number that does not exist? | The maintainer, never an agent: `just sevdesk-doctor live --invoice-number` with one of his numbers and one that does not exist; read-only, printing only the count, the exact match, type and status. |
+| Q19 | Does `GET /Invoice` filter by `invoiceNumber` - exactly, every type and status included - and what does it answer for a number that does not exist? | The maintainer, never an agent: `just sevdesk-doctor live --invoice-number` with an open, a paid and a cancelled number of his and one that does not exist; read-only, printing only the count, the exact match, type and status. The expected output is below. |
+
+The expected output, line by line as the doctor prints it (`<number>` stands for the number asked). An existing
+number lists its invoice, with the exact match and type `RE`:
+
+```text
+ok   invoice number <number>: 1 listed - exact match yes, type RE, status 200
+```
+
+The status is the invoice's: 200 open (750 partly paid), 1000 paid, and 1000 for a cancelled original too - the
+cancellation (`SR`) carries the next number of the sequence (Q12), not this one. A draft that kept the same number
+(`deleted-read-187`) may add a second entry, `exact match yes, type RE, status 100`. A number that does not exist
+lists nothing, and the doctor prints it neutrally - neither pass nor fail, left out of the exit code:
+
+```text
+info invoice number <number>: 0 listed - expected only for a number no invoice carries
+```
+
+That `info` line for an existing number is the failure Q19 looks for - a wrong filter name or semantics, or a
+default exclusion of a status or type - and stops the release, as does any `FAIL` line: a listed invoice whose
+number is not an exact match, or a failed read.
 
 ### For the maintainer
 

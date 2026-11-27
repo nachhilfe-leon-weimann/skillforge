@@ -331,16 +331,17 @@ async def test_a_token_from_the_exchange_never_carries_a_billing_scope(
     token_api: AsyncClient, make_client, make_account
 ):
     """Billing moves money and needs a password login (billing spec, PD8) - even for an admin, through a client that
-    delegates the billing scopes."""
-    billing_client = await make_client(delegated=[Scope.CRM_READ, Scope.BILLING_READ, Scope.BILLING_WRITE])
+    delegates the billing scopes; the payment lookup's scope is no person's at all (decision X)."""
+    billing_scopes = [Scope.BILLING_READ, Scope.BILLING_WRITE, Scope.BILLING_PAYMENT_READ]
+    billing_client = await make_client(delegated=[Scope.CRM_READ, *billing_scopes])
     await make_account(DISCORD_ID, roles=[UserAccountRoleName.ADMIN])
 
     everything = await _exchange(token_api, billing_client)
-    asked = [await _exchange(token_api, billing_client, scope=scope) for scope in ("billing:read", "billing:write")]
+    asked = [await _exchange(token_api, billing_client, scope=str(scope)) for scope in billing_scopes]
 
     assert everything.status_code == 200, everything.text
     assert everything.json()["scope"] == "crm:read"
-    assert [r.json() for r in asked] == [INVALID_SCOPE] * 2
+    assert [r.json() for r in asked] == [INVALID_SCOPE] * 3
 
 
 async def test_a_scope_outside_the_grants_or_an_empty_overlap_is_invalid_scope(

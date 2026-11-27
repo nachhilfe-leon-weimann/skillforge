@@ -126,7 +126,10 @@ row, commit, call, record the outcome - there is no job queue.
 - **Tooling** for the maintainer, all calling sevDesk and none in CI: `just sevdesk-doctor trial|live`
   ([`app/cli/sevdesk_doctor.py`](../app/cli/sevdesk_doctor.py)) checks the configured ids read-only and, with
   `--discover` - the one read before the account is confirmed - prints the `sevClient` ids that `GET /SevClient`,
-  `GET /SevUser` and `GET /ContactCustomFieldSetting` report and whether the company name carries the trial marker;
+  `GET /SevUser` and `GET /ContactCustomFieldSetting` report and whether the company name carries the trial marker,
+  and with `--invoice-number <number>` (repeatable) reads `GET /Invoice` with the `invoiceNumber` filter after the
+  identity check and prints per number the count and, per invoice, the exact match, type and status (billing spec,
+  Q19);
   `just contract-sevdesk` runs the `contract` tests against the trial, skipping them once the trial expired;
   `just sevdesk-spike` ([`scripts/sevdesk_spike.py`](../scripts/sevdesk_spike.py), not in the image) walks the
   trial step by step. The trial recipes load the trial's env file and refuse (`scripts/sevdesk_trial_env.sh`) a
@@ -205,7 +208,8 @@ CRM rules only, never against Discord state. The full design is in the [CRM API 
 
 Lessons are central data: SkillForge knows which lessons took place, for whom and how long. The full design is in the
 [billing spec](specs/billing.md); the routes live under `/api/v1/billing` (tag `billing`), reads need `billing:read`,
-writes `billing:write`.
+writes `billing:write`, and the payment-request lookup `billing:payment:read` - an `application` grant of the
+payment page's client, in no role and never vouched.
 
 - **A lesson's life.** A lesson starts `planned`; the tick (`PATCH /billing/lessons/{lesson_id}`, `status: held`)
   makes it billable. Entering a status sets its default `billable` - only `held` is billable by itself, a
@@ -289,6 +293,17 @@ writes `billing:write`.
   `title_name` is kept only for the reasons that wait for an assignment (`ck_calendar_event_title_name`) and is
   cleared on assign and dismiss; occurrences without a lesson are deleted 90 Berlin days after their start, with the
   next import. No log line holds a title or a name.
+- **Payment-request lookup.** `GET /billing/payment-requests/{invoice_number}` (`look_up_payment_request` in
+  `payment_requests.py`) answers skillsite's `/zahlung` with four fields: the number, `open` or `paid`, the open
+  amount in cents and whether PayPal is `allowed`. A number off `INVOICE_NUMBER_PATTERN` is a `422` and reaches no
+  sevDesk. After the identity check it reads `GET /Invoice` with the `invoiceNumber` filter (`invoices_by_number`)
+  and, for an answer, the invoice's contact; it writes nothing and opens no database session. Only a listed invoice
+  carrying exactly the number counts (`payment_state`), drafts set aside first - only several others are ambiguous
+  (`502`): an `RE` at 200 or 750 is `open` with `sumGross` minus
+  `paidAmount` through `Money`, one at 1000 with a paid amount `paid`; none, a draft, another type and a cancelled
+  original are `invoice_not_payable`; anything else is `sevdesk_unavailable`, a refusal `sevdesk_refused`. `paypal`
+  is `blocked` exactly for a customer number in `BILLING__PAYPAL_BLOCKED_CUSTOMER_NUMBERS` (`paypal_permission`),
+  which stays out of `repr` and every log line, as do names, contact ids and customer numbers.
 - **Demo data.** `just seed-demo` ([`app/cli/seed_demo.py`](../app/cli/seed_demo.py)) writes a synthetic family
   with two siblings at different rates, a student who pays for themselves, and lessons in every status, through the
   CRM and billing services. The lessons fall in the current Berlin month and the one before: a second run in the

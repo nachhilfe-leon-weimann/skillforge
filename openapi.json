@@ -2182,6 +2182,54 @@
         "title": "PasswordRedeemRequest",
         "type": "object"
       },
+      "PayPalPermission": {
+        "enum": [
+          "allowed",
+          "blocked"
+        ],
+        "title": "PayPalPermission",
+        "type": "string"
+      },
+      "PaymentRequest": {
+        "description": "The payment state of one invoice - nothing about the person it is for: no name, contact or customer number.",
+        "properties": {
+          "invoice_number": {
+            "description": "The invoice's number, as asked.",
+            "title": "Invoice Number",
+            "type": "string"
+          },
+          "open_amount_cents": {
+            "description": "What is left to pay, in cents: the gross sum minus what is paid; `0` once `paid`. A partly paid invoice whose\npayments already reach its gross sum can still be `open` with `0` until sevDesk marks it paid: treat `0` as\npaid.",
+            "minimum": 0,
+            "title": "Open Amount Cents",
+            "type": "integer"
+          },
+          "paypal": {
+            "$ref": "#/components/schemas/PayPalPermission",
+            "description": "Whether the invoice may be paid by PayPal: `blocked` for the customers who may only pay by transfer."
+          },
+          "state": {
+            "$ref": "#/components/schemas/PaymentState",
+            "description": "`open` - sent or partly paid - or `paid`."
+          }
+        },
+        "required": [
+          "invoice_number",
+          "state",
+          "open_amount_cents",
+          "paypal"
+        ],
+        "title": "PaymentRequest",
+        "type": "object"
+      },
+      "PaymentState": {
+        "enum": [
+          "open",
+          "paid"
+        ],
+        "title": "PaymentState",
+        "type": "string"
+      },
       "PersonCreateRequest": {
         "description": "Body of `POST /persons`.",
         "properties": {
@@ -3144,6 +3192,7 @@
               "auth:users:exchange": "Obtain a person's token for the Discord user they linked, and redeem Discord link codes; the client's secret speaks for every linked person up to its delegated ceiling. Client-only: never part of a person's token.",
               "auth:users:login": "Log people in on their behalf (password / refresh_token grants, redeem, revoke). Client-only: never part of a person's token.",
               "auth:users:manage": "Create, disable and reset user accounts; assign stored roles.",
+              "billing:payment:read": "Read the payment state of one invoice by its number: open or paid, the open amount, whether PayPal is allowed. An application grant only; in no role.",
               "billing:read": "Read lessons, rates, invoices and credit accounts.",
               "billing:write": "Record lessons and rates, and create invoice drafts and credit entries.",
               "crm:read": "Read parties, relations and subjects.",
@@ -3159,6 +3208,7 @@
               "auth:clients:manage": "Manage application clients.",
               "auth:discord-links:read": "Read Discord links - which Discord account belongs to which person party - including unlinked ones.",
               "auth:users:manage": "Create, disable and reset user accounts; assign stored roles.",
+              "billing:payment:read": "Read the payment state of one invoice by its number: open or paid, the open amount, whether PayPal is allowed. An application grant only; in no role.",
               "billing:read": "Read lessons, rates, invoices and credit accounts.",
               "billing:write": "Record lessons and rates, and create invoice drafts and credit entries.",
               "crm:read": "Read parties, relations and subjects.",
@@ -9068,6 +9118,160 @@
           }
         ],
         "summary": "Put Sevdesk Contact",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/payment-requests/{invoice_number}": {
+      "get": {
+        "description": "Read the payment state of one invoice from sevDesk: `open` with the amount left to pay, or `paid`, and whether\nPayPal is allowed. Writes nothing.\n\nA number without a payable invoice - none, a draft, a cancellation, a cancelled original, another document such as\na dunning letter - is `invoice_not_payable`, which never says which; a draft under the number of an issued\ninvoice is set aside. A sevDesk that cannot be read, or answers anything else - several invoices under one number\nthat are no draft, an unknown status - is `sevdesk_unavailable`; a configuration that is refused is\n`sevdesk_refused`.",
+        "operationId": "billing_get_payment_request",
+        "parameters": [
+          {
+            "description": "The invoice's number as sevDesk prints it: capitals, digits, `.`, `_` and `-`, at most 32 characters, starting with a capital or a digit.",
+            "in": "path",
+            "name": "invoice_number",
+            "required": true,
+            "schema": {
+              "description": "The invoice's number as sevDesk prints it: capitals, digits, `.`, `_` and `-`, at most 32 characters, starting with a capital or a digit.",
+              "examples": [
+                "RE-1000"
+              ],
+              "pattern": "^[A-Z0-9][A-Z0-9._-]{0,31}$",
+              "title": "Invoice Number",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRequest"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Invalid authentication credentials"
+                    }
+                  },
+                  "missing_token": {
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "Not authenticated"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "code": "forbidden",
+                      "detail": "Not enough permissions"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing required scope: billing:payment:read"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invoice_not_payable": {
+                    "value": {
+                      "code": "invoice_not_payable",
+                      "detail": "No payable invoice has this number"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No payable invoice has this number"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": "validation_error",
+                  "detail": "Request validation failed",
+                  "errors": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "message": "Input should be less than or equal to 100",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "sevdesk_refused": {
+                    "value": {
+                      "code": "sevdesk_refused",
+                      "detail": "SkillForge refused to use sevDesk: the configuration or the account could not be confirmed"
+                    }
+                  },
+                  "sevdesk_unavailable": {
+                    "value": {
+                      "code": "sevdesk_unavailable",
+                      "detail": "sevDesk could not be read"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "sevDesk could not be read / SkillForge refused to use sevDesk: the configuration or the account could not be confirmed"
+          }
+        },
+        "security": [
+          {
+            "OAuth2": [
+              "billing:payment:read"
+            ]
+          }
+        ],
+        "summary": "Get Payment Request",
         "tags": [
           "billing"
         ]

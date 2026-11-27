@@ -40,7 +40,8 @@ Everything runs through [`just`](justfile), which wraps `uv`:
 - `just billing-backfill <file> [--apply]` - the maintainer's data step: apply a confirmed payer mapping CSV from
   outside the repository to the configured database, production included; a dry run without `--apply`. It has no
   host guard, so an agent never runs it; agents exercise it only in tests.
-- `just sevdesk-doctor trial|live [--discover]` - check the configured sevDesk ids, read-only;
+- `just sevdesk-doctor trial|live [--discover | --invoice-number <number> ...]` - check the configured sevDesk ids,
+  read-only, or list what the `invoiceNumber` filter finds (count, exact match, type, status);
   `just contract-sevdesk` - the contract tests against the sevDesk trial; `just sevdesk-spike [--step ...]` - the
   spike against the trial (it writes there). All three call sevDesk.
 

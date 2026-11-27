@@ -8,9 +8,10 @@ from fastapi import Depends, Path, Query
 from pydantic import Field
 
 from app.api.v1.common import PageParams
-from app.core.config import get_settings
+from app.core.config import BillingSettings, get_settings
 from app.core.db.models import LessonStatus
 from app.services.billing.calendar import CalendarReader, graph_calendar
+from app.services.billing.payment_requests import INVOICE_NUMBER_PATTERN, SevdeskConnect, sevdesk_connect
 
 LessonId = Annotated[
     uuid.UUID,
@@ -35,6 +36,16 @@ AliasId = Annotated[
 EventId = Annotated[
     uuid.UUID,
     Path(description="ID of the calendar occurrence.", examples=["4e8a0c2b-6d1f-4b3a-9c5e-7f9a1b3d5e7c"]),
+]
+
+InvoiceNumber = Annotated[
+    str,
+    Path(
+        pattern=INVOICE_NUMBER_PATTERN,
+        description="The invoice's number as sevDesk prints it: capitals, digits, `.`, `_` and `-`, at most 32 "
+        "characters, starting with a capital or a digit.",
+        examples=["RE-1000"],
+    ),
 ]
 
 ValidFrom = Annotated[
@@ -80,3 +91,23 @@ def get_calendar_reader() -> CalendarReader:
 
 
 type CalendarSource = Annotated[CalendarReader, Depends(get_calendar_reader)]
+
+
+def get_sevdesk() -> SevdeskConnect:
+    """The one place the payment-request lookup gets sevDesk: the client built from the settings, per request.
+
+    Building it reads nothing; settings that are missing or incomplete fail the lookup as `sevdesk_refused`. Tests
+    override this dependency with a client over a mocked transport.
+    """
+    return sevdesk_connect(get_settings().sevdesk)
+
+
+type Sevdesk = Annotated[SevdeskConnect, Depends(get_sevdesk)]
+
+
+def get_billing_settings() -> BillingSettings:
+    """The billing settings (`BILLING__*`); tests override this dependency."""
+    return get_settings().billing
+
+
+type BillingConfig = Annotated[BillingSettings, Depends(get_billing_settings)]

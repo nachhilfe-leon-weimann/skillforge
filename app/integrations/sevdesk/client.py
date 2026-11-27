@@ -176,6 +176,12 @@ class SevdeskClient:
         invoices = await self._get_all(Invoice, "/Invoice", params)
         return [invoice for invoice in invoices if invoice.customer_internal_note == customer_internal_note]
 
+    async def invoices_by_number(self, invoice_number: str) -> list[Invoice]:
+        """The invoices sevDesk lists for ``invoiceNumber``, the filter as sevDesk documents it - every one it
+        answers, whatever number it carries: whether the filter matches exactly is checked against the real account
+        (billing spec, Q19), so the caller compares the number."""
+        return await self._get_all(Invoice, "/Invoice", {"invoiceNumber": invoice_number})
+
     # --- writes: sent only in live mode, never retried ---
 
     async def save_invoice(self, draft: InvoiceDraft) -> SavedInvoice | PlannedRequest:

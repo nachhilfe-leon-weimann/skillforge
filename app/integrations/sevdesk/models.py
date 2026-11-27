@@ -116,6 +116,8 @@ class InvoiceSequence(SevdeskObject):
 
 class Invoice(SevdeskObject):
     invoice_number: str | None = None
+    invoice_type: str | None = None
+    """``RE`` for an invoice, ``SR`` for a cancellation; other types (a dunning letter) exist."""
     status: int
     contact: ObjectRef
     contact_person: ObjectRef | None = None
@@ -124,6 +126,8 @@ class Invoice(SevdeskObject):
     small_settlement: bool | None = None
     sum_net_cents: Money | None = Field(default=None, alias="sumNet")
     sum_gross_cents: Money | None = Field(default=None, alias="sumGross")
+    paid_amount_cents: Money | None = Field(default=None, alias="paidAmount")
+    """What has been paid; sevDesk sends it as a JSON number (Q14), which ``Reply.json`` reads as a ``Decimal``."""
     customer_internal_note: str | None = None
     foot_text: str | None = Field(default=None, repr=False)
     sev_client: ObjectRef | None = None

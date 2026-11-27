@@ -268,6 +268,18 @@ def test_the_doctor_loads_the_trial_env_file_for_the_trial_only(recipes: Recipes
     ]
 
 
+def test_the_doctor_passes_repeated_invoice_numbers_on(recipes: Recipes, trial_env_file, monkeypatch):
+    monkeypatch.setenv("SEVDESK__ACCOUNT", "live")
+
+    result = recipes.run("sevdesk-doctor", "live", "--invoice-number", "RE-1000", "--invoice-number", "RE.9_9-9")
+
+    assert result.returncode == 0, result.stderr
+    assert recipes.uv_calls() == [
+        "SKILLFORGE_CONTRACT_RUN= uv run python -m app.cli.sevdesk_doctor --account live"
+        " --invoice-number RE-1000 --invoice-number RE.9_9-9"
+    ]
+
+
 @pytest.mark.parametrize(
     "arguments",
     [
@@ -278,6 +290,15 @@ def test_the_doctor_loads_the_trial_env_file_for_the_trial_only(recipes: Recipes
         ("trial", "--discover", "--discover"),
         ("trial", "extra"),
         ("trial", "live"),
+        ("live", "--invoice-number"),
+        ("live", "--invoice-number", "--account"),
+        ("live", "--invoice-number", "re-1000"),
+        ("live", "--invoice-number", "RE/1000"),
+        ("live", "--invoice-number=RE-1000"),
+        ("live", "--invoice-number", "RE-1000", "--account", "trial"),
+        ("live", "--invoice-number", "RE-1000", "--discover"),
+        ("live", "--discover", "--invoice-number", "RE-1000"),
+        ("live", "RE-1000", "--invoice-number"),
     ],
 )
 def test_the_doctor_takes_trial_or_live_and_at_most_discover(arguments: tuple[str, ...], recipes, trial_env_file):

@@ -1,4 +1,5 @@
-"""Scope guards of the billing routes: reads need `billing:read`, writes `billing:write` (billing spec, decision X).
+"""Scope guards of the billing routes: reads need `billing:read`, writes `billing:write`, the payment-request lookup
+`billing:payment:read` (billing spec, decision X).
 
 The cases run over every billing operation of the OpenAPI document, so a route added by a later slice is covered
 without touching this file.
@@ -27,7 +28,10 @@ PATH_VALUES = {
     "valid_from": "2026-09-01",
     "alias_id": "00000000-0000-0000-0000-0000000000cc",
     "event_id": "00000000-0000-0000-0000-0000000000dd",
+    "invoice_number": "RE-1000",
 }
+PAYMENT_REQUESTS = "/api/v1/billing/payment-requests/"
+BILLING_SCOPES = frozenset({Scope.BILLING_READ, Scope.BILLING_WRITE, Scope.BILLING_PAYMENT_READ})
 
 
 def _billing_operations() -> list[tuple[str, str]]:
@@ -40,7 +44,9 @@ def _billing_operations() -> list[tuple[str, str]]:
     ]
 
 
-def _required_scope(method: str) -> Scope:
+def _required_scope(method: str, path: str) -> Scope:
+    if path.startswith(PAYMENT_REQUESTS):
+        return Scope.BILLING_PAYMENT_READ
     return Scope.BILLING_READ if method == "GET" else Scope.BILLING_WRITE
 
 
@@ -86,6 +92,10 @@ def test_the_operation_table_holds_the_calendar_alias_routes():
     }
 
 
+def test_the_operation_table_holds_the_payment_request_lookup():
+    assert ("GET", f"{PAYMENT_REQUESTS}{PATH_VALUES['invoice_number']}") in _billing_operations()
+
+
 def test_the_operation_table_holds_the_calendar_import_routes():
     events = "/api/v1/billing/calendar/events"
 
@@ -104,17 +114,18 @@ async def test_billing_route_answers_401_without_a_token(method: str, path: str)
 
     assert response.status_code == 401
     assert ErrorResponse.model_validate(response.json()).code == "unauthorized"
-    assert response.headers["www-authenticate"] == f'Bearer scope="{_required_scope(method)}"'
+    assert response.headers["www-authenticate"] == f'Bearer scope="{_required_scope(method, path)}"'
 
 
 @pytest.mark.parametrize(("method", "path"), _billing_operations())
 async def test_billing_route_answers_403_with_a_token_lacking_the_scope(method: str, path: str):
-    """The other billing scope does not stand in: `billing:write` does not imply `billing:read`, nor the reverse."""
-    other_billing_scope = Scope.BILLING_WRITE if method == "GET" else Scope.BILLING_READ
+    """The other billing scopes do not stand in: `billing:write` does not imply `billing:read`, nor the reverse, and
+    neither implies `billing:payment:read`, nor that one either of them."""
+    other_billing_scopes = BILLING_SCOPES - {_required_scope(method, path)}
 
     async with _client() as client:
         response = await client.request(
-            method, path, headers=_auth_headers(other_billing_scope, Scope.CRM_READ, Scope.CRM_WRITE)
+            method, path, headers=_auth_headers(*other_billing_scopes, Scope.CRM_READ, Scope.CRM_WRITE)
         )
 
     assert response.status_code == 403
