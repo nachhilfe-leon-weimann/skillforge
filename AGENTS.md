@@ -58,7 +58,7 @@ Everything runs through [`just`](justfile), which wraps `uv`:
   `app/core/auth/` and `app/services/auth/` is the reference.
 - **`openapi.json` is generated** - never edit it by hand; after an API change run `just openapi` and commit
   ([ADR 0001](docs/decisions/0001-openapi-as-contract.md)).
-- **Migrations** use the direct URL (`DB__MIGRATION_URL`), the app the pooled one
+- **Migrations** use `DB__MIGRATION_URL` when set (the direct URL behind a pooler), else `DB__URL` like the app
   ([ADR 0002](docs/decisions/0002-pooled-vs-migration-url.md)). Drop enum types explicitly on downgrade.
   `migrations/env.py` creates the schema of every model package (`get_schemata` in `schemata.py`); a schema only
   history knows is created by the revision that first needs it and dropped by the one that retires it - `bot`:

@@ -68,6 +68,8 @@ There is no automatic rollback. To go back to an earlier release:
 1. Restore the earlier tag's whole `compose.yml` (`git show vX.Y.Z:compose.yml > compose.yml`) in a PR
    titled `chore(deploy): roll back to vX.Y.Z` (a `chore` makes no release) and merge it. Restoring only
    the `image:` lines is not enough: an older image may lack the module the current `worker` command names.
+   A tag up to `v0.6.0` predates SkillDB and has no `networks` entries: keep the current ones, or `migrate`
+   cannot reach the database and the deploy fails.
 2. Dispatch `Deploy` with that version. It stores the restored `compose.yml` in Dokploy before it deploys.
 
 Rolling forward reverts the rollback PR first, restoring the current `compose.yml`; the next release PR then
