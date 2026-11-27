@@ -12,9 +12,9 @@ class DatabaseSettings(CoreSettings):
         - DB__MIGRATION_URL=postgresql+asyncpg://...  (optional)
 
     DB__MIGRATION_URL lets migrations target a direct, unpooled endpoint. A pooled
-    endpoint (e.g. Neon's "-pooler" host running PgBouncer in transaction mode) breaks
-    advisory locks and CONCURRENTLY operations, so it is unsafe for migrations; the app
-    itself keeps using the pooled DB__URL. Falls back to DB__URL when unset.
+    endpoint (e.g. PgBouncer in transaction mode) breaks advisory locks and CONCURRENTLY
+    operations, so it is unsafe for migrations; the app itself keeps using DB__URL.
+    Falls back to DB__URL when unset.
     """
 
     # A URL holds the password: no representation of the settings shows it.

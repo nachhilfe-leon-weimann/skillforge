@@ -58,7 +58,7 @@ Everything runs through [`just`](justfile), which wraps `uv`:
   `app/core/auth/` and `app/services/auth/` is the reference.
 - **`openapi.json` is generated** - never edit it by hand; after an API change run `just openapi` and commit
   ([ADR 0001](docs/decisions/0001-openapi-as-contract.md)).
-- **Migrations** use the direct URL (`DB__MIGRATION_URL`), the app the pooled one
+- **Migrations** use `DB__MIGRATION_URL` when set (the direct URL behind a pooler), else `DB__URL` like the app
   ([ADR 0002](docs/decisions/0002-pooled-vs-migration-url.md)). Drop enum types explicitly on downgrade.
   `migrations/env.py` creates the schema of every model package (`get_schemata` in `schemata.py`); a schema only
   history knows is created by the revision that first needs it and dropped by the one that retires it - `bot`:
@@ -95,8 +95,8 @@ Everything runs through [`just`](justfile), which wraps `uv`:
   block means stop and ask, never work around it.
 - **No new external service** without asking. **Legal texts** change only on an explicit request; flag a change that
   may affect one.
-- **The configured database may be production.** The settings read `.env`, and `.env.example` names Neon as the
-  production target. `just dev`, `just dev-local-core`, `just docker-run`, `just bootstrap-client`,
+- **The configured database may be production.** The settings read `.env`; production is SkillDB, reachable from
+  outside only over the tailnet. `just dev`, `just dev-local-core`, `just docker-run`, `just bootstrap-client`,
   `just bootstrap-admin`, `just worker-housekeeping` and Alembic run only after the maintainer confirms in the session
   that `DB__URL` is local: `bootstrap-admin` prints tokens, `worker-housekeeping` deletes rows. `just seed-demo` and
   `just billing-backfill` an agent never runs: they write rows, and `billing-backfill` is meant for production.

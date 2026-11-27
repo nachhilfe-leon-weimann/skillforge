@@ -320,7 +320,9 @@ writes `billing:write`.
 ## Database
 
 One Postgres DB, six schemas by domain - details in
-[`DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md):
+[`DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md). In prod it is SkillDB: Postgres 17 as a Dokploy database service on the
+VPS, reachable over the internal Docker network `dokploy-network`, which every service in
+[`compose.yml`](../compose.yml) joins; admin access only over the tailnet.
 
 | Schema | Contents |
 |---|---|
@@ -333,8 +335,9 @@ One Postgres DB, six schemas by domain - details in
 
 - **Async SQLAlchemy 2** over `asyncpg`; models under `app/core/db/models/<schema>/`, one
   `*Base` class per schema with `{"schema": ...}`.
-- **Migrations** via Alembic (`migrations/`). The app uses the pooled connection, migrations the
-  direct one - see [ADR 0002](decisions/0002-pooled-vs-migration-url.md). Schema/baseline
+- **Migrations** via Alembic (`migrations/`). Behind a transaction pooler the app uses the pooled
+  connection, migrations the direct one (`DB__MIGRATION_URL`) - see
+  [ADR 0002](decisions/0002-pooled-vs-migration-url.md); SkillDB has no pooler, so both use `DB__URL`. Schema/baseline
   convention: [ADR 0005](decisions/0005-multi-schema-db.md), amended by
   [ADR 0009](decisions/0009-bot-owns-its-discord-workflows.md): a schema only history knows (`bot`) is created
   and dropped by revisions, not by `migrations/env.py`.

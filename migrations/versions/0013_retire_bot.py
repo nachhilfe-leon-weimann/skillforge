@@ -14,7 +14,7 @@ and the whole migration rolls back.
 
 Downgrade: the empty structure of 0011 - every column, default, check, foreign key and index under its original
 name, taken from ``pg_dump --schema-only --schema=bot`` at 0011 - and the two scope rows. No data and no grants:
-what the upgrade deleted comes back only from a backup (the Neon branch of the pre-flight).
+what the upgrade deleted comes back only from a backup in R2.
 """
 
 from collections.abc import Sequence
