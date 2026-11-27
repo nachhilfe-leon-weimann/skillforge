@@ -30,8 +30,10 @@ pytestmark = pytest.mark.db
 
 _REVISION_0010 = "0010_subject_title_unique"
 _REVISION_0011 = "0011_grant_mode_user_accounts"
-# The schemas of today's models. `bot` is history: 0001_baseline creates it, 0013_retire_bot drops it.
-_APPLICATION_SCHEMAS = {"auth", "billing", "core", "ext", "geo", "system"}
+# The schemas of today's models. `bot` and `geo` are history: 0001_baseline creates both, 0013_retire_bot drops
+# `bot` and 0019_retire_geo drops `geo`.
+_APPLICATION_SCHEMAS = {"auth", "billing", "core", "ext", "system"}
+_RETIRED_SCHEMAS = {"bot", "geo"}
 
 
 def _asyncpg_dsn(url: str) -> str:
@@ -111,12 +113,12 @@ async def _schemas(url: str) -> set[str]:
 
 
 async def _leftovers(url: str) -> list[str]:
-    """Every relation in an application schema and every enum type, `bot` and `public` included.
+    """Every relation in an application schema and every enum type, the retired schemas and `public` included.
 
     The schemas come from `_APPLICATION_SCHEMAS`, which the test checks against the database after the upgrade:
     a new model package cannot be missed here.
     """
-    schemas = _APPLICATION_SCHEMAS | {"bot"}
+    schemas = _APPLICATION_SCHEMAS | _RETIRED_SCHEMAS
     rows = await _rows(
         url,
         """
@@ -133,33 +135,33 @@ async def _leftovers(url: str) -> list[str]:
 
 
 # What `alembic check` cannot see: every column with its type, nullability and default, every constraint and
-# index by name and definition, and every enum type with its labels in order - of the `bot` schema.
-_BOT_CATALOG = """
+# index by name and definition, and every enum type with its labels in order - of the schema passed as $1.
+_SCHEMA_CATALOG = """
 SELECT 'column', c.relname, a.attnum || ' ' || a.attname,
        format_type(a.atttypid, a.atttypmod) || CASE WHEN a.attnotnull THEN ' NOT NULL' ELSE '' END
        || coalesce(' DEFAULT ' || pg_get_expr(d.adbin, d.adrelid), '')
 FROM pg_attribute a
 JOIN pg_class c ON c.oid = a.attrelid
 LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
-WHERE c.relnamespace = 'bot'::regnamespace AND c.relkind = 'r' AND a.attnum > 0 AND NOT a.attisdropped
+WHERE c.relnamespace = $1::text::regnamespace AND c.relkind = 'r' AND a.attnum > 0 AND NOT a.attisdropped
 UNION ALL
 SELECT 'constraint', c.relname, k.conname, pg_get_constraintdef(k.oid)
 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid
-WHERE k.connamespace = 'bot'::regnamespace
+WHERE k.connamespace = $1::text::regnamespace
 UNION ALL
 SELECT 'index', c.relname, i.relname, pg_get_indexdef(i.oid)
 FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid JOIN pg_class c ON c.oid = x.indrelid
-WHERE c.relnamespace = 'bot'::regnamespace
+WHERE c.relnamespace = $1::text::regnamespace
 UNION ALL
 SELECT 'enum', t.typname, '', string_agg(e.enumlabel, ', ' ORDER BY e.enumsortorder)
 FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
-WHERE t.typnamespace = 'bot'::regnamespace
+WHERE t.typnamespace = $1::text::regnamespace
 GROUP BY t.typname
 """
 
 
-async def _bot_catalog(url: str) -> list[tuple[object, ...]]:
-    return sorted(await _rows(url, _BOT_CATALOG))
+async def _catalog(url: str, schema: str) -> list[tuple[object, ...]]:
+    return sorted(await _rows(url, _SCHEMA_CATALOG, schema))
 
 
 @pytest.fixture
@@ -190,16 +192,17 @@ def _alembic(db_url: str, *args: str) -> None:
 
 
 def test_migrations_apply_match_models_and_reverse(migration_db_url: str) -> None:
-    # 1. Every migration applies cleanly from an empty database - without the bot models: 0001_baseline
-    #    creates the `bot` schema itself and 0013_retire_bot drops it (bot-decoupling spec, decision L).
+    # 1. Every migration applies cleanly from an empty database - without the bot and geo models: 0001_baseline
+    #    creates the `bot` and `geo` schemas itself, 0013_retire_bot drops `bot` (bot-decoupling spec, decision L)
+    #    and 0019_retire_geo drops `geo`.
     _alembic(migration_db_url, "upgrade", "head")
     # 2. The migrated schema matches the models - fails if a revision is missing or
     #    incomplete (drift), which create_all-based tests cannot detect. `check` runs env.py once
-    #    more: a leftover `models/bot/__pycache__/` must not bring the schema back.
+    #    more: a leftover `models/bot/__pycache__/` or `models/geo/__pycache__/` must not bring a schema back.
     _alembic(migration_db_url, "check")
     assert asyncio.run(_schemas(migration_db_url)) == _APPLICATION_SCHEMAS
     # 3. The chain is reversible and can be rebuilt from scratch. env.py creates the schemas of
-    #    today's models on every run, so they stay behind, empty; `bot` goes with 0001's downgrade.
+    #    today's models on every run, so they stay behind, empty; `bot` and `geo` go with 0001's downgrade.
     _alembic(migration_db_url, "downgrade", "base")
     assert asyncio.run(_schemas(migration_db_url)) == _APPLICATION_SCHEMAS
     assert asyncio.run(_leftovers(migration_db_url)) == []
@@ -376,7 +379,7 @@ _ALL_SEEDED_SCOPES = [
 
 def test_retiring_the_bot_schema_is_audited_and_reversible(migration_db_url: str) -> None:
     _alembic(migration_db_url, "upgrade", _REVISION_0011)
-    catalog_at_0011 = asyncio.run(_bot_catalog(migration_db_url))
+    catalog_at_0011 = asyncio.run(_catalog(migration_db_url, "bot"))
     asyncio.run(_run_on_server(migration_db_url, _SEED_BOT_STATE))
 
     _alembic(migration_db_url, "upgrade", "head")
@@ -412,7 +415,7 @@ def test_retiring_the_bot_schema_is_audited_and_reversible(migration_db_url: str
     _alembic(migration_db_url, "downgrade", _REVISION_0011)
 
     # The structure of 0011 and the two scope rows come back - no data, no grant.
-    assert asyncio.run(_bot_catalog(migration_db_url)) == catalog_at_0011
+    assert asyncio.run(_catalog(migration_db_url, "bot")) == catalog_at_0011
     assert asyncio.run(_rows(migration_db_url, _SCOPES)) == _ALL_SEEDED_SCOPES
     assert asyncio.run(_rows(migration_db_url, _GRANTS)) == [("operator", "crm:read", "delegated")]
     assert asyncio.run(_rows(migration_db_url, "SELECT count(*) FROM bot.job")) == [(0,)]
@@ -427,7 +430,7 @@ def test_an_unknown_object_in_the_bot_schema_fails_the_upgrade_and_changes_nothi
     _alembic(migration_db_url, "upgrade", _REVISION_0011)
     asyncio.run(_run_on_server(migration_db_url, _SEED_BOT_STATE))
     asyncio.run(_run_on_server(migration_db_url, "CREATE TABLE bot.stray (id integer PRIMARY KEY)"))
-    catalog_before = asyncio.run(_bot_catalog(migration_db_url))
+    catalog_before = asyncio.run(_catalog(migration_db_url, "bot"))
 
     refused = _alembic_result(migration_db_url, "upgrade", "head")
 
@@ -436,7 +439,7 @@ def test_an_unknown_object_in_the_bot_schema_fails_the_upgrade_and_changes_nothi
     # One transaction: neither 0012 nor 0013 happened, and every grant, scope, row and table is still there.
     version = "SELECT version_num FROM public.alembic_version"
     assert asyncio.run(_rows(migration_db_url, version)) == [(_REVISION_0011,)]
-    assert asyncio.run(_bot_catalog(migration_db_url)) == catalog_before
+    assert asyncio.run(_catalog(migration_db_url, "bot")) == catalog_before
     assert asyncio.run(_rows(migration_db_url, _GRANTS)) == _ALL_SEEDED_GRANTS
     assert asyncio.run(_rows(migration_db_url, _SCOPES)) == _ALL_SEEDED_SCOPES
     assert asyncio.run(_rows(migration_db_url, _AUDIT)) == []
@@ -852,3 +855,46 @@ def test_the_calendar_event_revision_is_reversible_and_keeps_names_only_while_wa
 
     _alembic(migration_db_url, "upgrade", _REVISION_0018)
     assert _billing_constraints(migration_db_url) == sorted(_BILLING_CONSTRAINTS_AT_0018)
+
+
+# --- 0019_retire_geo ---
+
+_REVISION_0019 = "0019_retire_geo"
+
+# Synthetic reference data: the upgrade drops whatever the table holds.
+_SEED_GEO_ROW = "INSERT INTO geo.plz_ort (plz, ort, landkreis, bundesland) VALUES ('00000', 'Town', 'County', 'State')"
+
+
+def test_retiring_the_geo_schema_is_reversible(migration_db_url: str) -> None:
+    _alembic(migration_db_url, "upgrade", _REVISION_0018)
+    catalog_at_0018 = asyncio.run(_catalog(migration_db_url, "geo"))
+    assert ("constraint", "plz_ort", "plz_ort_pkey", "PRIMARY KEY (plz, ort)") in catalog_at_0018
+    asyncio.run(_run_on_server(migration_db_url, _SEED_GEO_ROW))
+
+    _alembic(migration_db_url, "upgrade", _REVISION_0019)
+    assert "geo" not in asyncio.run(_schemas(migration_db_url))
+
+    # The structure of 0018 comes back - no data.
+    _alembic(migration_db_url, "downgrade", _REVISION_0018)
+    assert asyncio.run(_catalog(migration_db_url, "geo")) == catalog_at_0018
+    assert asyncio.run(_rows(migration_db_url, "SELECT count(*) FROM geo.plz_ort")) == [(0,)]
+
+    _alembic(migration_db_url, "upgrade", _REVISION_0019)
+    assert "geo" not in asyncio.run(_schemas(migration_db_url))
+
+
+def test_an_unknown_object_in_the_geo_schema_fails_the_upgrade_and_changes_nothing(migration_db_url: str) -> None:
+    _alembic(migration_db_url, "upgrade", _REVISION_0018)
+    asyncio.run(_run_on_server(migration_db_url, _SEED_GEO_ROW))
+    asyncio.run(_run_on_server(migration_db_url, "CREATE TABLE geo.stray (id integer PRIMARY KEY)"))
+    catalog_before = asyncio.run(_catalog(migration_db_url, "geo"))
+
+    refused = _alembic_result(migration_db_url, "upgrade", _REVISION_0019)
+
+    assert refused.returncode != 0
+    assert "cannot drop schema geo because other objects depend on it" in refused.stderr
+    # One transaction: the table and its row are still there.
+    version = "SELECT version_num FROM public.alembic_version"
+    assert asyncio.run(_rows(migration_db_url, version)) == [(_REVISION_0018,)]
+    assert asyncio.run(_catalog(migration_db_url, "geo")) == catalog_before
+    assert asyncio.run(_rows(migration_db_url, "SELECT count(*) FROM geo.plz_ort")) == [(1,)]
