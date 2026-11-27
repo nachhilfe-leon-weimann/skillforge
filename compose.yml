@@ -3,7 +3,7 @@
 # it restores an earlier tag's whole compose.yml (README, "Rolling back").
 services:
   migrate:
-    image: ghcr.io/nachhilfe-leon-weimann/skillforge:v0.6.0 # x-release-please-version
+    image: ghcr.io/nachhilfe-leon-weimann/skillforge:v0.7.0 # x-release-please-version
     pull_policy: always
     restart: "no"
     env_file:
@@ -13,7 +13,7 @@ services:
       - dokploy-network
 
   app:
-    image: ghcr.io/nachhilfe-leon-weimann/skillforge:v0.6.0 # x-release-please-version
+    image: ghcr.io/nachhilfe-leon-weimann/skillforge:v0.7.0 # x-release-please-version
     pull_policy: always
     restart: unless-stopped
     env_file:
@@ -32,7 +32,7 @@ services:
   # make several replicas safe. The image's HEALTHCHECK probes the API on :8000, which this container
   # does not serve - /health reports the worker through its heartbeat instead.
   worker:
-    image: ghcr.io/nachhilfe-leon-weimann/skillforge:v0.6.0 # x-release-please-version
+    image: ghcr.io/nachhilfe-leon-weimann/skillforge:v0.7.0 # x-release-please-version
     pull_policy: always
     restart: unless-stopped
     env_file:
