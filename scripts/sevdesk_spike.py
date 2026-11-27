@@ -51,19 +51,8 @@ RECORD_DIR = REPO_ROOT / "tests" / "fixtures" / "sevdesk"
 PDF_DIR = Path("~/skillforge-sevdesk-spike")
 CUSTOMER_CATEGORY_ID = 3
 """sevDesk's default contact category "customer" - a spike question."""
-PAY_LINK = "https://pay.example.org/zahlung?re=[%RECHNUNGSNUMMER%]&betrag=[%BETRAG%]"
-"""A stand-in for ``{Zahlungslink}``: placeholders for number and amount in a link target."""
-PAY_LINK_DOCUMENT_NUMBER = PAY_LINK.replace("[%RECHNUNGSNUMMER%]", "[%DOKUMENTENNUMMER%]")
-"""The same link with the number placeholder of today's document title (M9): which of the two resolves is Q2."""
 LINE = "<br>\n"
 """How the spec's blocks join their lines (M7): S15 shows what sevDesk makes of the markup and of the line breaks."""
-_FOOT_REST = LINE.join((
-    "Bitte begleichen Sie den Rechnungsbetrag <strong>bis zum [%ZAHLUNGSZIEL%]</strong> unter Angabe der Rechnungs- "
-    "oder Kundennummer.",
-    "Bei Rückfragen stehe ich Ihnen gerne zur Verfügung.",
-    "Mit freundlichen Grüßen",
-    "[%KONTAKTPERSON%]",
-))
 FOOT_TEXT = LINE.join((
     "Spike {run_id}: Bitte überweisen Sie den Betrag <strong>bis zum [%ZAHLUNGSZIEL%]</strong> mit dem "
     "Verwendungszweck [%RECHNUNGSNUMMER%].",
@@ -72,14 +61,6 @@ FOOT_TEXT = LINE.join((
     "[%KONTAKTPERSON%]",
 ))
 """S15: ``FOOT_TEXT`` of billing.md, with sevDesk's placeholders."""
-FOOT_TEXT_DOCUMENT_NUMBER = (
-    f'Spike {{run_id}}: <strong>Zahlungsverfahren:</strong> <i>PayPal (<a href="{PAY_LINK_DOCUMENT_NUMBER}">'
-    f"Weiter mit PayPal</a>)</i>{LINE}{_FOOT_REST}"
-)
-"""S15: SP-SD's PayPal foot text with ``PAY_LINK_DOCUMENT_NUMBER``, on one variant of S11; italic as ``<i>``:
-sevDesk's editor drops ``<em>`` when the maintainer saves a draft."""
-FOOT_TRANSFER = f"Spike {{run_id}}: <strong>Zahlungsverfahren:</strong> <i>Überweisung</i>{LINE}{_FOOT_REST}"
-"""S15: ``FOOT_TRANSFER`` of billing.md, italic as ``<i>``, on one variant of S11."""
 HEAD_TEXT = LINE.join((
     "Spike {run_id}: [%VOLLEANREDE%],",
     "vielen Dank für Ihr Vertrauen. Hier ist die Abrechnung der Nachhilfestunden im oben genannten Zeitraum:",
@@ -95,7 +76,6 @@ SEQUENCE_NUMBER = "%NUMBER"
 """Where a ``SevSequence`` format takes the number: ``RE-%NUMBER``, without brackets (fixture ``numbers-48``)."""
 PDF_MAGIC = b"%PDF-"
 """How a PDF starts: ``getPdf`` with ``download`` answers with the document itself, not with JSON."""
-PAYMENT_METHODS = ("PayPal", "Überweisung")
 LISTING_LIMIT = 1000
 SAVE = "POST /Invoice/Factory/saveInvoice"
 WRONG_TOKEN = "skillforge-spike-wrong-token"
@@ -146,11 +126,6 @@ async def version(spike: Spike) -> None:
     spike.out(f"bookkeeping system: {await spike.client.bookkeeping_version()}")
 
 
-async def custom_fields(spike: Spike) -> None:
-    for setting in await spike.client.custom_field_settings():
-        spike.out(f"custom field setting {setting.id}: {setting.name}")
-
-
 async def discovery(spike: Spike) -> None:
     for unity in _objects(await spike.client.http.read("/Unity")):
         spike.out(f"unit {unity.get('id')}: {unity.get('name')}")
@@ -187,34 +162,6 @@ async def contact_reads(spike: Spike) -> None:
         spike.out(f"by customer number: {[item.get('id') for item in listed]}")
 
 
-async def payment_methods(spike: Spike) -> None:
-    setting_id = spike.settings.payment_method_field_setting_id
-    setting = None if setting_id is None else await spike.client.get_custom_field_setting(setting_id)
-    if setting is None:
-        raise SystemExit("payment-methods needs SEVDESK__PAYMENT_METHOD_FIELD_SETTING_ID of an existing setting")
-    contacts = {"none": _contact_id(spike)}
-    for method in PAYMENT_METHODS:
-        contacts[method] = await _new_contact(spike, f"Spike {method}")
-        field = {
-            "objectName": "ContactCustomField",
-            "contact": {"id": contacts[method], "objectName": "Contact"},
-            "contactCustomFieldSetting": {"id": setting.id, "objectName": "ContactCustomFieldSetting"},
-            "value": method,
-        }
-        written = await _write(
-            spike, "POST /ContactCustomField", spike.client.http.write("POST", "/ContactCustomField", json=field)
-        )
-        _created_id(written, "POST /ContactCustomField")
-    for method, contact_id in contacts.items():
-        params = {"contact[id]": contact_id, "contact[objectName]": "Contact"}
-        fields = await _listing(spike, "/ContactCustomField", params)
-        values = [field.get("value") for field in fields if _ref_id(field.get("contact")) == contact_id]
-        spike.out(f"contact {contact_id} ({method}): payment method values {values}")
-    for method in PAYMENT_METHODS:
-        found = await spike.client.find_contacts_by_custom_field(setting.name, method)
-        spike.out(f"contacts paying by {method}: {[item.id for item in found]}")
-
-
 async def invoice(spike: Spike) -> None:
     spike.invoice_id = await _save(spike, _draft(spike, _lesson(spike, "position", cents=1000)), "invoice")
 
@@ -228,11 +175,7 @@ async def invoice_variants(spike: Spike) -> None:
     variants = {
         "several lessons": _draft(spike, *lessons),
         "several children": _draft(spike, *children),
-        "the transfer foot text": _draft(spike, _lesson(spike, "transfer"), foot_text=_text(spike, FOOT_TRANSFER)),
         "the document title": _draft(spike, _lesson(spike, "title"), header=_text(spike, DOCUMENT_TITLE)),
-        "the pay link with the document number": _draft(
-            spike, _lesson(spike, "pay link"), foot_text=_text(spike, FOOT_TEXT_DOCUMENT_NUMBER)
-        ),
     }
     for label, draft in variants.items():
         await _save(spike, draft, label)
@@ -429,11 +372,9 @@ async def sequence(spike: Spike) -> None:
 
 STEPS: dict[str, Callable[[Spike], Awaitable[None]]] = {
     "version": version,
-    "custom-fields": custom_fields,
     "discovery": discovery,
     "contact": contact,
     "contact-reads": contact_reads,
-    "payment-methods": payment_methods,
     "invoice": invoice,
     "read-back": read_back,
     "pdf": pdf,

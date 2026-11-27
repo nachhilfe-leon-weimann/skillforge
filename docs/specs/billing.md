@@ -1,6 +1,6 @@
 # Spec: Billing (lessons, rates, invoice drafts in sevDesk, prepaid credit)
 
-> Status: Accepted, 2026-11 - SF0, SF1-1 to SF1-3c, SF2-1 to SF2-3, SF3-1, SF3-2, SF4-1 to SF4-3 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD done (2026-11-11, run
+> Status: Accepted, 2026-11 - SF0, SF1-1 to SF1-4, SF2-1 to SF2-3, SF3-1, SF3-2, SF4-1 to SF4-3 done (SF2-3's charge box waits for SF5-3); SP-CAL done (Q9 and Q16 answered). SP-SD done (2026-11-11, run
 > `run202611112124164167`): every question is answered and the spec is frozen; a change needs the maintainer's
 > approval.
 > **Amended 2026-11-25** (approved by the maintainer in the session): every invoice uses one sevDesk layout that
@@ -1575,11 +1575,11 @@ write (`invoices.py`)._
   `tests/integrations/test_integration_recording.py`; `test_the_reads_billing_needs_parse` in
   `tests/contract/test_sevdesk_contract.py`.
 - _Acceptance criteria:_
-  - [ ] No file under `app/`, `scripts/` or `tests/` - recorded fixtures aside - names `payment_method`,
+  - [x] No file under `app/`, `scripts/` or `tests/` - recorded fixtures aside - names `payment_method`,
         `PAYMENT_METHODS`, `contact_custom_fields`, `find_contacts_by_custom_field` or the model
         `ContactCustomField` (`git grep`); `ContactCustomFieldSetting` stays for `discover`.
-  - [ ] `just sevdesk-doctor` checks the contact person and the hour unit; `--discover` still sends its three reads.
-  - [ ] No recorded fixture changed.
+  - [x] `just sevdesk-doctor` checks the contact person and the hour unit; `--discover` still sends its three reads.
+  - [x] No recorded fixture changed.
 
 **SF-PAY - The payment-request lookup.** _Added 2026-11-25. Needs SF1-2 and SF1-4; independent of SF5; its release
 waits for Q19.

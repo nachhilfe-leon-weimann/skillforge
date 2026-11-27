@@ -31,7 +31,6 @@ async def test_the_identity_check_passes_and_every_configured_id_exists(trial: S
 
 async def test_the_reads_billing_needs_parse(trial: SevdeskSettings):
     async with connect_trial(trial) as client:
-        await client.custom_field_settings()
         await client.parts()
         sequence = await client.invoice_sequence()
 

@@ -35,7 +35,6 @@ def configured(fake_sevdesk: FakeSevdesk) -> FakeSevdesk:
     fake_sevdesk.on("GET", "/SevUser", objects([user]))
     fake_sevdesk.on("GET", "/Unity/12", objects([{"id": "12", "objectName": "Unity", "name": "Std."}]))
     setting = {"id": "13", "objectName": "ContactCustomFieldSetting", "name": "Zahlungsart"}
-    fake_sevdesk.on("GET", "/ContactCustomFieldSetting/13", objects([setting]))
     fake_sevdesk.on("GET", "/ContactCustomFieldSetting", objects([setting]))
     return fake_sevdesk
 
@@ -50,7 +49,6 @@ async def test_a_complete_configuration_passes_without_printing_personal_data(se
         "ok   bookkeeping system: 2.0",
         "ok   contact person (SevUser): 11",
         "ok   hour unit (Unity): 12 (Std.)",
-        "ok   payment method (ContactCustomFieldSetting): 13 (Zahlungsart)",
     ]
     assert not any(value in output for value in PERSONAL)
     assert configured.sent("GET") == configured.sent()

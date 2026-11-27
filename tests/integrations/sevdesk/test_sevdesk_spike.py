@@ -12,26 +12,17 @@ import pytest
 
 from app.integrations.config import IntegrationAccount, IntegrationMode
 from scripts import sevdesk_spike
-from scripts.sevdesk_spike import STEPS, TOPUP_TEXT, WRONG_TOKEN, build_parser, run, s24_dates
+from scripts.sevdesk_spike import SAVE, STEPS, TOPUP_TEXT, WRONG_TOKEN, build_parser, run, s24_dates
 from tests.integrations.sevdesk.fake_sevdesk import ACCOUNT_ID, TOKEN, TRIAL_COMPANY, FakeSevdesk, objects, page
 from tests.integrations.sevdesk.test_sevdesk_recipes import ROOT
 from tests.test_fixture_scan import leaks
 
 RUN_ID = "run202611101200000042"
 TAG = f"skillforge-spike:{RUN_ID}"
-TRANSFER = f"Spike {RUN_ID}: <strong>Zahlungsverfahren:</strong> <i>Überweisung</i>"
 INVOICE = {"id": "501", "objectName": "Invoice", "status": "100", "contact": {"id": "21", "objectName": "Contact"}}
 PDF = b"%PDF-1.7 synthetic"
 HEX_TOKEN = "0123456789abcdef0123456789abcdef"
 CONTACT = {"id": "21", "objectName": "Contact", "customerNumber": "1001", "surename": "Spike", "familyname": RUN_ID}
-FIELD = {
-    "id": "71",
-    "objectName": "ContactCustomField",
-    "contact": {"id": "21", "objectName": "Contact"},
-    "contactCustomFieldSetting": {"id": "13", "objectName": "ContactCustomFieldSetting"},
-    "value": "PayPal",
-}
-OTHER_CONTACTS_FIELD = {**FIELD, "id": "72", "contact": {"id": "22", "objectName": "Contact"}, "value": "Überweisung"}
 
 
 def _identity(request: httpx.Request) -> httpx.Response:
@@ -54,7 +45,6 @@ def _save_invoice(request: httpx.Request) -> httpx.Response:
 def trial(fake_sevdesk: FakeSevdesk) -> FakeSevdesk:
     routes = {
         ("GET", "/Tools/bookkeepingSystemVersion"): objects({"version": "2.0"}),
-        ("GET", "/ContactCustomFieldSetting"): objects([{"id": "13", "name": "Zahlungsart"}]),
         ("GET", "/Unity"): objects([{"id": "12", "objectName": "Unity", "name": "Std."}]),
         ("GET", "/SevUser"): objects([{"id": "11", "objectName": "SevUser", "firstName": "Synthia"}]),
         ("GET", "/Part"): page([{"id": "31", "name": "Maths", "unity": {"id": "12", "objectName": "Unity"}}]),
@@ -66,12 +56,6 @@ def trial(fake_sevdesk: FakeSevdesk) -> FakeSevdesk:
         ("GET", "/SevClient"): _identity,
         ("GET", "/Contact/21"): objects([CONTACT]),
         ("GET", "/Contact"): objects([{"id": "21", "objectName": "Contact", "customerNumber": "1001"}]),
-        ("GET", "/ContactCustomFieldSetting/13"): objects([
-            {"id": "13", "objectName": "ContactCustomFieldSetting", "name": "Zahlungsverfahren"}
-        ]),
-        ("POST", "/ContactCustomField"): objects({"id": "71", "objectName": "ContactCustomField"}, status=201),
-        ("GET", "/ContactCustomField"): page([FIELD, OTHER_CONTACTS_FIELD]),
-        ("GET", "/Contact/Factory/findContactsByCustomFieldValue"): objects([{"id": "21", "objectName": "Contact"}]),
         ("GET", "/Invoice/501"): objects([{**INVOICE, "customerInternalNote": TAG, "footText": f"{TAG} {HEX_TOKEN}"}]),
         ("GET", "/Invoice/501/getPositions"): page([]),
         ("GET", "/Invoice"): page([{**INVOICE, "customerInternalNote": TAG}]),
@@ -111,9 +95,8 @@ async def test_a_full_walk_creates_tagged_objects_records_everything_and_saves_t
     assert code == 0, lines
     assert [line for line in lines if line.startswith("==")] == [f"== {step}" for step in STEPS]
     assert Counter(trial.sent("POST") + trial.sent("DELETE")) == {
-        "POST /Contact": 3,
-        "POST /ContactCustomField": 2,
-        "POST /Invoice/Factory/saveInvoice": 16,
+        "POST /Contact": 1,
+        "POST /Invoice/Factory/saveInvoice": 14,
         "POST /Invoice/501/render": 1,
         "DELETE /Invoice/501": 1,
     }
@@ -124,15 +107,9 @@ async def test_a_full_walk_creates_tagged_objects_records_everything_and_saves_t
     assert all(draft["customerInternalNote"] in (TAG, f"{TAG}:S20", f"{TAG}:S21") for draft in drafts)
     assert drafts[0]["footText"].startswith(f"Spike {RUN_ID}: Bitte überweisen Sie den Betrag")
     assert "Verwendungszweck [%RECHNUNGSNUMMER%]." in drafts[0]["footText"]
-    assert [d.get("footText", "").split("<br>")[0] for d in drafts].count(TRANSFER) == 1, (
-        "one variant with FOOT_TRANSFER"
-    )
     assert drafts[0]["headText"].startswith(f"Spike {RUN_ID}: [%VOLLEANREDE%],<br>\nvielen Dank")
     assert [d.get("header") for d in drafts].count(f"Spike {RUN_ID}: Rechnung Nr. [%DOKUMENTENNUMMER%]") == 1, (
         "one variant with DOCUMENT_TITLE"
-    )
-    assert sum("?re=[%DOKUMENTENNUMMER%]&betrag=" in d.get("footText", "") for d in drafts) == 1, (
-        "one variant with the document number in the pay link"
     )
     positions = [p for r in trial.requests if r.url.path.endswith("/saveInvoice") for p in _positions(r)]
     assert all(p.get("text") for p in positions if "part" not in p), "every lesson carries its description"
@@ -240,18 +217,18 @@ async def test_a_failure_to_record_stops_the_walk(live_settings, trial, tmp_path
 
 
 async def test_a_failure_to_record_a_write_stops_before_the_next_call(live_settings, trial, tmp_path):
-    # The numbering goes on from the one file there: identity 02 and 03, the setting 04, the first write 05.
+    # The numbering goes on from the one file there: identity 02 and 03, the first of the variants' drafts 04.
     run_directory = tmp_path / "fixtures" / RUN_ID
     run_directory.mkdir(parents=True)
-    (run_directory / "payment-methods-05.json").write_text("recorded before\n")
+    (run_directory / "invoice-variants-04.json").write_text("recorded before\n")
 
-    code, lines = await _spike(live_settings, trial, tmp_path, "--contact-id", "21", "--step", "payment-methods")
+    code, lines = await _spike(live_settings, trial, tmp_path, "--contact-id", "21", "--step", "invoice-variants")
 
     assert lines[-1] == (
-        "stopped: recording failed (FileExistsError) in step payment-methods;"
-        f" POST /Contact went out; look for {TAG} in the trial"
+        "stopped: recording failed (FileExistsError) in step invoice-variants;"
+        f" {SAVE} went out; look for {TAG} in the trial"
     )
-    assert code == 1 and trial.sent()[-1] == "POST /Contact" and trial.sent("POST") == ["POST /Contact"]
+    assert code == 1 and trial.sent()[-1] == SAVE and trial.sent("POST") == [SAVE]
 
 
 async def test_a_failure_to_record_a_write_names_its_path_without_ids(live_settings, trial, tmp_path):
@@ -267,12 +244,12 @@ async def test_a_failure_to_record_a_write_names_its_path_without_ids(live_setti
 async def test_a_failure_to_record_a_read_sends_no_write_after_it(live_settings, trial, tmp_path):
     run_directory = tmp_path / "fixtures" / RUN_ID
     run_directory.mkdir(parents=True)
-    (run_directory / "payment-methods-04.json").write_text("recorded before\n")
+    (run_directory / "delete-04.json").write_text("recorded before\n")
 
-    code, lines = await _spike(live_settings, trial, tmp_path, "--contact-id", "21", "--step", "payment-methods")
+    code, lines = await _spike(live_settings, trial, tmp_path, "--invoice-id", "501", "--step", "delete")
 
-    assert code == 1 and lines[-1].startswith("stopped: recording failed (FileExistsError) in step payment-methods")
-    assert trial.sent("POST") == []
+    assert code == 1 and lines[-1].startswith("stopped: recording failed (FileExistsError) in step delete")
+    assert trial.sent()[-1] == "GET /Invoice/501" and trial.sent("DELETE") == []
 
 
 async def test_a_failure_to_record_a_refused_write_stops_too(live_settings, trial, tmp_path):
@@ -391,7 +368,6 @@ async def test_the_manifest_steps_report_what_the_rows_ask(live_settings, trial,
 
     assert code == 0, lines
     assert _step(lines, "contact-reads") == ["contact 21: customer number 1001", "by customer number: ['21']"]
-    assert "contact 21 (PayPal): payment method values ['PayPal']" in _step(lines, "payment-methods")
     assert _step(lines, "discovery")[-4:] == [
         "Q18 /Part: total '1', 1 object(s)",
         "part 31: Maths (unit 12)",
@@ -401,9 +377,7 @@ async def test_the_manifest_steps_report_what_the_rows_ask(live_settings, trial,
     assert [line.split(":")[0] for line in _step(lines, "invoice-variants")] == [
         "several lessons",
         "several children",
-        "the transfer foot text",
         "the document title",
-        "the pay link with the document number",
         "a top-up",
         "Q18 /Invoice/{id}/getPositions",
         "a part and no name",

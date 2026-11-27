@@ -2,11 +2,11 @@
 
 It reads the settings from the process environment only (``SEVDESK__*``; no ``.env``): the recipe loads the trial
 env file for ``trial``, the maintainer's own terminal provides them for ``live``. It always runs in ``dry_run``, so
-nothing it could call is sent as a write, and never in CI. It prints ids and the names of configuration objects
-(units, custom fields) - never a person's data, nor the company name: ``--discover`` sends the three reads of
-spike row S2 (``GET /SevClient``, ``GET /SevUser``, ``GET /ContactCustomFieldSetting``) and prints the
-``sevClient`` ids they report and whether the company name carries the trial marker, so the maintainer can fill
-``SEVDESK__EXPECTED_ACCOUNT_ID`` on the first run. It is the one path that reads before the account is confirmed.
+nothing it could call is sent as a write, and never in CI. It prints ids and the hour unit's name - never a
+person's data, nor the company name: ``--discover`` sends the three reads of spike row S2 (``GET /SevClient``,
+``GET /SevUser``, ``GET /ContactCustomFieldSetting``) and prints the ``sevClient`` ids they report and whether
+the company name carries the trial marker, so the maintainer can fill ``SEVDESK__EXPECTED_ACCOUNT_ID`` on the
+first run. It is the one path that reads before the account is confirmed.
 """
 
 import argparse
@@ -20,7 +20,7 @@ from app.integrations.config import IntegrationAccount, IntegrationMode
 from app.integrations.errors import IdentityCheckError, IntegrationError
 from app.integrations.sevdesk.client import SevdeskClient
 from app.integrations.sevdesk.config import SevdeskSettings
-from app.integrations.sevdesk.models import CustomFieldSetting, SevUser, Unity
+from app.integrations.sevdesk.models import SevUser, Unity
 from app.integrations.transport import InnerTransport
 
 EXPECTED_BOOKKEEPING_VERSION = "2.0"
@@ -43,12 +43,6 @@ async def configured_ids(client: SevdeskClient, settings: SevdeskSettings) -> li
         Check("bookkeeping system", version == EXPECTED_BOOKKEEPING_VERSION, version),
         await _exists("contact person (SevUser)", "CONTACT_PERSON_ID", settings.contact_person_id, client.get_user),
         await _exists("hour unit (Unity)", "HOUR_UNIT_ID", settings.hour_unit_id, client.get_unity),
-        await _exists(
-            "payment method (ContactCustomFieldSetting)",
-            "PAYMENT_METHOD_FIELD_SETTING_ID",
-            settings.payment_method_field_setting_id,
-            client.get_custom_field_setting,
-        ),
     ]
 
 
@@ -95,7 +89,7 @@ async def run(
     return 0 if all(check.ok for check in checks) else 1
 
 
-async def _exists[T: SevUser | Unity | CustomFieldSetting](
+async def _exists[T: SevUser | Unity](
     label: str, variable: str, object_id: int | None, find: Callable[[int], Awaitable[T | None]]
 ) -> Check:
     if object_id is None:
@@ -103,7 +97,7 @@ async def _exists[T: SevUser | Unity | CustomFieldSetting](
     match await find(object_id):
         case None:
             return Check(label, False, f"{object_id} does not exist")
-        case Unity(name=name) | CustomFieldSetting(name=name):
+        case Unity(name=name):
             return Check(label, True, f"{object_id} ({name})")
     return Check(label, True, str(object_id))
 

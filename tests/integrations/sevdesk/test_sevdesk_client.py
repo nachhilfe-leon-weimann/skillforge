@@ -16,7 +16,7 @@ from app.integrations.errors import (
 )
 from app.integrations.sevdesk import client as sevdesk_client
 from app.integrations.sevdesk.client import SevdeskClient
-from app.integrations.sevdesk.models import Account, Contact, ContactCustomField, Part
+from app.integrations.sevdesk.models import Account, Contact, Part
 from app.integrations.transport import Exchange, Reply
 from tests.integrations.sevdesk.fake_sevdesk import ACCOUNT_ID, TOKEN, FakeSevdesk, objects, page
 
@@ -86,17 +86,6 @@ def test_an_amount_below_a_cent_is_refused(amount: object):
 def test_a_float_or_an_inexact_amount_is_refused(amount: object, message: str):
     with pytest.raises(ValueError, match=message):
         Part.model_validate({**PART, "price": amount})
-
-
-def test_a_reference_typed_as_a_list_of_one_is_accepted():
-    field = ContactCustomField.model_validate({
-        "id": "1",
-        "contact": {"id": "21", "objectName": "Contact"},
-        "contactCustomFieldSetting": [{"id": "13", "objectName": "ContactCustomFieldSetting"}],
-        "value": "synthetic",
-    })
-
-    assert field.contact_custom_field_setting.id == 13
 
 
 @pytest.mark.parametrize("bad", [{"status": "draft"}, {"name": None}, {"id": "five"}])
@@ -193,54 +182,16 @@ async def test_a_rejection_other_than_404_is_no_unknown_id(settings, fake_sevdes
 
 async def test_the_configuration_reads(settings, fake_sevdesk: FakeSevdesk):
     user = {"id": "11", "objectName": "SevUser", "sevClient": {"id": str(ACCOUNT_ID), "objectName": "SevClient"}}
-    setting = {"id": "13", "objectName": "ContactCustomFieldSetting", "name": "Payment method"}
     fake_sevdesk.on("GET", "/SevUser", objects([user]))
     fake_sevdesk.on("GET", "/SevUser/11", objects([user]))
     fake_sevdesk.on("GET", "/Unity/12", objects([{"id": "12", "objectName": "Unity", "name": "Std."}]))
-    fake_sevdesk.on("GET", "/ContactCustomFieldSetting", objects([setting]))
-    fake_sevdesk.on("GET", "/ContactCustomFieldSetting/13", objects([setting]))
 
     async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
-        users, user_11 = await client.users(), await client.get_user(11)
-        unity, settings_read = await client.get_unity(12), await client.custom_field_settings()
-        setting_13 = await client.get_custom_field_setting(13)
+        users, user_11, unity = await client.users(), await client.get_user(11), await client.get_unity(12)
 
     assert [found.id for found in users] == [11] and users[0].sev_client is not None
     assert user_11 is not None and user_11.sev_client is not None and user_11.sev_client.id == ACCOUNT_ID
     assert unity is not None and (unity.id, unity.name) == (12, "Std.")
-    assert [found.name for found in settings_read] == ["Payment method"]
-    assert setting_13 is not None and setting_13.id == 13
-
-
-async def test_contacts_by_custom_field_send_the_field_and_value(settings, fake_sevdesk: FakeSevdesk):
-    contact = {"id": "21", "objectName": "Contact", "customerNumber": "1001"}
-    fake_sevdesk.on("GET", "/Contact/Factory/findContactsByCustomFieldValue", objects([contact]))
-
-    async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
-        found = await client.find_contacts_by_custom_field("skillforge_party", "party-0001")
-
-    assert [(item.id, item.customer_number) for item in found] == [(21, "1001")]
-    params = dict(fake_sevdesk.requests[-1].url.params)
-    assert params == {"customFieldName": "skillforge_party", "value": "party-0001"}
-
-
-async def test_custom_fields_of_another_contact_are_dropped(settings, fake_sevdesk: FakeSevdesk):
-    def field(field_id: str, contact_id: str) -> dict[str, object]:
-        return {
-            "id": field_id,
-            "contact": {"id": contact_id, "objectName": "Contact"},
-            "contactCustomFieldSetting": {"id": "13", "objectName": "ContactCustomFieldSetting"},
-            "value": "synthetic",
-        }
-
-    fake_sevdesk.on("GET", "/ContactCustomField", page([field("1", "21"), field("2", "22")]))
-
-    async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
-        fields = await client.contact_custom_fields(21)
-
-    assert [item.id for item in fields] == [1]
-    params = dict(fake_sevdesk.requests[-1].url.params)
-    assert (params["contact[id]"], params["contact[objectName]"]) == ("21", "Contact")
 
 
 def _part(part_id: int) -> dict[str, object]:
@@ -357,8 +308,8 @@ async def test_no_id_appears_in_a_log_line_or_an_error_message(
     fake_sevdesk.on("GET", f"/Contact/{contact}", httpx.Response(500, json={"error": {"message": "x"}}))
     fake_sevdesk.on("GET", f"/SevUser/{contact}", objects([{"id": "1", "objectName": "SevUser"}]))
     fake_sevdesk.on("GET", f"/Unity/{contact}", objects([{"id": str(contact), "objectName": "Unity", "name": None}]))
-    fake_sevdesk.on("GET", f"/ContactCustomFieldSetting/{contact}", httpx.Response(401, json={}))
-    fake_sevdesk.on("GET", "/ContactCustomField", page([]))
+    fake_sevdesk.on("GET", f"/Invoice/{contact}", httpx.Response(401, json={}))
+    fake_sevdesk.on("GET", f"/Invoice/{contact}/getPositions", page([]))
     errors: list[Exception] = []
 
     async with SevdeskClient.connect(settings, transport=fake_sevdesk.transport) as client:
@@ -366,8 +317,8 @@ async def test_no_id_appears_in_a_log_line_or_an_error_message(
             client.get_contact(contact),
             client.get_user(contact),
             client.get_unity(contact),
-            client.get_custom_field_setting(contact),
-            client.contact_custom_fields(contact),
+            client.get_invoice(contact),
+            client.invoice_positions(contact),
         ):
             try:
                 await call

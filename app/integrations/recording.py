@@ -8,8 +8,8 @@ whole values first, then the patterns in every string:
   ``CommunicationWay``) keep only ids, ``objectName``, timestamps, references and the few fields
   ``_PEOPLE`` allows per type - at every depth, nested objects and lists included; every other value goes;
 - in every other object a string under a key that may hold a person's data or free text (a name, an address, bank
-  or contact details, a text or a note) goes, unless the run sent exactly that string itself or it is a payment
-  method - configuration objects (units, parts, custom field settings, sequences) keep their names;
+  or contact details, a text or a note) goes, unless the run sent exactly that string itself - configuration
+  objects (units, parts, custom field settings, sequences) keep their names;
 - a whole value that is a sevDesk placeholder (``[%RECHNUNGSNUMMER%]``) is no free text: it is never dropped or
   learned as a value, so the placeholders in the run's own texts survive too - the patterns below still apply;
 - in every string left, keys and the request path included: e-mail addresses (to ``example.org``), IBANs, phone
@@ -34,8 +34,6 @@ MAX_STRING = 2000
 TRIAL_MARKER = "TRIAL"
 RUN_ID = re.compile(r"run\d{18}")
 """A run id: a fixed prefix and digits only (time and a random suffix), so no scrub pattern can match it."""
-PAYMENT_METHODS = frozenset({"PayPal", "Überweisung"})
-"""The values of the custom field "Zahlungsverfahren": no one's data, and what the billing reads."""
 PLACEHOLDER = re.compile(r"\[%[A-Z0-9_.]+%\]")
 """A placeholder of sevDesk's text templates: a name of the template language, no one's data."""
 
@@ -202,14 +200,14 @@ class Scrubber:
 
     def _sensitive(self, key: str, value: str, object_name: object) -> bool:
         """Whether ``value``, a string under ``key`` of an object that is no person's, goes as a whole."""
-        if key == "objectName" or object_name in _CONFIGURATION or value in self._own or value in PAYMENT_METHODS:
+        if key == "objectName" or object_name in _CONFIGURATION or value in self._own:
             return False
         return any(part in _normalized(key) for part in _SENSITIVE_KEY_PARTS)
 
     def _gone(self, value: object, learning: bool) -> str:
         if isinstance(value, str) and PLACEHOLDER.fullmatch(value):
             return self.text(value)
-        if learning and _learnable(value) and value not in self._own and value not in PAYMENT_METHODS:
+        if learning and _learnable(value) and value not in self._own:
             self._known.add(str(value))
         return SCRUBBED
 

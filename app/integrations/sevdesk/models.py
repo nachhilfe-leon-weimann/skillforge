@@ -37,9 +37,6 @@ def unwrap_single(value: object) -> object:
     return value[0] if isinstance(value, list) and len(value) == 1 else value
 
 
-type SingleRef = Annotated[ObjectRef, BeforeValidator(unwrap_single)]
-
-
 def _cents(euros: object) -> int:
     """An amount as sevDesk sends it - euros as a string, an integer or a ``Decimal`` (``Reply.json``) - in cents."""
     if isinstance(euros, float):
@@ -98,12 +95,6 @@ class CustomFieldSetting(SevdeskObject):
     name: str
     identifier: str | None = None
     sev_client: ObjectRef | None = None
-
-
-class ContactCustomField(SevdeskObject):
-    contact: ObjectRef
-    contact_custom_field_setting: SingleRef
-    value: str = Field(repr=False)
 
 
 class Part(SevdeskObject):
