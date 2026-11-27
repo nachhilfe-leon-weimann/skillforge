@@ -36,7 +36,7 @@ correcting mistakes. That shapes the API more than any future UI does.
 
 - **A composite onboarding endpoint.** Nested create (decision C) covers the need; revisit with a real UI.
 - **User principals, delegation, object-level authorization, `/users/me`.** Only application clients exist today.
-- **Addresses.** `geo.plz_ort` is reference data; there is no address model yet.
+- **Addresses.** There is no address model yet.
 - **Archiving, soft delete, GDPR erasure or anonymization.** Needs its own spec (minors' data, sevDesk retention).
 - **Optimistic concurrency** (`version` / `If-Match`).
 - **Managing `ext` links** (sevDesk, Clockodo, Microsoft, Discord) through the CRM, including showing them in the

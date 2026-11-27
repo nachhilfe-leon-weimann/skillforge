@@ -25,7 +25,7 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
         app/services/system  health aggregation + worker heartbeats
         app/integrations  the only way out to other systems (guarded HTTP transport)
         app/core          cross-cutting: auth, db, logging, config
-                          `-> Postgres (schemas: core/geo/ext/auth/system/billing)
+                          `-> Postgres (schemas: core/ext/auth/system/billing)
 ```
 
 - **`app/main.py`** - FastAPI entry point. Mounts the top-level `app.api` router (which aggregates
@@ -319,13 +319,12 @@ writes `billing:write`.
 
 ## Database
 
-One Postgres DB, six schemas by domain - details in
+One Postgres DB, five schemas by domain - details in
 [`DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md):
 
 | Schema | Contents |
 |---|---|
 | `core` | Central business domain: party/person/company, students, tutors, subjects |
-| `geo`  | Geographic reference data (PLZ/Ort) |
 | `ext`  | Links from external system ids (Discord, sevDesk, Clockodo, Microsoft) to a `core.party` |
 | `auth` | OAuth2 clients, secrets, scope grants, user accounts, roles, sessions, one-time tokens, audit |
 | `system` | Runtime/operational state: background-worker liveness heartbeats |

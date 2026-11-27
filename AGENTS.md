@@ -13,7 +13,7 @@ commands, conventions and working rules; the _why_ lives in [`docs/`](docs/). "T
 | implement a slice or write a spec | its spec in `docs/specs/`; the pattern is in [`docs/specs/README.md`](docs/specs/README.md) |
 | want the reason behind a rule | [`docs/decisions/`](docs/decisions/) (ADRs) and the specs - an accepted ADR's body never changes, a new ADR supersedes or amends it |
 | call another system | [`app/integrations/AGENTS.md`](app/integrations/AGENTS.md); the layer in `ARCHITECTURE.md` |
-| touch the database | [`docs/DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md); schemas `core`, `geo`, `ext`, `auth`, `system`, `billing` |
+| touch the database | [`docs/DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md); schemas `core`, `ext`, `auth`, `system`, `billing` |
 | add or change an endpoint | [`api-conventions.md`](docs/specs/api-conventions.md), ADR 0006 |
 | brief an agent or write a handoff | [`docs/agent-work.md`](docs/agent-work.md) |
 | need the services' `UNSET` sentinel | `app/core/unset.py` |
@@ -62,7 +62,8 @@ Everything runs through [`just`](justfile), which wraps `uv`:
   ([ADR 0002](docs/decisions/0002-pooled-vs-migration-url.md)). Drop enum types explicitly on downgrade.
   `migrations/env.py` creates the schema of every model package (`get_schemata` in `schemata.py`); a schema only
   history knows is created by the revision that first needs it and dropped by the one that retires it - `bot`:
-  `0001_baseline` and `0013_retire_bot` ([ADR 0009](docs/decisions/0009-bot-owns-its-discord-workflows.md)).
+  `0001_baseline` and `0013_retire_bot` ([ADR 0009](docs/decisions/0009-bot-owns-its-discord-workflows.md));
+  `geo`: `0001_baseline` and `0019_retire_geo`.
 - **Endpoints follow the API conventions** ([spec](docs/specs/api-conventions.md),
   [ADR 0006](docs/decisions/0006-error-envelope.md)): guard with `require_scopes(...)` on the decorator; services
   raise taxonomy errors (`app/core/errors.py`), endpoints neither catch them nor raise `HTTPException` - declare
