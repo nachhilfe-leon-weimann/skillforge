@@ -1,6 +1,6 @@
 """SkillForge's housekeeping worker (bot-decoupling spec, P0-3).
 
-Started as the compose service ``worker`` (same image as the app, its own entrypoint, the pooled DB connection) via
+Started as the compose service ``worker`` (same image as the app, its own entrypoint, the DB connection) via
 ``python -m app.workers.housekeeping``. Each cycle runs every pass of ``PASSES`` once - one bounded batch in its own
 transaction - then emits one ``housekeeping_cycle`` line and beats for ``/health``. The passes delete with
 ``SKIP LOCKED``, so several replicas are safe.
