@@ -58,7 +58,7 @@ mailbox, and [ADR 0010](../decisions/0010-outbound-integrations.md) allows neith
 | **J - Mailboxes are data** | `calendar.mailbox` holds an address, `active`, an optional rule override and the mailbox's subscription and delta state. Routes under `/api/v1/calendar/mailboxes` write it and store the job that brings Graph in line. Only a mailbox that exists for lessons is added. | Adding a mailbox needs no deploy and no restart. A person's own mailbox holds what SkillForge has no business reading. |
 | **K - Scope** | A new scope `calendar:manage`, in the admin role, not in `VOUCHED_SCOPES`. | Who may add a mailbox decides whose calendar SkillForge writes. |
 | **L - `clientState`** | A random value per subscription (`secrets.token_urlsafe(48)`). The mailbox stores its SHA-256 digest before the subscription is created; a notification's value is digested and compared with `hmac.compare_digest`. | Graph returns it in every notification and never in a listing. A copy of the database must not be able to forge a notification. |
-| **M - Rules are configuration** | `CALENDAR__CATEGORIES` and `CALENDAR__RULES` (JSON) hold the categories with their colours and the ordered rules; a mailbox's `rules` replace the global rules for it. The defaults are the maintainer's rules, in the settings class. A `title` is at most 200 characters and must compile. | Patterns and categories change without a code change; the app still works unconfigured. |
+| **M - Rules are configuration** | `CALENDAR__CATEGORIES` and `CALENDAR__RULES` (JSON) hold the categories with their colours and the ordered rules, each a title pattern with the conditions `teams` and `phone`; a mailbox's `rules` replace the global rules for it. The defaults are the maintainer's rules, in the settings class. A `title` is at most 200 characters and must compile. | Patterns and categories change without a code change; the app still works unconfigured. |
 | **N - What stays code** | An event with any category is left alone; only `singleInstance` and `seriesMaster` are written; a rule may not name a category marked `manual`. | These are the promises of goals 2 and 3, not preferences. |
 | **O - Teams** | An event is a Teams meeting when `isOnlineMeeting` is true or `onlineMeetingProvider` is `teamsForBusiness`. | The maintainer's rule; SP-CAL found both set on every Teams lesson. |
 | **P - Series** | The category goes on the series master. Before and after that write the job reads the master with `$expand=exceptionOccurrences`; a category that changed on an exception is reported through the failure report as `ExceptionCategoryChanged`, the job succeeds, and nothing is written back. | Whether a master update keeps an exception's category is not documented (SP-2). |
@@ -94,8 +94,10 @@ mailbox, and [ADR 0010](../decisions/0010-outbound-integrations.md) allows neith
 
 ## Rules
 
-A rule has a `title` (a regular expression, searched case-insensitively), an optional `teams` condition and a
-`category`. The first rule that matches decides; no match leaves the event alone.
+A rule has a `title` (a regular expression, searched case-insensitively), the optional conditions `teams` and
+`phone`, and a `category`. The first rule that matches decides; no match leaves the event alone. `phone` asks
+whether the event's location is a phone number, by billing's definition (`is_phone_number` in `calendar_rules.py`):
+stripped, an optional leading `+`, then only digits, spaces and `/ ( ) -`, with 5 to 15 digits.
 
 ```json
 {
@@ -107,6 +109,7 @@ A rule has a `title` (a regular expression, searched case-insensitively), an opt
   ],
   "rules": [
     {"title": "^kennenlernen mit ", "category": "Telefon"},
+    {"title": "^.+ mit .+$", "phone": true, "category": "Telefon"},
     {"title": "^.+ mit .+$", "teams": true, "category": "Teams"},
     {"title": "^.+ mit .+$", "teams": false, "category": "Discord"}
   ]
@@ -126,8 +129,11 @@ What a `calendar.tag_event` job does, in this order:
 - **The first meeting comes first.** `Kennenlernen mit <name>` also matches the lesson pattern, so its rule stands
   before it. The order is the configuration's; a test pins the default.
 - **The rules are the maintainer's, not billing's.** Billing reads a first meeting from any subject that contains
-  `kennenlern` and a phone appointment also from a phone number as location (`calendar_rules.py`); the default
-  rules here know neither. A title such as `Erstes Kennenlernen mit <name>` gets the lesson rule.
+  `kennenlern` (`calendar_rules.py`); the rule here matches only a title that starts with `Kennenlernen mit`, so
+  `Erstes Kennenlernen mit <name>` gets a lesson rule. A first meeting gets `Telefon` even as a Teams meeting.
+- **A phone number as location** makes a lesson title `Telefon`, before the Teams rule. Billing reads such an
+  event as a phone appointment already, so the category changes nothing there. The definition is written a second
+  time in the pure `rules.py` - the calendar domain imports no other - and a test ties the two together.
 - **Billing reads the same categories.** The import of [`billing.md`](billing.md) treats `Telefon` as "no lesson"
   before it looks at the title. The default rules set `Telefon` only on a first meeting, which is no lesson
   either; its stored reason changes from `first_meeting` to `phone`, and a first meeting that was assigned a
@@ -187,8 +193,8 @@ The error catalog of the arc is closed at `mailbox_not_found` and `mailbox_alrea
 | `ALERTS__DISCORD_WEBHOOK_URL` | A secret; only a `discord.com` webhook URL is accepted. Unset: a failed job is only logged. |
 
 **Logs.** A line names a job by its id and kind and a mailbox by its id. No line, error, `repr` or `last_error`
-holds a title, an attendee, an address, an event id, a `clientState`, a delta link or the alert URL; `last_error`
-is an error class and a status.
+holds a title, a location, an attendee, an address, an event id, a `clientState`, a delta link or the alert URL;
+`last_error` is an error class and a status.
 
 ## Success metrics
 
@@ -266,6 +272,8 @@ Standing criteria, for every slice:
 - _Acceptance criteria:_
   - [ ] One test per row of the table in "Rules", on synthetic titles, the order of the first meeting included.
   - [ ] Decision O: either sign of a Teams meeting is enough.
+  - [ ] The `phone` condition agrees with billing's `is_phone_number` on a shared list of locations, and a phone
+        number comes before a Teams meeting.
   - [ ] A configuration whose rule names a `manual` or an unknown category, or whose `title` does not compile or
         is too long, does not load.
   - [ ] The module imports no session, no network and no clock (an architecture test).
@@ -330,8 +338,8 @@ Standing criteria, for every slice:
 - _Tests that change:_ none; a constructor that must change in `tests/integrations/graph/` or
   `tests/db/billing/calendar_support.py` is named in the PR.
 - _Acceptance criteria:_
-  - [ ] `get_event` asks only for `id`, `type`, `subject`, `categories`, `isOnlineMeeting`, `onlineMeetingProvider`
-        and `seriesMasterId`; a `404` is "gone", not an error.
+  - [ ] `get_event` asks only for `id`, `type`, `subject`, `categories`, `isOnlineMeeting`, `onlineMeetingProvider`,
+        `location` and `seriesMasterId`; a `404` is "gone", not an error.
   - [ ] A default calendar owned by another address ends as `IdentityCheckError` before any other call.
   - [ ] In `dry_run`, `set_categories` returns the planned request and sends nothing.
   - [ ] A `429` on a write is raised with its `Retry-After` and not repeated by the client.
@@ -394,18 +402,22 @@ Standing criteria, for every slice:
 - The billing import reads the mailboxes of `calendar.mailbox` instead of `GRAPH__MAILBOX`.
 - Further kinds, each with its own decision: a sevDesk sync, timesheet PDFs.
 
+## Decided (formerly open questions)
+
+Decided by the maintainer on 2026-11-28:
+
+- **A phone number as location** makes a lesson title `Telefon`; the `phone` condition is part of the rules from
+  the start.
+- **The delta stays,** although it returns whole events that the client drops (decision R); `calendarView` with
+  `$select` was the alternative.
+- **The first-meeting rule matches only a title that starts with `Kennenlernen mit`.** Such an event is a phone
+  appointment in practice.
+
 ## Open questions
 
 1. SP-1: does Graph create a subscription under the Exchange grants alone? Otherwise decision W.
 2. SP-2: does an exception keep its category? Otherwise decision P is reopened before `GRAPH__MODE=live`.
 3. SP-3: the colour presets of the existing categories, and the default calendar.
-4. Should a phone number as location make an event `Telefon`, as billing reads it? Proposal: no rule for it now;
-   the maintainer's rules name titles and Teams only, and a rule can be added to the configuration with a `phone`
-   condition later.
-5. Decision R reads whole events to drop most of them. `calendarView` with `$select` - the read billing uses -
-   returns only the wanted fields but has no delta link: every sync would read the whole window. Proposal: keep the
-   delta as specified, since it is what Graph recommends after a `missed` notification; switch if the maintainer
-   weighs the smaller read higher.
 
 ## Timeline / phasing
 
