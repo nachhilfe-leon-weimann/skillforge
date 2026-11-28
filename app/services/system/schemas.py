@@ -35,6 +35,7 @@ class DependenciesHealthCheckResponse(HealthCheckResponse):
 
 class WorkerName(StrEnum):
     HOUSEKEEPING = "housekeeping"
+    JOBS = "jobs"
 
 
 class WorkerHealthCheckResponse(HealthCheckResponse):

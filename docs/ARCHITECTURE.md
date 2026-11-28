@@ -68,8 +68,9 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
   (`heartbeat_service.py`), backing the `/health` tree.
 - **`app/services/jobs/`** - SkillForge's own job queue in `system.job` (`queue.py`: `enqueue`, `claim`, `succeed`,
   `fail`, `defer`; [calendar-categories spec](specs/calendar-categories.md),
-  [ADR 0011](decisions/0011-integration-jobs-and-graph-notifications.md)). Knows no domain: imports only `app.core`,
-  and a kind is a string to it.
+  [ADR 0011](decisions/0011-integration-jobs-and-graph-notifications.md)), `handler.py` (`JobContext` and the
+  `Handler` protocol) and `housekeeping.py` (`delete_finished_jobs`). Knows no domain: imports only `app.core`, and a
+  kind is a string to it. The [jobs worker](#jobs-worker) works it.
 - **`app/core/`** - `auth/` (what validates a request: OAuth2 scheme, JWT, principals, scopes, roles, reach,
   guards; plus the secret, password and e-mail primitives),
   `db/` (async engine, sessions, models), `logging/` (structured logging via `skillcore`), `errors.py`
@@ -153,11 +154,50 @@ its own transaction:
   rotated, used or invalidated alike. Each pass deletes one `SKIP LOCKED` batch of at most
   `DELETE_BATCH_LIMIT` rows per cycle, oldest first, and writes no audit row: the history stays in
   `auth_audit_log`.
+- **Finished jobs** - `delete_finished_jobs` in
+  [`app/services/jobs/housekeeping.py`](../app/services/jobs/housekeeping.py) deletes `succeeded` jobs
+  `SUCCEEDED_RETENTION` (30 days) and `failed` jobs `FAILED_RETENTION` (90 days) after their `finished_at`, by the
+  database's clock, in the same kind of batch; a `pending` or `running` job is never touched
+  ([calendar-categories spec](specs/calendar-categories.md), decision H).
 
 Every cycle logs exactly one `housekeeping_cycle` line (`sessions_deleted`, `action_tokens_deleted`,
-`duration_ms`), then beats for `/health` under `WorkerName.HOUSEKEEPING`, which
-`GET /health/workers` reads; a failing pass marks the beat `DEGRADED` and leaves the other pass
+`jobs_deleted`, `duration_ms`), then beats for `/health` under `WorkerName.HOUSEKEEPING`, which
+`GET /health/workers` reads; a failing pass marks the beat `DEGRADED` and leaves the other passes
 alone. Design details: [`bot-decoupling.md`](specs/bot-decoupling.md#housekeeping-worker).
+
+## Jobs worker
+
+A second worker ([`app/workers/jobs.py`](../app/workers/jobs.py), the `jobs` service in `compose.yml`,
+`just worker-jobs` locally) works SkillForge's own job queue in `system.job`, one job at a time
+([calendar-categories spec](specs/calendar-categories.md), decisions F and G;
+[ADR 0011](decisions/0011-integration-jobs-and-graph-notifications.md)):
+
+- **The loop.** `run_once` claims one due job, runs the handler of its kind from `HANDLERS` under
+  `HANDLER_TIMEOUT` (8 min, below the 10 min `JOB_LEASE`) and records the outcome: `succeed`, or `fail` with the
+  exception's class and integer `status` as `last_error` and its `retry_after` in whole seconds - the worker's own
+  cut-off as `HandlerTimeout`, also when the handler swallows it. After a job it looks again at once; idle, every
+  `POLL_INTERVAL` (5 s). Each queue call commits in its own transaction under `QUEUE_CALL_TIMEOUT` (30 s), apart from
+  what the handler writes. `HANDLERS` is empty until a kind brings its handler; a handler never blocks the event loop,
+  lets `CancelledError` propagate and is safe to repeat (the `Handler` protocol in `app/services/jobs/handler.py`).
+- **Unknown kind** (decision G): a job whose kind has no handler is deferred by `RETRY_CAP` (1 h), its attempt
+  taken back, and logged as `job_kind_unknown`.
+- **Failed for good.** A job that becomes `failed` - its last attempt failed, or a claim finished it after its
+  lease - goes to `report_failed`, which logs `job_failed` and never raises.
+- **Health.** A task of its own beats under `WorkerName.JOBS` every `BEAT_INTERVAL` (15 s), fresh for
+  `HEARTBEAT_FRESH_FOR` (45 s). It is independent of a handler that awaits, however long it runs, and relies on
+  handlers never blocking the loop. Only a failing claim, `succeed`, `fail` or `defer` - a hanging one included -
+  marks the beat `DEGRADED`; the next clean cycle clears it, and a failing handler never does. `/health` counts both
+  workers: without a fresh `jobs` beat - locally, whenever `just worker-jobs` does not run - it is unhealthy. A beat
+  task that ends on its own stops the worker (`jobs_beat_stopped`).
+- **Watchdog.** The loop stamps its progress at the start of every cycle, after the claim and after every outcome.
+  When no stamp came for longer than `HANDLER_TIMEOUT` plus `STALL_MARGIN` (1 min) - a handler that ignores
+  cancellation, say - the beat task logs `jobs_loop_stalled` and ends the process with `os._exit(1)`; compose starts it
+  again and the job is claimed again after its lease. A stall never degrades the beat: that would take the API down
+  with it.
+- **Logs.** A line names a job by its id and kind; a handler's message, its traceback and the payload are never
+  logged.
+- **Stop.** On SIGTERM or SIGINT the worker takes no new job, cancels the running handler and defers its job to be
+  due at once, the attempt taken back; then the beat ends and the database is disposed.
 
 ## CRM
 

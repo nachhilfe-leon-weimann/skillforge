@@ -18,12 +18,13 @@ class WorkerCycleStatus(StrEnum):
 class WorkerHeartbeat(TimestampMixin, SystemBase):
     """Liveness heartbeat for background workers.
 
-    One row per worker (PK ``worker_name``), upserted at the end of every cycle.
+    One row per worker (PK ``worker_name``), upserted on every beat - at the end of every cycle for housekeeping,
+    on a fixed interval from a task of its own for the jobs worker.
     The beat carries its own freshness window in ``expires_at``: the writer knows
     its cadence and stamps how long this beat stays valid, so health checks decide
     liveness without knowing any worker's interval (``now() >= expires_at`` => stale).
     ``last_status`` tells a clean cycle from a degraded one. The table records
-    *current state*, not a history -- each cycle overwrites the previous beat.
+    *current state*, not a history -- each beat overwrites the previous one.
     """
 
     __tablename__ = "worker_heartbeat"

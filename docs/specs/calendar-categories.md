@@ -1,6 +1,6 @@
 # Spec: Calendar categories (events get their category by medium, driven by Graph notifications)
 
-> Status: In progress - P0-1 | Arc `calendar`
+> Status: In progress - P0-1, P0-2 | Arc `calendar`
 > Builds on the [project sketch](../PROJECT.md),
 > [ADR 0011](../decisions/0011-integration-jobs-and-graph-notifications.md),
 > [ADR 0010](../decisions/0010-outbound-integrations.md), [`api-conventions.md`](api-conventions.md) and the calendar
@@ -51,7 +51,7 @@ mailbox, and [ADR 0010](../decisions/0010-outbound-integrations.md) allows neith
 | **C - One pending job per thing** | A job may carry a `dedupe_key`; among `pending` jobs a kind and a key are unique, and `enqueue` is one `INSERT ... ON CONFLICT`. A job that fails while a pending job of its kind and key exists is deleted instead of returned to `pending`; that twin takes the greater `attempts`. | Graph sends several notifications for one change, and many when events are moved around. A retry must not collide with the job that already replaces it. |
 | **D - Debounce** | A `calendar.tag_event` job is due `TAG_DELAY` (10 s) after the last notification for its event, at most `TAG_MAX_DELAY` (60 s) after the first: the conflict moves `available_at`. | A burst for one event folds into one job that reads the event once it is quiet - a booking tool may create an event and add its meeting a moment later. |
 | **E - Retry** | A failed attempt makes the job due again after `RETRY_BASE` (1 min) doubled per attempt, at most `RETRY_CAP` (1 h); a `Retry-After` longer than that wins, up to the cap. After `DEFAULT_MAX_ATTEMPTS` (8) the job is `failed`. | About two hours in total: the time Exchange may take to apply a new grant. |
-| **F - Worker** | A second worker process, `python -m app.workers.jobs`, the compose service `jobs`. It looks for a due job every `POLL_INTERVAL` (5 s) and works one job at a time. It beats for `/health` as `WorkerName.JOBS` from its own task, whatever job runs; only a failing claim, `succeed` or `fail` degrades the beat - a failing handler never does. | One job at a time stays far below Outlook's four concurrent requests per mailbox. `/health` gates the deploy and the API container: a calendar that cannot be reached must not take the API down. |
+| **F - Worker** | A second worker process, `python -m app.workers.jobs`, the compose service `jobs`. It looks for a due job every `POLL_INTERVAL` (5 s) and works one job at a time. It beats for `/health` as `WorkerName.JOBS` from its own task, whatever job runs; only a failing claim, `succeed`, `fail` or `defer` degrades the beat - a failing handler never does - and a loop that makes no progress for longer than a handler may run ends the process. | One job at a time stays far below Outlook's four concurrent requests per mailbox. `/health` gates the deploy and the API container: a calendar that cannot be reached must not take the API down. |
 | **G - Unknown kind** | A job whose kind has no handler is not an attempt: it is made due again after `RETRY_CAP` and logged. | During a deploy the old worker can meet a kind the new API stored; wave 1 stores kinds whose handlers come with wave 2. |
 | **H - Housekeeping** | The housekeeping worker deletes `succeeded` jobs 30 days and `failed` jobs 90 days after `finished_at`, as one more pass of `PASSES`. | The existing place for expiring rows; a failed job stays longer as evidence. |
 | **I - Failure report** | When a job becomes `failed`, the worker posts its kind, id, attempts and error class to `ALERTS__DISCORD_WEBHOOK_URL`. Without the setting it only logs. The post has no dry run and is never repeated. | ADR 0011, point 7. A failing alert must not fail or loop the job. |
@@ -246,13 +246,16 @@ Standing criteria, for every slice:
 - _Tests that change:_ `tests/workers/test_worker_wiring.py` (the `jobs` service),
   `tests/workers/test_housekeeping_cycle.py` (the third counter), `tests/api/test_health.py` (the second worker).
 - _Acceptance criteria:_
-  - [ ] A handler that raises leaves its job `pending` with the next due time and `/health` ok.
-  - [ ] A handler that runs longer than the beat stays fresh leaves `/health` ok.
-  - [ ] Decision G: a job of an unknown kind keeps its `attempts` and is due again after `RETRY_CAP`.
-  - [ ] A job stored while the worker is stopped is worked after its start.
-  - [ ] `/health` is unhealthy without a fresh beat of `jobs`.
-  - [ ] The pass deletes by decision H and nothing else.
-  - [ ] `just test-clients` is green.
+  - [x] A handler that raises leaves its job `pending` with the next due time and `/health` ok.
+  - [x] A handler that runs longer than the beat stays fresh leaves `/health` ok.
+  - [x] Decision G: a job of an unknown kind keeps its `attempts` and is due again after `RETRY_CAP`.
+  - [x] A job stored while the worker is stopped is worked after its start.
+  - [x] `/health` is unhealthy without a fresh beat of `jobs`.
+  - [x] A loop without progress for longer than a handler may run ends the process; an idle worker and a long
+        handler within its timeout do not.
+  - [x] A `CancelledError` a handler raises itself is a failed attempt, not a stop.
+  - [x] The pass deletes by decision H and nothing else.
+  - [x] `just test-clients` is green.
 
 **P0-3 - Failure report.**
 - _Technique:_ `app/integrations/alerts/` with `AlertSettings` (`ALERTS__*`, the URL a `SecretStr`) nested in
