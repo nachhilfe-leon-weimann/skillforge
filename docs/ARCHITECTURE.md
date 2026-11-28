@@ -23,6 +23,7 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
         app/services/crm  system of record: parties, roles, contact infos, relations, subjects
         app/services/billing  lessons and their life cycle, students' rates, payers, the calendar import
         app/services/system  health aggregation + worker heartbeats
+        app/services/jobs  SkillForge's own job queue (system.job)
         app/integrations  the only way out to other systems (guarded HTTP transport)
         app/core          cross-cutting: auth, db, logging, config
                           `-> Postgres (schemas: core/ext/auth/system/billing)
@@ -65,6 +66,10 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
   `errors.py` (the error catalog). Imports only `app.core`, `app.integrations`, the CRM services and itself.
 - **`app/services/system/`** - health aggregation (`health_service.py`) and worker liveness
   (`heartbeat_service.py`), backing the `/health` tree.
+- **`app/services/jobs/`** - SkillForge's own job queue in `system.job` (`queue.py`: `enqueue`, `claim`, `succeed`,
+  `fail`, `defer`; [calendar-categories spec](specs/calendar-categories.md),
+  [ADR 0011](decisions/0011-integration-jobs-and-graph-notifications.md)). Knows no domain: imports only `app.core`,
+  and a kind is a string to it.
 - **`app/core/`** - `auth/` (what validates a request: OAuth2 scheme, JWT, principals, scopes, roles, reach,
   guards; plus the secret, password and e-mail primitives),
   `db/` (async engine, sessions, models), `logging/` (structured logging via `skillcore`), `errors.py`
@@ -74,7 +79,7 @@ HTTP -> app/api/system    liveness + health probes (dependencies, workers)
 
 `app/integrations/` is the only place SkillForge calls another system; its rules for agents are in
 [`app/integrations/AGENTS.md`](../app/integrations/AGENTS.md). Services call it synchronously: write a pending
-row, commit, call, record the outcome - there is no job queue.
+row, commit, call, record the outcome; no integration call runs as a job.
 
 - **One guarded transport.** `IntegrationHttp` in `transport.py` is the only module in `app/` that reaches for the
   network. Every request passes `_GuardedTransport`, which refuses a URL outside the base URL and the host allowlist
@@ -329,7 +334,7 @@ VPS, reachable over the internal Docker network `dokploy-network`, which every s
 | `core` | Central business domain: party/person/company, students, tutors, subjects |
 | `ext`  | Links from external system ids (Discord, sevDesk, Clockodo, Microsoft) to a `core.party` |
 | `auth` | OAuth2 clients, secrets, scope grants, user accounts, roles, sessions, one-time tokens, audit |
-| `system` | Runtime/operational state: background-worker liveness heartbeats |
+| `system` | Runtime/operational state: background-worker liveness heartbeats, the job queue |
 | `billing` | Lessons, students' rates, payers billed by hand, calendar aliases and occurrences ([billing spec](specs/billing.md)) |
 
 - **Async SQLAlchemy 2** over `asyncpg`; models under `app/core/db/models/<schema>/`, one

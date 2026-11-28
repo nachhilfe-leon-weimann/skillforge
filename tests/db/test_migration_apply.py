@@ -22,7 +22,7 @@ from urllib.parse import urlparse, urlunparse
 import asyncpg
 import pytest
 
-from app.core.db.models import LessonStatus
+from app.core.db.models import JobStatus, LessonStatus
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -898,3 +898,109 @@ def test_an_unknown_object_in_the_geo_schema_fails_the_upgrade_and_changes_nothi
     assert asyncio.run(_rows(migration_db_url, version)) == [(_REVISION_0018,)]
     assert asyncio.run(_catalog(migration_db_url, "geo")) == catalog_before
     assert asyncio.run(_rows(migration_db_url, "SELECT count(*) FROM geo.plz_ort")) == [(1,)]
+
+
+# --- 0020_system_job (calendar-categories spec, P0-1) ---
+
+_REVISION_0020 = "0020_system_job"
+_JOB_STATUSES = ["pending", "running", "succeeded", "failed"]
+# `alembic check` compares neither an index's predicate nor a check's expression: pin both. The partial unique
+# index is the arbiter of the queue's `ON CONFLICT`, which names the same predicate; the claim reads the other two.
+_JOB_CATALOG = [
+    (
+        "constraint",
+        "job",
+        "ck_job_attempts",
+        "CHECK (((attempts >= 0) AND (max_attempts >= 1) AND (attempts <= max_attempts)))",
+    ),
+    (
+        "constraint",
+        "job",
+        "ck_job_finished",
+        "CHECK (((finished_at IS NOT NULL) = (status = ANY (ARRAY['succeeded'::system.job_status, "
+        "'failed'::system.job_status]))))",
+    ),
+    (
+        "constraint",
+        "job",
+        "ck_job_lease",
+        "CHECK (((locked_until IS NOT NULL) = (status = 'running'::system.job_status)))",
+    ),
+    ("constraint", "job", "job_pkey", "PRIMARY KEY (id)"),
+    ("enum", "job_status", "", ", ".join(_JOB_STATUSES)),
+    (
+        "index",
+        "job",
+        "ix_job_claimable",
+        "CREATE INDEX ix_job_claimable ON system.job USING btree (available_at) "
+        "WHERE (status = 'pending'::system.job_status)",
+    ),
+    (
+        "index",
+        "job",
+        "ix_job_lease",
+        "CREATE INDEX ix_job_lease ON system.job USING btree (locked_until) "
+        "WHERE (status = 'running'::system.job_status)",
+    ),
+    ("index", "job", "job_pkey", "CREATE UNIQUE INDEX job_pkey ON system.job USING btree (id)"),
+    (
+        "index",
+        "job",
+        "uq_job_pending_dedupe",
+        "CREATE UNIQUE INDEX uq_job_pending_dedupe ON system.job USING btree (kind, dedupe_key) "
+        "WHERE (status = 'pending'::system.job_status)",
+    ),
+]
+
+
+_JOB_INSERT = "INSERT INTO system.job (id, kind, dedupe_key, status, attempts, max_attempts, locked_until, finished_at)"
+_JOB_REFUSALS = [
+    (
+        f"{_JOB_INSERT} VALUES (gen_random_uuid(), 'test.kind', 'k', 'pending', 0, 8, NULL, NULL)",
+        "uq_job_pending_dedupe",
+    ),
+    # A finished job carries `finished_at`, and only a finished one.
+    (f"{_JOB_INSERT} VALUES (gen_random_uuid(), 'test.kind', NULL, 'failed', 1, 8, NULL, NULL)", "ck_job_finished"),
+    (f"{_JOB_INSERT} VALUES (gen_random_uuid(), 'test.kind', NULL, 'pending', 0, 8, NULL, now())", "ck_job_finished"),
+    # A running job without a lease would never be claimed again; a lease outside `running` means nothing.
+    (f"{_JOB_INSERT} VALUES (gen_random_uuid(), 'test.kind', NULL, 'running', 1, 8, NULL, NULL)", "ck_job_lease"),
+    (f"{_JOB_INSERT} VALUES (gen_random_uuid(), 'test.kind', NULL, 'pending', 0, 8, now(), NULL)", "ck_job_lease"),
+    # No job holds more attempts than it may make, or fewer than none.
+    (f"{_JOB_INSERT} VALUES (gen_random_uuid(), 'test.kind', NULL, 'pending', 9, 8, NULL, NULL)", "ck_job_attempts"),
+    (f"{_JOB_INSERT} VALUES (gen_random_uuid(), 'test.kind', NULL, 'pending', -1, 8, NULL, NULL)", "ck_job_attempts"),
+    (f"{_JOB_INSERT} VALUES (gen_random_uuid(), 'test.kind', NULL, 'pending', 0, 0, NULL, NULL)", "ck_job_attempts"),
+]
+
+
+def _job_catalog(url: str) -> list[tuple[object, ...]]:
+    return [
+        row for row in asyncio.run(_catalog(url, "system")) if row[0] != "column" and row[1] in {"job", "job_status"}
+    ]
+
+
+def test_the_job_revision_is_reversible_and_keeps_one_pending_job_per_key(migration_db_url: str) -> None:
+    _alembic(migration_db_url, "upgrade", _REVISION_0019)
+    catalog_at_0019 = asyncio.run(_catalog(migration_db_url, "system"))
+    _alembic(migration_db_url, "upgrade", _REVISION_0020)
+    assert _job_catalog(migration_db_url) == _JOB_CATALOG
+    assert _JOB_STATUSES == [status.value for status in JobStatus]
+
+    # A second pending job of a kind and key is refused; a running one, or one without a key, is not.
+    seed = (
+        "INSERT INTO system.job (id, kind, max_attempts, dedupe_key, status, locked_until) VALUES "
+        "(gen_random_uuid(), 'test.kind', 8, 'k', 'pending', NULL), "
+        "(gen_random_uuid(), 'test.kind', 8, 'k', 'running', now()), "
+        "(gen_random_uuid(), 'test.kind', 8, NULL, 'pending', NULL), "
+        "(gen_random_uuid(), 'test.kind', 8, NULL, 'pending', NULL)"
+    )
+    asyncio.run(_run_on_server(migration_db_url, seed))
+    for statement, constraint in _JOB_REFUSALS:
+        assert asyncio.run(_refusing_constraint(migration_db_url, statement)) == constraint
+
+    # The downgrade drops the table and `system.job_status`, and leaves the rest of the schema as it was.
+    _alembic(migration_db_url, "downgrade", _REVISION_0019)
+    assert _job_catalog(migration_db_url) == []
+    assert asyncio.run(_catalog(migration_db_url, "system")) == catalog_at_0019
+
+    _alembic(migration_db_url, "upgrade", _REVISION_0020)
+    assert _job_catalog(migration_db_url) == _JOB_CATALOG
