@@ -4,12 +4,13 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.core.db.dependencies import get_database
 from app.core.db.models import WorkerCycleStatus, WorkerHeartbeat
 from app.main import app
-from app.services.system import HealthStatus, WorkerHealthCheckResponse
+from app.services.system import HealthStatus, WorkerHealthCheckResponse, WorkerName
 from app.services.system.health_service import _aggregate_health_status, _worker_status_from_heartbeat
 
 # --- liveness ---------------------------------------------------------------
@@ -73,7 +74,8 @@ async def test_dependencies_aggregate_unhealthy():
 # --- workers ----------------------------------------------------------------
 
 
-async def test_worker_endpoint_reports_known_worker(monkeypatch):
+@pytest.mark.parametrize("worker", list(WorkerName))
+async def test_worker_endpoint_reports_known_worker(monkeypatch, worker: WorkerName):
     # The check itself reads the heartbeat from the DB (covered by DB tests); here we only
     # assert the endpoint wiring + status mapping, so stub the check out.
     async def _healthy(worker_name, database):
@@ -82,10 +84,10 @@ async def test_worker_endpoint_reports_known_worker(monkeypatch):
     monkeypatch.setattr("app.api.system.health.check_worker_health", _healthy)
 
     async with _client(_FakeDatabase()) as client:
-        response = await client.get("/health/workers/housekeeping")
+        response = await client.get(f"/health/workers/{worker}")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "worker_name": "housekeeping"}
+    assert response.json() == {"status": "ok", "worker_name": worker.value}
 
 
 # --- system -----------------------------------------------------------------
@@ -102,7 +104,22 @@ async def test_system_health_ok_when_all_checks_pass(monkeypatch):
     assert body["status"] == "ok"
     assert body["version"] == app.version
     assert body["dependencies"]["checks"]["database"] == "ok"
-    assert body["workers"]["checks"] == {"housekeeping": "ok"}
+    assert body["workers"]["checks"] == {"housekeeping": "ok", "jobs": "ok"}
+
+
+async def test_system_health_503_when_one_worker_is_unhealthy(monkeypatch):
+    # The jobs worker counts like housekeeping: /health gates the deploy on both.
+    async def _jobs_unhealthy(worker_name, database):
+        status = HealthStatus.UNHEALTHY if worker_name is WorkerName.JOBS else HealthStatus.HEALTHY
+        return WorkerHealthCheckResponse(worker_name=worker_name, status=status)
+
+    monkeypatch.setattr("app.services.system.health_service.check_worker_health", _jobs_unhealthy)
+
+    async with _client(_FakeDatabase(healthy=True)) as client:
+        response = await client.get("/health")
+
+    assert response.status_code == 503
+    assert response.json()["workers"]["checks"] == {"housekeeping": "ok", "jobs": "unhealthy"}
 
 
 async def test_system_health_503_when_dependency_down(monkeypatch):

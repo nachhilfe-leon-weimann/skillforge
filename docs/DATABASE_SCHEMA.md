@@ -276,15 +276,15 @@ INDEX (expires_at)  -- ix_user_action_token_expires_at
 ## System Schema
 
 Internal runtime state for background workers - not a business domain: worker liveness, consumed by the
-`/health/workers` endpoints (see the housekeeping worker in `app/workers/housekeeping.py`), and SkillForge's own job
-queue, written and claimed only through `app/services/jobs/queue.py`
+`/health/workers` endpoints (see the workers in `app/workers/`), and SkillForge's own job queue, written and claimed
+only through `app/services/jobs/queue.py` and expired by `app/services/jobs/housekeeping.py`
 ([calendar-categories spec](specs/calendar-categories.md), [ADR 0011](decisions/0011-integration-jobs-and-graph-notifications.md)).
 
 ```sql
 system.worker_cycle_status = ('ok', 'degraded')
 system.job_status = ('pending', 'running', 'succeeded', 'failed')
 
--- system.worker_heartbeat  (one row per worker, upserted at the end of every cycle; current state, not history)
+-- system.worker_heartbeat  (one row per worker, upserted on every beat; current state, not history)
 worker_name TEXT PRIMARY KEY
 last_beat_at TIMESTAMPTZ NOT NULL
 expires_at TIMESTAMPTZ NOT NULL           -- beat carries its own freshness window; now() >= expires_at => stale

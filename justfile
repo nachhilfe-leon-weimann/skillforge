@@ -111,9 +111,13 @@ test-one test:
 
 # --- Workers ---
 
-# Run the housekeeping worker loop locally (deletes auth sessions and one-time tokens 30 days past expiry; beats for /health).
+# Run the housekeeping worker loop locally (deletes auth sessions and one-time tokens 30 days past expiry and finished jobs; beats for /health).
 worker-housekeeping:
     uv run python -m app.workers.housekeeping
+
+# Run the jobs worker loop locally (works the job queue in system.job one job at a time; beats for /health).
+worker-jobs:
+    uv run python -m app.workers.jobs
 
 # --- Auth ---
 

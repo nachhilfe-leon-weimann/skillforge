@@ -98,9 +98,10 @@ Everything runs through [`just`](justfile), which wraps `uv`:
   may affect one.
 - **The configured database may be production.** The settings read `.env`; production is SkillDB, reachable from
   outside only over the tailnet. `just dev`, `just dev-local-core`, `just docker-run`, `just bootstrap-client`,
-  `just bootstrap-admin`, `just worker-housekeeping` and Alembic run only after the maintainer confirms in the session
-  that `DB__URL` is local: `bootstrap-admin` prints tokens, `worker-housekeeping` deletes rows. `just seed-demo` and
-  `just billing-backfill` an agent never runs: they write rows, and `billing-backfill` is meant for production.
+  `just bootstrap-admin`, `just worker-housekeeping`, `just worker-jobs` and Alembic run only after the maintainer
+  confirms in the session that `DB__URL` is local: `bootstrap-admin` prints tokens, `worker-housekeeping` deletes
+  rows, `worker-jobs` claims and works the queue's jobs. `just seed-demo` and `just billing-backfill` an agent never
+  runs: they write rows, and `billing-backfill` is meant for production.
 - **sevDesk is a live system, its trial too.** An agent runs the trial recipes (`just sevdesk-doctor trial`,
   `just contract-sevdesk`, `just sevdesk-spike`) only after the maintainer's go in the session, and
   `just sevdesk-doctor live` never. The trial's settings live in the env file the recipes name, outside the

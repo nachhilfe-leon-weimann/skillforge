@@ -9,7 +9,7 @@ from app.core.db.models import WorkerCycleStatus
 from app.services.system import WorkerName
 from app.workers import housekeeping as worker
 
-COUNTERS = {"sessions_deleted", "action_tokens_deleted"}
+COUNTERS = {"sessions_deleted", "action_tokens_deleted", "jobs_deleted"}
 
 
 @pytest.fixture(autouse=True)
@@ -22,7 +22,11 @@ def heartbeat(monkeypatch) -> AsyncMock:
 
 @pytest.fixture
 def passes(monkeypatch) -> dict[str, AsyncMock]:
-    mocks = {"sessions_deleted": AsyncMock(return_value=3), "action_tokens_deleted": AsyncMock(return_value=1)}
+    mocks = {
+        "sessions_deleted": AsyncMock(return_value=3),
+        "action_tokens_deleted": AsyncMock(return_value=1),
+        "jobs_deleted": AsyncMock(return_value=2),
+    }
     for counter, mock in mocks.items():
         monkeypatch.setitem(worker.PASSES, counter, mock)
     return mocks
@@ -66,30 +70,30 @@ async def test_a_cycle_logs_exactly_one_line_with_the_counts(passes):
     assert [event for event, _ in logger.calls] == ["housekeeping_cycle"]
     fields = logger.calls[0][1]
     assert set(fields) == COUNTERS | {"duration_ms"}
-    assert (fields["sessions_deleted"], fields["action_tokens_deleted"]) == (3, 1)
+    assert (fields["sessions_deleted"], fields["action_tokens_deleted"], fields["jobs_deleted"]) == (3, 1, 2)
 
 
 async def test_each_pass_runs_one_batch_per_cycle(passes, heartbeat):
     _, database = await _cycle()
 
-    # Two passes, one heartbeat - each in its own transaction, so a failing one never rolls back another.
-    assert len(database.sessions) == 3
-    assert len(set(database.sessions)) == 3
+    # Three passes, one heartbeat - each in its own transaction, so a failing one never rolls back another.
+    assert len(database.sessions) == 4
+    assert len(set(database.sessions)) == 4
     for mock, session in zip(passes.values(), database.sessions, strict=False):
         mock.assert_awaited_once_with(session, limit=worker.DELETE_BATCH_LIMIT)
-    assert heartbeat.await_args.args[0] is database.sessions[2]
+    assert heartbeat.await_args.args[0] is database.sessions[3]
 
 
 @pytest.mark.parametrize("failing", sorted(COUNTERS))
-async def test_a_failing_pass_degrades_the_beat_and_leaves_the_other(passes, heartbeat, failing: str):
+async def test_a_failing_pass_degrades_the_beat_and_leaves_the_others(passes, heartbeat, failing: str):
     passes[failing].side_effect = RuntimeError("boom")
 
     logger, _ = await _cycle()
 
     assert [event for event, _ in logger.calls] == ["housekeeping_cycle"]
     assert logger.exceptions == [("housekeeping_pass_failed", {"counter": failing})]
-    other = next(counter for counter in COUNTERS if counter != failing)
-    assert logger.calls[0][1] == {failing: 0, other: passes[other].return_value, "duration_ms": ANY}
+    others = {counter: passes[counter].return_value for counter in COUNTERS if counter != failing}
+    assert logger.calls[0][1] == {failing: 0, **others, "duration_ms": ANY}
     assert heartbeat.await_args.kwargs["status"] is WorkerCycleStatus.DEGRADED
 
 

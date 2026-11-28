@@ -3104,7 +3104,8 @@
       },
       "WorkerName": {
         "enum": [
-          "housekeeping"
+          "housekeeping",
+          "jobs"
         ],
         "title": "WorkerName",
         "type": "string"

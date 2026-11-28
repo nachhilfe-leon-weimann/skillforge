@@ -19,6 +19,7 @@ from app.core.db import Database
 from app.core.db.models import WorkerCycleStatus
 from app.core.logging import configure_logging, get_logger
 from app.services.auth.housekeeping import delete_expired_action_tokens, delete_expired_sessions
+from app.services.jobs.housekeeping import delete_finished_jobs
 from app.services.system import WorkerName, record_worker_heartbeat
 
 HOUSEKEEPING_INTERVAL = timedelta(seconds=30)
@@ -40,6 +41,7 @@ class Pass(Protocol):
 PASSES: dict[str, Pass] = {
     "sessions_deleted": delete_expired_sessions,
     "action_tokens_deleted": delete_expired_action_tokens,
+    "jobs_deleted": delete_finished_jobs,
 }
 
 

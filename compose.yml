@@ -27,10 +27,11 @@ services:
     networks:
       - dokploy-network
 
-  # Housekeeping: deletes login sessions and one-time tokens 30 days after they expire, and beats for
-  # /health. Same image as the app, its own entrypoint, the DB connection; SKIP LOCKED batches
-  # make several replicas safe. The image's HEALTHCHECK probes the API on :8000, which this container
-  # does not serve - /health reports the worker through its heartbeat instead.
+  # Housekeeping: deletes login sessions and one-time tokens 30 days after they expire and finished
+  # jobs 30 (succeeded) or 90 (failed) days after they ended, and beats for /health. Same image as the
+  # app, its own entrypoint, the DB connection; SKIP LOCKED batches make several replicas safe. The
+  # image's HEALTHCHECK probes the API on :8000, which this container does not serve - /health reports
+  # the worker through its heartbeat instead.
   worker:
     image: ghcr.io/nachhilfe-leon-weimann/skillforge:v0.6.0 # x-release-please-version
     pull_policy: always
@@ -43,6 +44,24 @@ services:
     healthcheck:
       disable: true
     command: [ "python", "-m", "app.workers.housekeeping" ]
+    networks:
+      - dokploy-network
+
+  # Jobs: works SkillForge's own job queue (system.job) one job at a time and beats for /health from a
+  # task of its own. Same image, its own entrypoint, the DB connection; SKIP LOCKED claims make several
+  # replicas safe. Like `worker`, it serves no :8000, so the image's HEALTHCHECK is disabled.
+  jobs:
+    image: ghcr.io/nachhilfe-leon-weimann/skillforge:v0.6.0 # x-release-please-version
+    pull_policy: always
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      disable: true
+    command: [ "python", "-m", "app.workers.jobs" ]
     networks:
       - dokploy-network
 
