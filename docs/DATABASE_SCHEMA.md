@@ -9,7 +9,7 @@ under `app/core/db/models/` - keep it in sync when models change.
 - `core` - central business domain (party/person/company, students, tutors, subjects)
 - `ext` - links from external system identifiers to a `core.party`
 - `auth` - OAuth2 application clients, secrets, scope grants per mode, user accounts (stored roles, sessions, one-time tokens), and the auth audit trail
-- `system` - internal runtime state (background-worker liveness heartbeats)
+- `system` - internal runtime state (background-worker liveness heartbeats, SkillForge's own job queue)
 - `billing` - lessons, students' rates, payers billed by hand, calendar aliases and the lesson calendar's
   occurrences ([billing spec](specs/billing.md))
 
@@ -275,12 +275,14 @@ INDEX (expires_at)  -- ix_user_action_token_expires_at
 
 ## System Schema
 
-Internal runtime state for background workers - not a business domain. Currently just worker
-liveness, consumed by the `/health/workers` endpoints (see the housekeeping worker in
-`app/workers/housekeeping.py`).
+Internal runtime state for background workers - not a business domain: worker liveness, consumed by the
+`/health/workers` endpoints (see the housekeeping worker in `app/workers/housekeeping.py`), and SkillForge's own job
+queue, written and claimed only through `app/services/jobs/queue.py`
+([calendar-categories spec](specs/calendar-categories.md), [ADR 0011](decisions/0011-integration-jobs-and-graph-notifications.md)).
 
 ```sql
 system.worker_cycle_status = ('ok', 'degraded')
+system.job_status = ('pending', 'running', 'succeeded', 'failed')
 
 -- system.worker_heartbeat  (one row per worker, upserted at the end of every cycle; current state, not history)
 worker_name TEXT PRIMARY KEY
@@ -289,6 +291,23 @@ expires_at TIMESTAMPTZ NOT NULL           -- beat carries its own freshness wind
 last_status worker_cycle_status NOT NULL  -- clean cycle vs. degraded
 detail JSONB NULL                         -- optional per-cycle context (counters, last error)
 created_at/updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+
+-- system.job  (one unit of background work; the kind is a string to the queue)
+id UUID PRIMARY KEY DEFAULT uuid4
+kind TEXT NOT NULL
+payload JSONB NOT NULL DEFAULT '{}'
+status job_status NOT NULL DEFAULT 'pending'
+attempts INTEGER NOT NULL DEFAULT 0       -- counted by the claim; succeed/fail match it, so a stale holder changes nothing
+max_attempts INTEGER NOT NULL             -- ck_job_attempts: 0 <= attempts <= max_attempts, max_attempts >= 1
+available_at TIMESTAMPTZ NOT NULL DEFAULT now()  -- when a pending job is due
+locked_until TIMESTAMPTZ NULL             -- the lease; ck_job_lease: set exactly when running; once passed, a claim takes it again
+dedupe_key TEXT NULL                      -- with the kind, determines the payload
+last_error TEXT NULL                      -- an error class and a status, never payload content
+finished_at TIMESTAMPTZ NULL              -- ck_job_finished: set exactly when succeeded or failed
+created_at/updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+INDEX (available_at) WHERE status = 'pending'                 -- ix_job_claimable: the claim's due pending jobs
+INDEX (locked_until) WHERE status = 'running'                 -- ix_job_lease: the claim's running jobs past their lease
+UNIQUE (kind, dedupe_key) WHERE status = 'pending'           -- uq_job_pending_dedupe; a NULL key never conflicts
 ```
 
 ## Billing Schema

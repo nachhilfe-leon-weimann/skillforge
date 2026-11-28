@@ -1,6 +1,6 @@
 # Spec: Calendar categories (events get their category by medium, driven by Graph notifications)
 
-> Status: Draft | Arc `calendar`
+> Status: In progress - P0-1 | Arc `calendar`
 > Builds on the [project sketch](../PROJECT.md),
 > [ADR 0011](../decisions/0011-integration-jobs-and-graph-notifications.md),
 > [ADR 0010](../decisions/0010-outbound-integrations.md), [`api-conventions.md`](api-conventions.md) and the calendar
@@ -219,20 +219,23 @@ Standing criteria, for every slice:
 
 **P0-1 - Job queue.**
 - _Technique:_ `Job` and `JobStatus` in `app/core/db/models/system/job.py`; revision `0020_system_job` with the
-  partial index `ix_job_claimable` on `available_at` (`status = 'pending'`) and the partial unique index
-  `uq_job_pending_dedupe` on (`kind`, `dedupe_key`). `enqueue` (with `delay` and, for a debounced kind, `max_delay`),
-  `claim`, `succeed`, `fail` and `defer` in `app/services/jobs/queue.py`; `claim` takes one due `pending` job or one
-  `running` job whose `locked_until` passed, in one statement.
+  partial indexes `ix_job_claimable` on `available_at` (`status = 'pending'`) and `ix_job_lease` on `locked_until`
+  (`status = 'running'`) and the partial unique index `uq_job_pending_dedupe` on (`kind`, `dedupe_key`). `enqueue` and
+  `enqueue_many` (with `delay` and, for a debounced kind, `max_delay`), `claim`, `succeed`, `fail` and `defer` in
+  `app/services/jobs/queue.py`; `claim` takes one due `pending` job or one `running` job whose `locked_until` passed,
+  in one statement.
 - _Tests that change:_ none.
 - _Acceptance criteria:_
-  - [ ] Two concurrent claims never return the same job (`tests/db/jobs/`).
-  - [ ] Fifty `enqueue` calls with one key store one job; a call while that job is `running` stores one more.
-  - [ ] Decision D: each further call moves the due time, never past `max_delay` after the first.
-  - [ ] `fail` follows decision E: the delays, the cap, a longer `Retry-After`, and `failed` after the last attempt.
-  - [ ] Decision C: a job that fails beside a pending twin is deleted, and the twin has the greater `attempts`.
-  - [ ] Decision B: a `running` job is claimed again only after its lease, that claim counts as an attempt, a job
+  - [x] Two concurrent claims never return the same job (`tests/db/jobs/`).
+  - [x] Fifty `enqueue` calls with one key store one job; a call while that job is `running` stores one more.
+  - [x] Decision D: each further call moves the due time, never past `max_delay` after the first.
+  - [x] `fail` follows decision E: the delays, the cap, a longer `Retry-After`, and `failed` after the last attempt.
+  - [x] Decision C: a job that fails beside a pending twin is deleted, and the twin has the greater `attempts`.
+  - [x] Decision B: a `running` job is claimed again only after its lease, that claim counts as an attempt, a job
         without an attempt left is finished as `failed`, and `succeed` by a stale holder changes nothing.
-  - [ ] The downgrade drops the table and `system.job_status`.
+  - [x] A debounced or failed job never becomes due earlier through a further call or through a twin it merges
+        into.
+  - [x] The downgrade drops the table and `system.job_status`.
 
 **P0-2 - Jobs worker.**
 - _Technique:_ `app/workers/jobs.py`: `HANDLERS`, `run_once`, `run_forever`, a beat task of its own,

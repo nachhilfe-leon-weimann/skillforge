@@ -47,6 +47,8 @@ from .ext import (
     SevdeskContact,
 )
 from .system import (
+    Job,
+    JobStatus,
     WorkerCycleStatus,
     WorkerHeartbeat,
 )
@@ -92,6 +94,8 @@ __all__ = [
     "Subject",
     "Tutor",
     "TutorSubject",
+    "Job",
+    "JobStatus",
     "WorkerCycleStatus",
     "WorkerHeartbeat",
 ]
