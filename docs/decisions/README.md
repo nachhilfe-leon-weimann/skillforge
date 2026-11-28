@@ -18,7 +18,8 @@ do it this way?" doesn't get lost in commit messages and memory. They complement
 | [0007](0007-crm-system-of-record.md) | CRM is the system of record; the bot is a consumer | Accepted, amended by 0009 |
 | [0008](0008-user-authentication-and-reach.md) | SkillForge authenticates people itself; client grants have a mode; scopes carry a reach qualifier | Accepted, amended by 0009 |
 | [0009](0009-bot-owns-its-discord-workflows.md) | The bot owns its Discord workflows; SkillForge keeps central data and pushes nothing | Accepted |
-| [0010](0010-outbound-integrations.md) | SkillForge calls third-party systems itself, through one guarded transport | Accepted |
+| [0010](0010-outbound-integrations.md) | SkillForge calls third-party systems itself, through one guarded transport | Accepted, amended by 0011 |
+| [0011](0011-integration-jobs-and-graph-notifications.md) | Integration work may run as jobs, and Microsoft Graph may notify SkillForge | Accepted |
 
 ## When to write an ADR?
 

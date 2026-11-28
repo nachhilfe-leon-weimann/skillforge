@@ -69,7 +69,8 @@ categories a Discord server holds" is a bot rule.
    asking twice does no harm. Pushing (webhooks) stays an option for the day pulling is too slow.
    Calling a third-party system a domain rule needs - the accounting system, the calendar - is not
    pushing: SkillForge is that system's client, and no consumer of SkillForge's data is involved
-   ([ADR 0010](decisions/0010-outbound-integrations.md)).
+   ([ADR 0010](decisions/0010-outbound-integrations.md)). Neither is that system telling SkillForge
+   that something changed ([ADR 0011](decisions/0011-integration-jobs-and-graph-notifications.md)).
 4. **The CRM is the system of record.** It holds the intended state of the business and knows
    nothing about Discord or logins. Everybody reads it; nobody writes around it
    ([ADR 0007](decisions/0007-crm-system-of-record.md)).
@@ -152,11 +153,15 @@ Coarse on purpose; the details live in the specs.
    the calendar, prices them with a rate per student, creates invoice drafts in sevDesk and keeps prepaid credit as
    an account statement. It calls sevDesk and Microsoft 365 itself; the portal's admin area in skillsite is only
    the UI and its backend-for-frontend.
-4. **Reach arc.** Tutors reach their students, with rules for what a tutor may see - who pays for a student is none
+4. **Calendar arc** - started (2026-11, [spec](specs/calendar-categories.md),
+   [ADR 0011](decisions/0011-integration-jobs-and-graph-notifications.md)). SkillForge keeps the lesson calendars
+   tidy: an event gets its category by medium when it appears, in every lesson mailbox. It brings a job queue
+   for SkillForge's own integration work.
+5. **Reach arc.** Tutors reach their students, with rules for what a tutor may see - who pays for a student is none
    of the tutor's business - and people see and edit their own relations and subjects (#160, #161).
-5. **Portal arc** in skillsite: its backend and the first views; its first area is the admin helper for billing.
+6. **Portal arc** in skillsite: its backend and the first views; its first area is the admin helper for billing.
    Can run alongside the bot arc.
-6. **Later:** sending e-mail (invitations, password resets), self-service for people, a family's view of its
+7. **Later:** sending e-mail (invitations, password resets), self-service for people, a family's view of its
    lessons and credit.
 
 ## Words we use

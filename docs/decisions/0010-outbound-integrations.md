@@ -1,7 +1,8 @@
 # ADR 0010 - SkillForge calls third-party systems itself, through one guarded transport
 
 Status: Accepted, 2026-11, with the freeze of [`billing.md`](../specs/billing.md) (SP-SD). Amends
-[0006](0006-error-envelope.md) (point 10).
+[0006](0006-error-envelope.md) (point 10); amended by [0011](0011-integration-jobs-and-graph-notifications.md)
+(2026-11).
 
 ## Context
 
